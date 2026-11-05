@@ -919,10 +919,9 @@ html { touch-action: pan-x pan-y }
 /* 0.8.9: 小M's blink (闪现) and the paper letters it bursts into */
 .m-ghost .m-fan, .m-ghost .pet-say { display: none }
 .paper-burst { position: fixed; z-index: 41; width: 0; height: 0; pointer-events: none }
-.paper-burst .pb { position: absolute; left: -4px; top: -5px; width: 8px; height: 10px; border-radius: 1.5px; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .25) }
-.paper-burst .pb.o { background: var(--accent) }
-.paper-burst .pb.l { width: auto; height: auto; padding: 1px 3px; left: -6px; top: -8px; font: 700 10px/1 var(--font); color: #141414; background: #fff }
-.paper-burst .pb.l.o { color: #141414; background: #ffb070 }
+.paper-burst .pb { position: absolute; left: 0; top: 0; background: #fff; backface-visibility: visible }
+.paper-burst .pb.o { background: var(--accent) } .paper-burst .pb.g { background: #d9d4cc }
+:root:not([data-theme="dark"]) .paper-burst .pb:not(.o) { background: #bfb8ad } :root:not([data-theme="dark"]) .paper-burst .pb.g { background: #8f8a82 }
 /* sitting on a pop-up's top edge */
 .mbtn.on-sheet { position: fixed; right: auto; bottom: auto; z-index: 32; width: 60px; height: 60px }
 /* the card he stands on lets him stand above its edge */

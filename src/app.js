@@ -1923,23 +1923,28 @@ function blink(b, from, to) {
   ], { duration: 640, delay: IN, easing: "cubic-bezier(.3,.7,.3,1)", fill: "backwards" }).onfinish = () => { act($("mSvg"), "land", 450); fx("drag"); };
   fx("pin");
 }
-// paper letters: S T U D I O M and plain paper bits, thrown out and drifting down as they turn
+// shredded paper: torn scraps of every shape, thrown out (or sucked in), then fluttering down and turning over as they fall
+const SHRED = ["polygon(0 8%,100% 0,92% 100%,6% 88%)", "polygon(10% 0,100% 18%,80% 100%,0 70%)", "polygon(0 0,100% 30%,70% 100%)", "polygon(0 20%,60% 0,100% 60%,40% 100%)",
+  "polygon(0 0,100% 0,100% 40%,85% 55%,100% 70%,100% 100%,0 100%)", "polygon(5% 10%,95% 0,100% 90%,0 100%)"];
 function paperBurst(x, y, inward) {
-  const L = "STUDIOM", wrap = document.createElement("div"); wrap.className = "paper-burst"; wrap.style.left = x + "px"; wrap.style.top = y + "px"; document.body.appendChild(wrap);
-  const n = 16;
+  const wrap = document.createElement("div"); wrap.className = "paper-burst"; wrap.style.left = x + "px"; wrap.style.top = y + "px"; document.body.appendChild(wrap);
+  const n = 30;
   for (let i = 0; i < n; i++) {
-    const p = document.createElement("i"), a = (i / n) * Math.PI * 2 + Math.random() * .4, d = 34 + Math.random() * 46, letter = i % 2 === 0;
-    p.className = "pb" + (letter ? " l" : "") + (i % 3 === 0 ? " o" : ""); if (letter) p.textContent = L[(i / 2) % L.length | 0];
+    const p = document.createElement("i"), a = (i / n) * Math.PI * 2 + Math.random() * .5, d = 26 + Math.random() * 62;
+    const w = 3 + Math.random() * 8, h = w * (.6 + Math.random() * 1.8);   // strips and flakes
+    p.className = "pb" + (i % 4 === 0 ? " o" : i % 5 === 0 ? " g" : "");
+    p.style.cssText = `width:${w.toFixed(1)}px;height:${h.toFixed(1)}px;margin:${(-h / 2).toFixed(1)}px 0 0 ${(-w / 2).toFixed(1)}px;clip-path:${SHRED[i % SHRED.length]}`;
     wrap.appendChild(p);
-    const dx = Math.cos(a) * d, dy = Math.sin(a) * d * .8 - 14, r1 = (Math.random() - .5) * 360, r2 = r1 + (Math.random() - .5) * 540;
-    const k = inward ? [[dx * 1.2, dy * 1.2], [0, 0]] : [[0, 0], [dx, dy]];
+    const dx = Math.cos(a) * d, dy = Math.sin(a) * d * .8 - 18, r = (Math.random() - .5) * 720, fl = 360 + Math.random() * 540, fall = 40 + Math.random() * 40, sway = (Math.random() - .5) * 30;
+    const k = inward ? [[dx * 1.3, dy * 1.3], [0, 0]] : [[0, 0], [dx, dy]];
     p.animate([
-      { transform: `translate(${k[0][0]}px, ${k[0][1]}px) rotate(${r1}deg) scale(${inward ? .6 : .3})`, opacity: inward ? 0 : 1 },
-      { transform: `translate(${k[1][0]}px, ${k[1][1]}px) rotate(${(r1 + r2) / 2}deg) scale(1)`, opacity: 1, offset: .45 },
-      { transform: `translate(${k[1][0] + dx * .15}px, ${k[1][1] + 30}px) rotateX(70deg) rotate(${r2}deg) scale(.9)`, opacity: 0 }
-    ], { duration: 760 + Math.random() * 260, easing: "cubic-bezier(.2,.75,.3,1)", fill: "forwards" });
+      { transform: `translate(${k[0][0]}px, ${k[0][1]}px) rotate(0) rotateX(0) scale(${inward ? .7 : .4})`, opacity: inward ? 0 : 1 },
+      { transform: `translate(${k[1][0]}px, ${k[1][1]}px) rotate(${r * .5}deg) rotateX(${fl * .3}deg) scale(1)`, opacity: 1, offset: .35 },
+      { transform: `translate(${k[1][0] + sway}px, ${k[1][1] + fall * .5}px) rotate(${r * .8}deg) rotateX(${fl * .65}deg) rotateY(90deg) scale(1)`, opacity: 1, offset: .65 },
+      { transform: `translate(${k[1][0] - sway * .5}px, ${k[1][1] + fall}px) rotate(${r}deg) rotateX(${fl}deg) rotateY(180deg) scale(.9)`, opacity: 0 }
+    ], { duration: 900 + Math.random() * 400, easing: "cubic-bezier(.15,.7,.35,1)", fill: "forwards" });
   }
-  setTimeout(() => wrap.remove(), 1100);
+  setTimeout(() => wrap.remove(), 1400);
 }
 function hop(b, from, to) {
   const dx = from.left - to.left, dy = from.top - to.top, up = Math.min(-70, Math.min(dy, 0) - 60), tilt = dx > 0 ? -10 : 10;
