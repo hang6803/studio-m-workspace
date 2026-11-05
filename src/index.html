@@ -148,19 +148,19 @@
       </section>
 
       <section class="view page bk-page" id="v-backup" hidden>
-        <div class="bk-top">
-          <div class="bk-years" id="bkYears" role="tablist" aria-label="Year"></div>
-          <span class="spacer"></span>
-          <button type="button" class="btn ghost sm" id="bkCheck"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>Check data</button>
-          <button type="button" class="btn ghost sm" id="bkExport"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5"/><path d="M5 19h14"/></svg>Export</button>
-          <button type="button" class="btn sm" id="bkNew">+ New job</button>
-        </div>
         <div class="bk-hero" id="bkHero">
-          <div class="bk-year" id="bkYear" aria-hidden="true"></div>
-          <div class="bk-stats">
-            <div><b id="bkJobs">0</b><span>jobs</span></div>
-            <div><b id="bkDrives">0</b><span>drives</span></div>
-            <button type="button" id="bkUn" aria-pressed="false"><b id="bkUnN">0</b><span>not backed up</span></button>
+          <div class="bk-yr">
+            <button type="button" class="ibtn" id="bkPrev" aria-label="Previous year"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg><i class="dot red" hidden></i></button>
+            <div class="bk-year" id="bkYear" aria-live="polite"></div>
+            <button type="button" class="ibtn" id="bkNext" aria-label="Next year"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg><i class="dot red" hidden></i></button>
+          </div>
+          <div class="bk-years" id="bkYears" hidden></div>
+          <p class="bk-sum"><span><b id="bkJobs">0</b> jobs</span><span>on <b id="bkDrives">0</b> drives</span></p>
+          <button type="button" class="bk-un" id="bkUn" aria-pressed="false"><i class="dot red"></i><b id="bkUnN">0</b> not backed up</button>
+          <div class="bk-tools">
+            <button type="button" class="btn ghost sm" id="bkCheck" title="Check data"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg><span>Check data</span></button>
+            <button type="button" class="btn ghost sm" id="bkExport" title="Export"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5"/><path d="M5 19h14"/></svg><span>Export</span></button>
+            <button type="button" class="btn sm" id="bkNew" hidden>+ New job</button>
           </div>
         </div>
         <div class="bk-find">
