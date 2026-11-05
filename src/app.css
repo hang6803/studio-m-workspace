@@ -989,3 +989,27 @@ html { touch-action: pan-x pan-y }
 }
 /* the list he stands in lets his head show above its row */
 :is(.bk-rows, .rows, #listRows):has(.m-host) { overflow: visible }
+/* a job opened in place, as in the Apps Script Backup: it unfolds under its name (no box), sharpening out of a blur */
+.bk-det, .bk-det[class] { grid-column: 2 / -2; display: grid; grid-template-rows: 0fr; grid-template-columns: minmax(0, 1fr); gap: 0; margin: 0; padding: 0; background: none; border: 0; box-shadow: none; border-radius: 0;
+  opacity: 0; filter: blur(6px); transition: grid-template-rows .35s cubic-bezier(.2, .8, .2, 1), opacity .25s, filter .3s, margin .35s cubic-bezier(.2, .8, .2, 1) }
+.bk-row.open > .bk-det { grid-template-rows: 1fr; opacity: 1; filter: none; margin-top: -4px }
+.bk-det-in { min-height: 0; overflow: hidden }
+.dx { display: flex; flex-direction: column; gap: 8px; padding: 0 0 2px }
+.dx-line { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.6 }
+.dx-line a { color: var(--fg); font-weight: 700 }
+.dx-ok { color: var(--ok) } .dx-no { color: var(--danger); font-weight: 700 }
+.dx-by b { color: var(--fg); font-weight: 600 } .dx-by time { color: var(--muted) }
+.dx-days { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 13px }
+.dx-days li { display: flex; align-items: center; gap: 8px }
+.dx-acts { display: flex; align-items: center; gap: 6px } .dx-acts .spacer { flex: 1 }
+.dx-acts .btn { min-height: 0; padding: 4px 12px !important; font-size: 12px }
+.bk-row.open { background: color-mix(in srgb, var(--fg) 3%, transparent) }
+@media (max-width: 899px) { .bk-det, .bk-det[class] { grid-column: 2 / -1; margin: 0 } .bk-row.open > .bk-det { margin-top: 0 } .dx-acts .btn { flex: none } }
+.dx-line { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px } .dx-line .mr + .mr { margin-left: 0 }
+.dx-edit { display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; padding: 2px 0; font: inherit; font-size: 13px; font-weight: 700; color: var(--accent-text); cursor: pointer }
+.dx-edit svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round }
+@media (max-width: 899px) {   /* on a phone too it opens right under the name, above the tags and drive */
+  .bk-row { grid-template-areas: "no main main more" "no det det det" "no media drv drv"; row-gap: 0 }
+  .bk-row > .bk-det, .bk-row > .bk-det[class] { grid-area: det } .bk-row.open > .bk-det { margin: 6px 0 2px }
+  .bk-media, .bk-drv { margin-top: 8px }
+}

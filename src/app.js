@@ -892,7 +892,7 @@ function jobCard(j, i, o) {
       <span class="bk-media">${st("video")}${st("photo")}</span>
       <span class="bk-drv">${jobLinks(j).map(l => linkA(l, "bk-link")).join("")}${j.un ? `<button type="button" class="btn sm bk-fix" data-job-edit="${esc(r.id)}">Back up</button>` : ""}${o.hide === "drive" ? "" : drives.map(d => `<a href="#/drive/${encodeURIComponent(d)}">${hl(dName(d), ts)}</a>`).join("") || '<span class="muted small">No drive</span>'}</span>
       <button type="button" class="bk-more" aria-label="Details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
-      ${open ? `<div class="bk-det">${bkDetail(r.id)}</div>` : ""}
+      ${open ? `<div class="bk-det"><div class="bk-det-in">${bkDetail(r.id)}</div></div>` : ""}
     </div>`;
   }
 // tap a job (or its arrow) and it opens in place, as on the Backup page: days, what's backed up where, who, notes, links, history
@@ -910,33 +910,31 @@ function jobLinks(j) {
   return us.map((u, k) => ({ u, tag: many && k < w.parts.length ? ROMAN(k + 1) + "." : us.length > 1 ? String(k + 1) : "", name: many && w.parts[k] ? [w.parts[k].date ? fmtDates([w.parts[k].date]) : "", w.parts[k].label].filter(Boolean).join(" · ") : t }));
 }
 const linkA = (l, cls) => `<a class="${cls}" href="${esc(l.u)}" target="_blank" rel="noopener" title="${esc(l.name)}: ${esc(l.u)}">${LINK_SVG}${l.tag ? `<span>${esc(l.tag)}</span>` : ""}</a>`;
+// a job opened in place, as the Apps Script Backup does it: one quiet line under the name (where, who, what's backed up,
+// what its twin is missing, notes, the last change), its days with their links, and Edit / Back up
 function bkDetail(id) {
-  const r0 = (data.rows || []).find(x => x.id === id); if (!r0) return "";
-  const j = jobsOf([r0, twinOf(r0)].filter(Boolean))[0], r = r0, w = whenOf(r), links = jobLinks({ ...j, main: r });
-  const half = (k, x) => !x ? "" : `<div class="dt-half ${selfUnbacked(x) ? "no" : "ok"}"><i></i><b>${k}</b><span>${selfUnbacked(x) ? "Not backed up" : "Backed up" + (x.backupDate ? " " + esc(fmtDates([x.backupDate])) : "")}</span>${drivesOf(x).map(d => `<a class="dt-drv" href="#/drive/${encodeURIComponent(d)}">${esc(dName(d))}</a>`).join("")}</div>`;
-  const days = w.parts.length > 1 ? `<ol class="dt-days">${w.parts.map((p, k) => `<li><span class="dt-n">${ROMAN(k + 1)}.</span><span>${esc([p.date ? fmtDates([p.date]) : "", p.label].filter(Boolean).join(" · ")) || "–"}</span>${links[k] ? linkA(links[k], "dt-link") : ""}</li>`).join("")}</ol>`
-    : (w.when || w.place || links.length) ? `<div class="dt-days one"><span>${esc([w.when, w.place].filter(Boolean).join(" · ")) || esc(splitJob(r).title)}</span>${links.map(l => linkA(l, "dt-link")).join("")}</div>` : "";
-  const extra = links.slice(w.parts.length > 1 ? w.parts.length : 1).filter(() => w.parts.length > 1);
+  const r = (data.rows || []).find(x => x.id === id); if (!r) return "";
+  const j = jobsOf([r, twinOf(r)].filter(Boolean))[0], w = whenOf(r), links = jobLinks({ ...j, main: r }), many = w.parts.length > 1;
+  const half = (k, x) => !x ? "" : selfUnbacked(x) ? `<span class="dx-no">${k} not backed up</span>` : `<span class="dx-ok">${k} backed up${x.backupDate ? " " + esc(fmtDates([x.backupDate])) : ""}</span>`;
   const notes = [...new Set(j.rows.map(x => x.notes).filter(Boolean))];
-  const both = j.video && j.photo;
-  const hist = j.rows.flatMap(x => (x.history || []).filter(h => h && h.at).map(h => ({ ...h, half: both ? (isPhotoSec(sectionOf(x)) ? "Photo" : "Video") : "" }))).sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  const last = j.rows.flatMap(x => x.history || []).filter(h => h && h.at).sort((a, b) => String(a.at).localeCompare(String(b.at))).at(-1);
   const made = j.rows.map(x => x.createdAt).filter(Boolean).sort()[0];
-  return `<div class="dt-main">
-      <div class="dt-halves">${half("Video", j.video)}${half("Photo", j.photo)}</div>
-      ${days}${extra.length ? `<div class="dt-days one">${extra.map(l => linkA(l, "dt-link")).join("")}</div>` : ""}
-      ${r.editor || notes.length ? `<p class="dt-meta">${r.editor ? `<a href="#/editor/${encodeURIComponent(r.editor)}">${esc(r.editor)}</a>` : ""}${notes.map(n => `<span>${esc(n)}</span>`).join("")}</p>` : ""}
-    </div>
-    <div class="dt-hist"><b>History</b>${hist.length ? `<ol>${hist.slice(0, 8).map(h => `<li class="${/新增/.test(h.action) ? "add" : /备份/.test(h.action) ? "bk" : "ed"}"><span><b>${esc(h.by || "Someone")}</b> ${esc((ACT[h.action] || h.action || "").toLowerCase())}${h.half ? ` <em>${h.half}</em>` : ""}</span><time title="${esc(String(h.at).slice(0, 16).replace("T", " "))}">${esc(relAt(h.at))}</time></li>`).join("")}</ol>` : `<p>${made ? "Added " + esc(relAt(made)) + ". " : ""}No edits yet.</p>`}</div>
-    <div class="bk-acts"><button type="button" class="btn ghost sm" data-job-edit="${esc(r.id)}">Edit</button>${j.un ? `<button type="button" class="btn sm bk-fix" data-job-edit="${esc(r.id)}">Back up</button>` : ""}</div>`;
+  const line = metaRow(w.place && esc(w.place), r.editor && `<a href="#/editor/${encodeURIComponent(r.editor)}">${esc(r.editor)}</a>`, half("Video", j.video), half("Photo", j.photo),
+    ...notes.map(n => `<span class="dx-note">${esc(n)}</span>`),
+    last ? `<span class="dx-by"><b>${esc(last.by || "Someone")}</b> ${esc((ACT[last.action] || last.action || "").toLowerCase())} <time title="${esc(String(last.at).slice(0, 16).replace("T", " "))}">${esc(relAt(last.at))}</time></span>`
+      : made ? `<span class="dx-by">Added ${esc(relAt(made))}</span>` : "");
+  const days = many ? `<ol class="dx-days">${w.parts.map((p, k) => `<li><span class="dt-n">${ROMAN(k + 1)}.</span><span>${esc([p.date ? fmtDates([p.date]) : "", p.label].filter(Boolean).join("  ")) || "–"}</span>${links[k] ? linkA(links[k], "dt-link") : ""}</li>`).join("")}</ol>` : "";
+  const rest = links.slice(many ? w.parts.length : 0);
+  return `<div class="dx"><p class="dx-line">${line}<button type="button" class="dx-edit" data-job-edit="${esc(r.id)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17v3z"/><path d="M13.5 8.5l3 3"/></svg>Edit</button></p>${days}${rest.length ? `<div class="dx-acts">${rest.map(l => linkA(l, "dt-link")).join("")}</div>` : ""}</div>`;
 }
 function bkToggle(row) {
   const id = row.dataset.job, open = !row.classList.contains("open");
   open ? bkOpen.add(id) : bkOpen.delete(id);
   let d = row.querySelector(".bk-det");
-  if (open && !d) { d = document.createElement("div"); d.className = "bk-det"; d.innerHTML = bkDetail(id); row.appendChild(d); }
+  if (open && !d) { d = document.createElement("div"); d.className = "bk-det"; d.innerHTML = `<div class="bk-det-in">${bkDetail(id)}</div>`; row.appendChild(d); void d.offsetWidth; }
+  clearTimeout(row._dt);
   row.classList.toggle("open", open); row.setAttribute("aria-expanded", open);
-  if (d && !STILL) d.animate(open ? [{ opacity: 0, transform: "translateY(-6px)" }, { opacity: 1, transform: "none" }] : [{ opacity: 1 }, { opacity: 0 }], { duration: open ? 260 : 140, easing: "cubic-bezier(.2,.8,.2,1)" }).onfinish = () => { if (!row.classList.contains("open")) d.remove(); };
-  else if (!open && d) d.remove();
+  if (!open && d) row._dt = setTimeout(() => { if (!row.classList.contains("open")) d.remove(); }, STILL ? 0 : 380);   // folds up, then goes
   fx(open ? "open" : "close");
 }
 // facts side by side, spaced, never strung together with dots
