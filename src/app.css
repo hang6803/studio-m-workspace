@@ -148,6 +148,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round
 /* the dots of the graph, used as icons everywhere so a drive always looks like a drive */
 .hub { flex: none; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 700; line-height: 1 }
 .hub.drive { background: radial-gradient(circle at 35% 30%, #ffd3a8, var(--accent) 45%, #a8500b); box-shadow: 0 0 0 3px var(--accent-soft) }
+.hub.drive.none { background: transparent; box-shadow: inset 0 0 0 2px var(--muted) }
 .hub.ed { background: var(--fg); color: var(--bg) }
 .hub.red { background: var(--danger); width: 10px; height: 10px; margin: 4px } .hub.green { background: var(--ok); width: 10px; height: 10px; margin: 4px }
 .hub.hollow { border: 1.5px solid var(--muted); width: 10px; height: 10px; margin: 4px }
@@ -304,7 +305,7 @@ body.m-open .find { border-color: var(--accent) }
 .mp-title { font-size: 17px }
 .model-chip { border: 0; background: none; color: var(--muted); font-size: 12px; padding: 4px 8px; border-radius: 4px; max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .model-chip:hover { background: var(--surface); color: var(--fg) }
-.mp-head .ibtn { width: 36px; height: 36px; font-size: 15px } .mp-head svg { width: 18px; height: 18px }
+.mp-head .ibtn { width: 36px; height: 36px; font-size: 15px } .mp-head .ibtn svg { width: 18px; height: 18px }
 .mp-hist { position: absolute; left: 0; right: 0; top: 61px; bottom: 0; z-index: 3; background: var(--bg); padding: 8px; overflow: auto; animation: rise .25s var(--ease) both }
 .thread { flex: 1; min-height: 0; overflow: auto; padding: 16px; overscroll-behavior: contain }
 .empty { display: flex; flex-direction: column; gap: 14px; animation: rise .4s var(--ease) .15s both }
@@ -535,7 +536,7 @@ body.cal-dragging, body.cal-dragging * { cursor: grabbing !important; user-selec
 .fchip { border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 99px; padding: 5px 12px; font: inherit; font-size: 13px; font-weight: 700; transition: background .2s, border-color .2s } .fchip:hover { border-color: var(--accent) } .fchip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink) } #bkUnOff.on { background: var(--danger); border-color: var(--danger); color: #141414 }
 .bk-sort { margin-left: auto }
 .bk-rows { display: flex; flex-direction: column; border-top: 1px solid var(--line) }
-.bk-row { position: relative; display: grid; grid-template-columns: 34px minmax(0, 1fr) auto 128px minmax(90px, auto); align-items: center; gap: 14px; min-height: 60px; padding: 10px 12px; border-bottom: 1px solid var(--line); cursor: pointer; transition: background .15s }
+.bk-row { position: relative; display: grid; content-visibility: auto; contain-intrinsic-size: auto 66px; grid-template-columns: 34px minmax(0, 1fr) auto 128px minmax(90px, auto); align-items: center; gap: 14px; min-height: 60px; padding: 10px 12px; border-bottom: 1px solid var(--line); cursor: pointer; transition: background .15s }
 .bk-row:hover { background: var(--surface) }
 .bk-row.un::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 2px; background: var(--danger) }
 #bkList.anim .bk-row { animation: rise .35s var(--ease) both; animation-delay: calc(var(--i) * 18ms) }
@@ -662,3 +663,100 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 :root:not([data-theme="dark"]) .halo path.core { stroke: #ff9d45 } :root:not([data-theme="dark"]) .halo path.glow { opacity: .1 !important }
 .halo .meet { fill: var(--accent); opacity: 0 }
 .mbtn.to-light { transition: transform .22s ease-in, opacity .22s ease-in; transform: scale(.2); opacity: 0 }
+
+/* ==== 0.8.2 depth: the same light-and-shadow layering as Classic Backup (warm glow behind, panels that catch light
+   on their top edge and sit on a soft shadow), without any blur, so scrolling stays cheap ==== */
+:root {
+  --sheen: linear-gradient(180deg, rgba(255, 255, 255, .6), rgba(255, 255, 255, 0) 42%);
+  --rim: rgba(20, 20, 20, .07); --edge: rgba(255, 255, 255, .9);
+  --hi: inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 -1px 0 rgba(0, 0, 0, .03);
+  --d1: 0 1px 1px rgba(30, 20, 10, .05), 0 4px 10px -4px rgba(30, 20, 10, .1);
+  --d2: 0 1px 2px rgba(30, 20, 10, .05), 0 10px 22px -8px rgba(30, 20, 10, .14), 0 28px 56px -18px rgba(30, 20, 10, .18);
+  --raised: #fbfbfa; --glow-a: rgba(245, 130, 31, .12); --glow-b: rgba(90, 110, 150, .1); --ripple: rgba(244, 128, 32, .2)
+}
+:root[data-theme="dark"] {
+  --sheen: linear-gradient(180deg, rgba(255, 255, 255, .065), rgba(255, 255, 255, 0) 45%);
+  --rim: rgba(255, 255, 255, .06); --edge: rgba(255, 255, 255, .14);
+  --hi: inset 0 1px 0 rgba(255, 255, 255, .09), inset 0 -1px 0 rgba(0, 0, 0, .4);
+  --d1: 0 1px 1px rgba(0, 0, 0, .3), 0 6px 14px -6px rgba(0, 0, 0, .55);
+  --d2: 0 1px 2px rgba(0, 0, 0, .35), 0 14px 30px -10px rgba(0, 0, 0, .6), 0 34px 70px -20px rgba(0, 0, 0, .7);
+  --raised: color-mix(in srgb, #1c1c1c 86%, transparent); --glow-a: rgba(245, 130, 31, .15); --glow-b: rgba(90, 110, 150, .13); --ripple: rgba(255, 170, 90, .18)
+}
+body { isolation: isolate }
+body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: radial-gradient(55% 40% at 92% 4%, var(--glow-a), transparent 70%), radial-gradient(50% 38% at 0% 55%, var(--glow-b), transparent 70%),
+    radial-gradient(45% 35% at 85% 100%, var(--glow-a), transparent 70%) }
+.side { border-right-color: var(--rim); background: linear-gradient(90deg, transparent 60%, color-mix(in srgb, var(--fg) 2.5%, transparent)) }
+
+/* raised panels */
+:is(.rows, .bk-rows, .facts, .card, .cal-box, .day, .tm, .bk-hero, .drive-card, .pin-card, .sh, .tm-stats a, .chk-item) {
+  background: var(--sheen), var(--raised); border: 1px solid var(--rim); border-top-color: var(--edge); box-shadow: var(--hi), var(--d1) }
+:is(.rows, .bk-rows, .facts, .cal-box, .tm, .bk-hero, .day, .card) { box-shadow: var(--hi), var(--d2) }
+:is(.rows, .bk-rows, .facts, .tm, .day, .cal-box, .drive-card) { border-radius: var(--r-card) }
+.bk-hero { border-radius: var(--r-card) } .sh, .tm-stats a, .chk-item { border-radius: 12px }
+.day { border-top: 3px solid var(--accent) }
+.rows, .bk-rows { overflow: hidden; border-top-color: var(--edge) }
+.rows > :last-child, .bk-rows > :last-child { border-bottom: 0 }
+.row, .bk-row { border-bottom-color: var(--rim) }
+.bk-row { overflow: hidden }
+.row:hover, .bk-row:hover { background: color-mix(in srgb, var(--fg) 4%, transparent) }
+.facts { padding: 0 18px } .facts dt, .facts dd { border-bottom-color: var(--rim) } .facts > :nth-last-child(-n+2) { border-bottom: 0 }
+.cal .c { background: color-mix(in srgb, var(--bg) 70%, transparent) }
+.sheet, .mpanel, .menu { background: var(--sheen), var(--bg); border-color: var(--rim); border-top-color: var(--edge); box-shadow: var(--hi), var(--d2) }
+:is(.fchip, .ibtn, .btn.ghost, .seg) { background: var(--sheen), var(--raised); border-color: var(--rim); border-top-color: var(--edge); box-shadow: var(--hi), var(--d1) }
+.fchip.on { background: linear-gradient(180deg, #ff9d45, var(--accent)); border-color: var(--accent); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 6px 14px -6px rgba(244, 128, 32, .8) }
+#bkUnOff.on { background: var(--danger); border-color: var(--danger) }
+.tabs { background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 90%, transparent), var(--bg)) !important; border-top-color: var(--rim) !important; box-shadow: 0 -10px 30px -18px rgba(0, 0, 0, .5) }
+@media (hover: hover) {
+  :is(.drive-card, .tm, .tm-stats a, .chk-item) { transition: transform .25s var(--ease), box-shadow .25s var(--ease), border-color .25s }
+  :is(.drive-card, .tm-stats a, .chk-item):hover { transform: translateY(-2px); box-shadow: var(--hi), var(--d2); text-decoration: none }
+}
+
+/* press: everything you touch sinks a little and springs back; a ripple of light spreads from the finger */
+:is(.btn, .ibtn, .fchip, .seg button, .chips button, .tabs a, .nav-i, .jf-mark, .drive-card, .tm-stats a, .chk-item, .bk-fix) { transition: transform .32s var(--spring), box-shadow .25s, background .2s, border-color .2s, color .2s }
+:is(.btn, .ibtn, .fchip, .seg button, .chips button, .jf-mark, .bk-fix).pressing { transform: scale(.94); transition-duration: .08s }
+:is(.tabs a, .nav-i).pressing { transform: scale(.92); transition-duration: .08s }
+:is(.row, .bk-row, .drive-card, .tm-stats a, .chk-item, .cal .c).pressing { transform: scale(.985); transition: transform .08s }
+:is(.row, .bk-row, .cal .c) { transition: transform .3s var(--spring), background .15s }
+.ibtn, .drive-card, .tm, .cal .c { position: relative; overflow: hidden }
+.fx-ripple { position: absolute; border-radius: 50%; pointer-events: none; z-index: 0; background: radial-gradient(closest-side, var(--ripple), transparent);
+  transform: scale(0); opacity: 1; animation: fxrip .6s cubic-bezier(.2, .7, .2, 1) forwards }
+:is(.btn:not(.ghost), .seg button.on, .fchip.on, .bk-fix) > .fx-ripple { background: radial-gradient(closest-side, rgba(255, 255, 255, .45), transparent) }
+@keyframes fxrip { to { transform: scale(1); opacity: 0 } }
+@media (prefers-reduced-motion: reduce) { .fx-ripple { display: none } .pressing { transform: none !important } }
+
+/* Drives: one card per drive, with how much of it is backed up */
+.list-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; animation: rise .4s var(--ease) .03s both }
+.list-tools:empty { display: none }
+.list-tools .fchip { display: inline-flex; align-items: center; gap: 6px; text-decoration: none } .list-tools .fchip .dot { width: 8px; height: 8px }
+#listSub b { color: var(--danger) }
+.hub-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px }
+.hub-list > * { animation: rise .4s var(--ease) both; animation-delay: calc(var(--i, 0) * 30ms) }
+.drive-card { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 16px 16px 14px; color: var(--fg); text-decoration: none }
+.drive-card .hub.drive { width: 22px; height: 22px }
+.drive-card.has-un { border-left: 3px solid var(--danger) }
+.dc-main { display: flex; flex-direction: column; gap: 3px; min-width: 0 }
+.dc-main b { font-size: 17px; line-height: 22px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.dc-main small { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.dc-bar { display: block; height: 4px; margin-top: 8px; border-radius: 2px; background: color-mix(in srgb, var(--danger) 55%, transparent); overflow: hidden }
+.drive-card:not(.has-un) .dc-bar { background: var(--surface-2) }
+.dc-bar i { display: block; height: 100%; border-radius: 2px; background: linear-gradient(90deg, color-mix(in srgb, var(--ok) 70%, transparent), var(--ok)); box-shadow: 0 0 8px color-mix(in srgb, var(--ok) 60%, transparent);
+  transform-origin: left; animation: dcfill .9s var(--ease) .15s both }
+@keyframes dcfill { from { transform: scaleX(0) } }
+.dc-st { display: flex; flex-direction: column; align-items: flex-end; gap: 0; text-align: right }
+.dc-st em { font-style: normal; font-size: 22px; line-height: 26px; font-weight: 700 } .dc-st small { font-size: 11px; color: var(--muted); white-space: nowrap }
+.hub-list .hubrow { grid-column: 1 / -1 }
+.bk-fix { padding: 3px 10px !important; font-size: 12px !important; min-height: 0 !important; line-height: 18px }
+.bk-row .bk-fix { margin-right: 2px }
+
+@media (max-width: 899px) {
+  /* the five tabs are the roots: no back arrow on them */
+  body:is([data-route="calendar"], [data-route="backup"], [data-route="team"], [data-route="drives"]) .top .back { display: none !important }
+  .hub-list { grid-template-columns: minmax(0, 1fr); gap: 10px }
+  .drive-card { padding: 14px 14px 12px }
+  .facts { padding: 0 14px }
+  .rows, .bk-rows { margin: 0 -4px }
+}
+/* a list made of groups or cards is not itself a panel */
+#listRows:is(:has(> .bk-group), :has(> .hub-list), :has(> p), :empty) { background: none; border: 0; box-shadow: none; overflow: visible; margin: 0; border-radius: 0 }
+#listRows > .bk-group:last-child { margin-bottom: 0 }

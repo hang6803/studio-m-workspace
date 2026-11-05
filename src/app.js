@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.8.1";
+const APP_VER = "0.8.2";
 const $ = id => document.getElementById(id);
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
 const DEMO = !CFG.apiUrl;
@@ -110,18 +110,21 @@ const crewOf = s => String(s.crew || "").split(",").map(x => x.trim()).filter(Bo
 function toast(text, label, fn) {
   const t = $("toast"); t.textContent = text;
   if (label) { const b = document.createElement("button"); b.type = "button"; b.className = "toast-act"; b.textContent = label; b.onclick = () => { t.hidden = true; fn(); }; t.append(b); }
+  if (/^(Couldn't|Can't|Failed|Error|No connection)|failed|not saved/i.test(text)) fx("err");
   t.hidden = false; t.classList.remove("in"); void t.offsetWidth; t.classList.add("in"); clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, label ? 5000 : 2400); }
 function range(from, to) {   // every day from..to (max 31), as YYYY-MM-DD
   const a = parseYmd(from), b = parseYmd(to || from); if (!a || !b || b < a) return a ? [from] : [];
   const out = []; for (const d = new Date(a); d <= b && out.length < 31; d.setDate(d.getDate() + 1)) out.push(ymd(d));
   return out;
 }
-const buzz = () => { if (navigator.vibrate) try { navigator.vibrate(8); } catch (x) {} };
+const fx = k => { if (window.UIFx) UIFx(k); else if (navigator.vibrate) try { navigator.vibrate(8); } catch (x) {} };   // sound + haptic, see fx.js
+const buzz = k => fx(k || "toggle");
 
 // ---------------------------------------------------------------- Backup rules (the same as the Backup page)
 // Video and Photo of one job are two rows ("Wedding" and "Wedding · Photo", same year and name). A row counts as
 // backed up only when it AND its twin are; FullHD / link don't change the colour.
 const drivesOf = r => String(r.drive || "").split(/\s*,\s*/).filter(Boolean);
+const dName = d => d === "未知" ? "Unknown" : d;   // the Sheet's placeholder drive, shown in English
 const sectionOf = r => r.section || "Event";
 const baseOf = sec => String(sec).replace(/ · Photo$/, "");
 const isPhotoSec = sec => / · Photo$/.test(String(sec));
@@ -295,7 +298,7 @@ function parse(h) {
 const hrefOf = n => n.kind === "drive" ? "#/drive/" + encodeURIComponent(n.key) : n.kind === "editor" ? "#/editor/" + encodeURIComponent(n.key)
   : n.kind === "shoot" ? "#/calendar/" + encodeURIComponent(n.date || "") : "#/job/" + encodeURIComponent(n.key);
 const TITLES = { calendar: "Calendar", team: "Team", unbacked: "Not backed up", drives: "Drives", settings: "Settings", backup: "Backup", classic: "Classic Backup" };
-addEventListener("hashchange", () => { if (session) render(false); });
+addEventListener("hashchange", () => { if (session) { fx("nav"); render(false); } });
 // Page changes cross-fade and slide (View Transitions where the system has them); the sidebar marker glides to the new place
 function render(first) {
   const next = parse(location.hash);
@@ -310,18 +313,18 @@ function paint() {
   document.querySelectorAll(".view").forEach(s => { s.hidden = s.id !== "v-" + v; });
   $("main").scrollTop = 0; $("views").scrollTop = 0;
   $("meMenu").hidden = true;
-  $("topTitle").textContent = route.name === "drive" || route.name === "editor" ? route.key : route.name === "job" ? "Job" : TITLES[route.name] || "";
+  $("topTitle").textContent = route.name === "drive" ? dName(route.key) : route.name === "editor" ? route.key : route.name === "job" ? "Job" : TITLES[route.name] || "";
   document.body.dataset.route = route.name;
   markNav();
   if (v === "home") { graph.start(); graph.theme(); graph.reset(); } else if (graph) graph.stop();
-  if (v === "list") drawList();
+  if (v === "list") { const lk = route.name + ":" + route.key; if (lk !== drawList.key) { drawList.key = lk; listUn = false; } drawList(); }
   if (v === "job") drawJob();
   if (v === "calendar") { if (route.key && parseYmd(route.key)) { selDay = route.key; const d = parseYmd(route.key); calY = d.getFullYear(); calM = d.getMonth(); } drawCal(); }
   if (v === "backup") drawBackup(true);
   if (v === "classic" || v === "backup") loadBackup();   // Backup saves through Classic Backup, kept ready in the background
   if (v === "team") drawTeam();
   shownView = v;
-  if (v === "settings") { drawTheme(); drawAI(); drawVoice(); }
+  if (v === "settings") { drawTheme(); drawAI(); drawVoice(); drawFx(); }
 }
 function markNav() {
   const key = route.name === "drive" || route.name === "editor" ? route.name + ":" + route.key : route.name === "job" ? "" : route.name === "classic" ? "backup" : route.name;
@@ -376,7 +379,7 @@ function editorsIn(y) {
 function drawSide() {
   const un = rowsOf(gYear).filter(unbacked).length;
   $("nUn").textContent = un || ""; $("nUn").hidden = !un;
-  $("sideDrives").innerHTML = drivesIn(gYear).map(d => `<a class="nav-i sub" href="#/drive/${encodeURIComponent(d.name)}" data-r="drive:${esc(d.name)}"><span class="hub drive" aria-hidden="true"></span><span>${esc(d.name)}</span>
+  $("sideDrives").innerHTML = drivesIn(gYear).map(d => `<a class="nav-i sub" href="#/drive/${encodeURIComponent(d.name)}" data-r="drive:${esc(d.name)}"><span class="hub drive" aria-hidden="true"></span><span>${esc(dName(d.name))}</span>
     <span class="mini" aria-hidden="true"><i class="ok" style="height:${Math.round(14 * (d.n - d.un) / Math.max(1, d.n))}px"></i><i class="no" style="height:${Math.round(14 * d.un / Math.max(1, d.n))}px"></i></span><em>${d.n}</em></a>`).join("")
     || `<p class="side-empty">No drives in ${esc(gYear)}</p>`;
   $("sideEds").innerHTML = editorsIn(gYear).map(e => `<a class="nav-i sub" href="#/editor/${encodeURIComponent(e.name)}" data-r="editor:${esc(e.name)}"><span class="hub ed" aria-hidden="true">${esc(initials(e.name))}</span><span>${esc(e.name)}</span>${e.un ? `<em class="red">${e.un}</em>` : ""}</a>`).join("");
@@ -410,7 +413,7 @@ function graphData(y) {
   rowsOf(y).forEach(r => {
     const j = { id: "j:" + r.id, key: r.id, kind: "job", label: r.name + (isPhotoSec(sectionOf(r)) ? " · Photo" : ""), status: unbacked(r) ? "no" : "ok" };
     add(j);
-    drivesOf(r).forEach(d => { add({ id: "d:" + d, key: d, kind: "drive", label: d }); links.push({ a: j.id, b: "d:" + d }); });
+    drivesOf(r).forEach(d => { add({ id: "d:" + d, key: d, kind: "drive", label: dName(d) }); links.push({ a: j.id, b: "d:" + d }); });
     if (r.editor) { add({ id: "e:" + r.editor, key: r.editor, kind: "editor", label: r.editor, short: initials(r.editor) }); links.push({ a: j.id, b: "e:" + r.editor }); }
   });
   shoots.filter(s => !s.jobId && datesOf(s).some(d => d >= today && d.slice(0, 4) === y)).forEach(s => {
@@ -485,45 +488,89 @@ function jobRow(r, hide) {
   const un = unbacked(r);
   return `<div class="row" data-job="${esc(r.id)}"><i class="dot ${un ? "red" : "green"}" title="${un ? "Not backed up" : "Backed up"}"></i>
     <a class="r-name" href="#/job/${encodeURIComponent(r.id)}">${esc(r.name)}<small>${esc(sectionOf(r))}</small></a>
-    <span class="r-links">${hide !== "drive" ? drivesOf(r).map(d => `<a href="#/drive/${encodeURIComponent(d)}">${esc(d)}</a>`).join("") : ""}${hide !== "editor" && r.editor ? `<a href="#/editor/${encodeURIComponent(r.editor)}">${esc(r.editor)}</a>` : ""}</span>
+    <span class="r-links">${hide !== "drive" ? drivesOf(r).map(d => `<a href="#/drive/${encodeURIComponent(d)}">${esc(dName(d))}</a>`).join("") : ""}${hide !== "editor" && r.editor ? `<a href="#/editor/${encodeURIComponent(r.editor)}">${esc(r.editor)}</a>` : ""}</span>
     <span class="r-date">${esc(fmtShort(r.date))}</span></div>`;
 }
 function hubRow(kind, o) {
   return `<a class="row hubrow" href="#/${kind}/${encodeURIComponent(o.name)}"><span class="hub ${kind === "drive" ? "drive" : "ed"}">${kind === "editor" ? esc(initials(o.name)) : ""}</span>
-    <span class="r-name">${esc(o.name)}<small>${o.n} ${o.n === 1 ? "job" : "jobs"}</small></span><span class="r-links">${o.un ? `<em class="red">${o.un} not backed up</em>` : `<em>All backed up</em>`}</span></a>`;
+    <span class="r-name">${esc(kind === "drive" ? dName(o.name) : o.name)}<small>${o.n} ${o.n === 1 ? "job" : "jobs"}</small></span><span class="r-links">${o.un ? `<em class="red">${o.un} not backed up</em>` : `<em>All backed up</em>`}</span></a>`;
 }
 function setBar(n, un) {
   const b = $("listBar"); b.hidden = !n; if (!n) return;
   const [ok, no] = b.children; ok.style.flexGrow = n - un; no.style.flexGrow = un;
 }
+// A drive's page is its label: what's on it, from when to when, who edited, what still needs backing up, and a list to copy.
+// A person's page is the same for their jobs. Jobs show once (Video + Photo together), newest first, grouped by month or year.
+let listUn = false;
+function spanOf(rs) {
+  const ds = rs.map(r => String(r.date || "").slice(0, 10)).filter(d => parseYmd(d)).sort();
+  if (!ds.length) return "";
+  const a = parseYmd(ds[0]), z = parseYmd(ds[ds.length - 1]);
+  return ds[0].slice(0, 7) === ds[ds.length - 1].slice(0, 7) ? `${MON[a.getMonth()]} ${a.getFullYear()}` : `${MON[a.getMonth()]}${a.getFullYear() !== z.getFullYear() ? " " + a.getFullYear() : ""} – ${MON[z.getMonth()]} ${z.getFullYear()}`;
+}
+function monthOf(r) { const d = parseYmd(String(r.date || "").slice(0, 10)); return d ? `${MON[d.getMonth()]} ${d.getFullYear()}` : "No date"; }
+function listText(title, js) {   // plain text for the drive's label or a message
+  return [title, ...js.map(j => { const r = j.main; return [fmtShort(r.date), splitJob(r).title, ["video", "photo"].filter(k => j[k]).map(k => (k === "video" ? "Video" : "Photo") + (selfUnbacked(j[k]) ? " (not backed up)" : "")).join(" + "), r.editor].filter(Boolean).join(" — "); })].join("\n");
+}
 function drawList() {
-  const k = route.key; let title = "", sub = "", ico = "", html = "", n = 0, un = 0;
+  const k = route.key; let title = "", sub = "", ico = "", html = "", n = 0, un = 0, tools = "";
   if (route.name === "drive" || route.name === "editor") {
-    const rs = (data.rows || []).filter(r => route.name === "drive" ? drivesOf(r).includes(k) : r.editor === k).sort(byDate);
-    n = rs.length; un = rs.filter(unbacked).length;
-    title = k; ico = route.name === "drive" ? ICON.drive : `<span class="hub ed big">${esc(initials(k))}</span>`;
-    sub = n ? `${n} ${n === 1 ? "job" : "jobs"}, ${un ? un + " not backed up" : "all backed up"}` : "No jobs yet";
-    // grouped by year, newest first: one drive is one year, an editor spans years
-    const ys = [...new Set(rs.map(r => String(r.year)))].sort().reverse();
-    html = ys.map(y => (ys.length > 1 ? `<h3 class="grp">${esc(y)}</h3>` : "") + rs.filter(r => String(r.year) === y).map(r => jobRow(r, route.name)).join("")).join("");
+    const drive = route.name === "drive";
+    const rs = (data.rows || []).filter(r => drive ? drivesOf(r).includes(k) : r.editor === k).sort(byDate);
+    const all = jobsOf(rs), js = listUn ? all.filter(j => j.un) : all;
+    n = all.length; un = all.filter(j => j.un).length;
+    title = drive ? dName(k) : k; ico = drive ? ICON.drive : `<span class="hub ed big">${esc(initials(k))}</span>`;
+    const eds = drive ? [...new Set(rs.map(r => r.editor).filter(Boolean))] : [], drvs = drive ? [] : [...new Set(rs.flatMap(drivesOf))];
+    sub = n ? [`${n} ${n === 1 ? "job" : "jobs"}`, un ? `<b class="red">${un} not backed up</b>` : `<span class="green">all backed up</span>`, spanOf(rs)].filter(Boolean).join(" · ") : "No jobs yet";
+    const who = drive ? (eds.length ? `<span class="muted small">Edited by</span>${eds.map(e => `<a class="fchip" href="#/editor/${encodeURIComponent(e)}">${esc(e)}</a>`).join("")}` : "")
+      : (drvs.length ? `<span class="muted small">On</span>${drvs.slice(0, 8).map(d => `<a class="fchip" href="#/drive/${encodeURIComponent(d)}">${esc(dName(d))}</a>`).join("")}` : "");
+    tools = `<div class="list-tools">${who}<span class="spacer"></span>${un ? `<button type="button" class="fchip${listUn ? " on" : ""}" id="listUn" aria-pressed="${listUn}"><i class="dot red"></i>Not backed up</button>` : ""}<button type="button" class="fchip" id="listCopy" data-title="${esc(title)}">Copy list</button></div>`;
+    // a drive: by month (one drive is about one year); a person: by year
+    const keyOf = drive ? monthOf : (j => String(j.year || "No year"));
+    const groups = []; js.forEach(j => { const g = keyOf(j.main), last = groups[groups.length - 1]; if (last && last[0] === g) last[1].push(j); else groups.push([g, [j]]); });
+    const num = numbers();
+    html = groups.map(([g, l]) => `<section class="bk-group"><h3 class="bk-gh">${esc(g)}<span>${l.length} ${l.length === 1 ? "job" : "jobs"}</span></h3><div class="bk-rows">${l.map((j, i) => jobCard(j, i, { num, hide: route.name })).join("")}</div></section>`).join("")
+      || `<p class="muted">${listUn ? "Everything here is backed up." : "Nothing here yet."}</p>`;
+    drawList.copy = () => listText(title + (spanOf(rs) ? " (" + spanOf(rs) + ")" : ""), all);
   } else if (route.name === "unbacked") {
-    const rs = rowsOf(gYear).filter(unbacked).sort(byDate);
-    n = un = rs.length; title = "Not backed up"; ico = ICON.unbacked;
-    sub = n ? `${n} in ${gYear}. Each one turns green once it and its Video or Photo twin are backed up.` : `Everything in ${gYear} is backed up.`;
-    html = rs.map(r => jobRow(r)).join(""); setBar(0, 0); n = 0;
+    const js = jobsOf(rowsOf(gYear).sort(byDate)).filter(j => j.un);
+    title = "Not backed up"; ico = ICON.unbacked;
+    sub = js.length ? `${js.length} in ${gYear}. A job turns green once its Video and Photo are both backed up.` : `Everything in ${gYear} is backed up.`;
+    const num = numbers();
+    html = js.length ? `<div class="bk-rows">${js.map((j, i) => jobCard(j, i, { num })).join("")}</div>` : "";
   } else if (route.name === "drives") {
-    const ds = drivesIn(gYear); title = "Drives"; ico = ICON.drives; sub = `${ds.length} in ${gYear}`;
-    html = ds.map(d => hubRow("drive", d)).join("");
+    const ds = drivesIn(gYear); title = "Drives"; ico = ICON.drives;
+    sub = `${ds.length} in ${gYear}. A drive is where a job's footage lives: open one to see what's on it.`;
+    html = `<div class="hub-list">${ds.map((d, i) => driveCard(d, gYear, i)).join("")}</div>`;
+    // jobs with no drive at all don't sit under any drive: show them here so "All backed up" never hides them
+    const none = jobsOf(rowsOf(gYear).filter(r => !drivesOf(r).length));
+    if (none.length) { const u = none.filter(j => j.un).length;
+      html += `<a class="row hubrow" href="#/backup"><span class="hub drive none"></span><span class="r-name">No drive<small>${none.length} ${none.length === 1 ? "job" : "jobs"} without a drive yet</small></span><span class="r-links">${u ? `<em class="red">${u} not backed up</em>` : `<em>All backed up</em>`}</span></a>`; }
   } else {
     const es = editorsIn(gYear); title = "Team"; ico = ICON.team; sub = `${team.length} people. Jobs counted for ${gYear}.`;
     html = es.map(e => hubRow("editor", e)).join("");
   }
-  $("listTitle").textContent = title; $("listSub").textContent = sub; $("listIco").innerHTML = ico;
+  $("listTitle").textContent = title; $("listSub").innerHTML = sub; $("listIco").innerHTML = ico;
   setBar(n, un);
+  $("listTools").innerHTML = tools;
   $("listRows").innerHTML = html || `<p class="muted">Nothing here yet.</p>`;
 }
+// a drive in the Drives list: its jobs, how far it's backed up, the months it covers, who edited
+function driveCard(d, y, i) {
+  const rs = rowsOf(y).filter(r => drivesOf(r).includes(d.name)), js = jobsOf(rs), u = js.filter(j => j.un).length, eds = [...new Set(rs.map(r => r.editor).filter(Boolean))];
+  const pct = js.length ? Math.round(100 * (js.length - u) / js.length) : 100;
+  return `<a class="drive-card${u ? " has-un" : ""}" style="--i:${i || 0}" href="#/drive/${encodeURIComponent(d.name)}"><span class="hub drive"></span>
+    <span class="dc-main"><b>${esc(dName(d.name))}</b><small>${js.length} ${js.length === 1 ? "job" : "jobs"}${spanOf(rs) ? " · " + esc(spanOf(rs)) : ""}${eds.length ? " · " + esc(eds.join(", ")) : ""}</small>
+    <span class="dc-bar" aria-hidden="true"><i style="width:${pct}%"></i></span></span>
+    <span class="dc-st">${u ? `<em class="red">${u}</em><small>not backed up</small>` : `<em class="green">✓</em><small>all backed up</small>`}</span></a>`;
+}
+$("v-list").addEventListener("click", e => {
+  if (e.target.closest("#listUn")) { listUn = !listUn; buzz(); drawList(); return; }
+  const c = e.target.closest("#listCopy");
+  if (c && drawList.copy) { const t = drawList.copy(); (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast("List copied. Paste it on the drive's label or in a message."), () => toast("Couldn't copy here.")); buzz(); }
+});
 document.addEventListener("click", e => {   // a whole job row opens the job; its own links still go where they point
-  const r = e.target.closest(".row[data-job]"); if (!r || e.target.closest("a")) return;
+  const r = e.target.closest(".row[data-job], .bk-row[data-job]"); if (!r || e.target.closest("a, button") || r.closest("#bkList")) return;
   location.hash = "#/job/" + encodeURIComponent(r.dataset.job);
 });
 
@@ -533,14 +580,14 @@ function drawJob() {
   if (!r) { v.innerHTML = `<div class="page-head"><div><h1>Job not found</h1><p class="muted">It may have been deleted. <a href="#/home">Back to Home</a></p></div></div>`; return; }
   const un = unbacked(r), tw = twinOf(r), drives = drivesOf(r);
   const fact = (k, val) => val ? `<dt>${k}</dt><dd>${val}</dd>` : "";
-  const sameDrive = (data.rows || []).filter(x => x.id !== r.id && (!tw || x.id !== tw.id) && drivesOf(x).some(d => drives.includes(d))).sort(byDate).slice(0, 8);
+  const sameDrive = (data.rows || []).filter(x => x.id !== r.id && (!tw || x.id !== tw.id) && drivesOf(x).some(d => drives.includes(d))).sort(byDate).slice(0, 16);
   const sameEd = r.editor ? (data.rows || []).filter(x => x.id !== r.id && (!tw || x.id !== tw.id) && x.editor === r.editor && String(x.year) === String(r.year)).sort(byDate).slice(0, 8) : [];
   const safeUrl = u => /^https?:\/\//i.test(String(u || "")) ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>` : esc(u);
   v.innerHTML = `<div class="page-head"><span class="page-ico"><span class="hub ${un ? "red" : "green"} big"></span></span><div><h1>${esc(r.name)}</h1>
       <p class="muted">${esc(sectionOf(r))}, ${esc(r.year)}. <span class="${un ? "red" : "green"}">${un ? "Not backed up" : "Backed up"}</span></p></div></div>
     <dl class="facts">
       ${fact("Date", esc(fmtShort(r.date)))}
-      ${fact("Drive", drives.map(d => `<a href="#/drive/${encodeURIComponent(d)}">${esc(d)}</a>`).join(", ") || "—")}
+      ${fact("Drive", drives.map(d => `<a href="#/drive/${encodeURIComponent(d)}">${esc(dName(d))}</a>`).join(", ") || "—")}
       ${fact("Editor", r.editor ? `<a href="#/editor/${encodeURIComponent(r.editor)}">${esc(r.editor)}</a>` : "—")}
       ${fact("Backed up", selfUnbacked(r) ? "Not yet" : esc([r.backedUp && r.backedUp !== true ? r.backedUp : "", r.backupDate ? fmtShort(r.backupDate) : ""].filter(Boolean).join(", ") || "Yes"))}
       ${tw ? fact(kindLabel(tw), `<a href="#/job/${encodeURIComponent(tw.id)}">${esc(tw.name)} · ${kindLabel(tw)}</a> <span class="${selfUnbacked(tw) ? "red" : "green"}">${selfUnbacked(tw) ? "not backed up" : "backed up"}</span>`) : ""}
@@ -548,8 +595,8 @@ function drawJob() {
       ${fact("Link", r.link ? safeUrl(r.link) : "")}
     </dl>
     <div class="actions" style="justify-content:flex-start"><button type="button" class="btn" data-job-edit="${esc(r.id)}">${un ? "Edit or mark backed up" : "Edit job"}</button></div>
-    ${sameDrive.length ? `<h3 class="grp">Also on ${esc(drives.join(", "))}</h3><div class="rows">${sameDrive.map(x => jobRow(x, "drive")).join("")}</div>` : ""}
-    ${sameEd.length ? `<h3 class="grp">Also edited by ${esc(r.editor)} in ${esc(r.year)}</h3><div class="rows">${sameEd.map(x => jobRow(x, "editor")).join("")}</div>` : ""}`;
+    ${sameDrive.length ? `<h3 class="grp">Also on ${esc(drives.map(dName).join(", "))}</h3><div class="bk-rows">${jobsOf(sameDrive).slice(0, 6).map((j, i) => jobCard(j, i, { hide: "drive" })).join("")}</div>` : ""}
+    ${sameEd.length ? `<h3 class="grp">Also edited by ${esc(r.editor)} in ${esc(r.year)}</h3><div class="bk-rows">${jobsOf(sameEd).slice(0, 6).map((j, i) => jobCard(j, i, { hide: "editor" })).join("")}</div>` : ""}`;
 }
 
 // ---------------------------------------------------------------- calendar
@@ -782,6 +829,21 @@ function hl(text, ts) {
   const re = new RegExp("(" + ts.map(t => esc(t).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")", "gi");
   return h.split(/(&[#\w]+;)/).map(p => p.startsWith("&") ? p : p.replace(re, "<mark>$1</mark>")).join("");
 }
+// one job (its Video and Photo rows) as Backup draws it; used by Backup, a drive, a person and a job's neighbours
+function jobCard(j, i, o) {
+  o = o || {}; const ts = o.ts || [], num = o.num || numbers();
+  const r = j.main, w = whenOf(r), t = splitJob(r).title, no = num.get(r.id);
+    const st = k => j[k] ? `<span class="md ${selfUnbacked(j[k]) ? "no" : "ok"}" title="${k === "video" ? "Video" : "Photo"}: ${!j[k].backupDate && !j[k].backedUp ? "not backed up" : "backed up" + (j[k].backupDate ? " " + esc(fmtDates([j[k].backupDate])) : "")}">${k === "video" ? "Video" : "Photo"}</span>` : "";
+    const drives = [...new Set(j.rows.flatMap(drivesOf))];
+    const meta = [w.place && hl(w.place, ts), o.hide !== "editor" && r.editor && `<a href="#/editor/${encodeURIComponent(r.editor)}">${hl(r.editor, ts)}</a>`, r.notes && `<span class="bk-notes">${hl(r.notes, ts)}</span>`].filter(Boolean).join(" · ");
+    return `<div class="bk-row${j.un ? " un" : ""}" data-job="${esc(r.id)}" tabindex="0" role="link" style="--i:${Math.min(i, 14)}">
+      <span class="bk-no">${no ? String(no).padStart(2, "0") : ""}</span>
+      <span class="bk-main"><b>${hl(t, ts)}</b>${meta ? `<small>${meta}</small>` : ""}${w.list ? `<ol class="bk-parts">${w.parts.map((p, k) => `<li><span>${ROMAN(k + 1)}.</span>${hl([p.date ? fmtDates([p.date]) : "", p.label].filter(Boolean).join(" · "), ts)}</li>`).join("")}</ol>` : ""}</span>
+      <span class="bk-when">${hl(w.when, ts)}</span>
+      <span class="bk-media">${st("video")}${st("photo")}</span>
+      <span class="bk-drv">${j.un ? `<button type="button" class="btn sm bk-fix" data-job-edit="${esc(r.id)}">Back up</button>` : ""}${o.hide === "drive" ? "" : drives.map(d => `<a href="#/drive/${encodeURIComponent(d)}">${hl(dName(d), ts)}</a>`).join("") || '<span class="muted small">No drive</span>'}</span>
+    </div>`;
+  }
 function drawBackup(first) {
   if (!session) return;
   const rows = bkRows(), ys = bkYears();
@@ -800,19 +862,7 @@ function drawBackup(first) {
   if (!cats.includes(bk.cat)) bk.cat = cats[0] || null;
   $("bkCats").hidden = searching || bk.un;
   $("bkCats").innerHTML = cats.map(c => { const js = jobsOf(inYear.filter(r => baseOf(sectionOf(r)) === c)); return `<button type="button" role="tab" data-c="${esc(c)}" aria-selected="${c === bk.cat}">${esc(c)}<span>${js.length}</span>${js.some(j => j.un) ? '<i class="dot red"></i>' : ""}</button>`; }).join("");
-  const row = (j, i) => {
-    const r = j.main, w = whenOf(r), t = splitJob(r).title, no = num.get(r.id);
-    const st = k => j[k] ? `<span class="md ${selfUnbacked(j[k]) ? "no" : "ok"}" title="${k === "video" ? "Video" : "Photo"}: ${!j[k].backupDate && !j[k].backedUp ? "not backed up" : "backed up" + (j[k].backupDate ? " " + esc(fmtDates([j[k].backupDate])) : "")}">${k === "video" ? "Video" : "Photo"}</span>` : "";
-    const drives = [...new Set(j.rows.flatMap(drivesOf))];
-    const meta = [w.place && hl(w.place, ts), r.editor && `<a href="#/editor/${encodeURIComponent(r.editor)}">${hl(r.editor, ts)}</a>`, r.notes && `<span class="bk-notes">${hl(r.notes, ts)}</span>`].filter(Boolean).join(" · ");
-    return `<div class="bk-row${j.un ? " un" : ""}" data-job="${esc(r.id)}" tabindex="0" role="link" style="--i:${Math.min(i, 14)}">
-      <span class="bk-no">${no ? String(no).padStart(2, "0") : ""}</span>
-      <span class="bk-main"><b>${hl(t, ts)}</b>${meta ? `<small>${meta}</small>` : ""}${w.list ? `<ol class="bk-parts">${w.parts.map((p, k) => `<li><span>${ROMAN(k + 1)}.</span>${hl([p.date ? fmtDates([p.date]) : "", p.label].filter(Boolean).join(" · "), ts)}</li>`).join("")}</ol>` : ""}</span>
-      <span class="bk-when">${hl(w.when, ts)}</span>
-      <span class="bk-media">${st("video")}${st("photo")}</span>
-      <span class="bk-drv">${drives.map(d => `<a href="#/drive/${encodeURIComponent(d)}">${hl(d === "未知" ? "Unknown" : d, ts)}</a>`).join("") || '<span class="muted small">No drive</span>'}</span>
-    </div>`;
-  };
+  const row = (j, i) => jobCard(j, i, { num, ts });
   const sortJ = js => bk.desc ? js.slice().reverse() : js;
   const head = (title, n, jump) => `<h3 class="bk-gh">${jump ? `<button type="button" class="bk-jump" data-y="${esc(title)}">${esc(title)}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>` : esc(title)}<span>${n} ${n === 1 ? "job" : "jobs"}</span></h3>`;
   const sortBtn = `<button type="button" class="btn ghost sm bk-sort" id="bkSort" aria-label="Sort">${bk.desc ? "Newest first" : "Oldest first"}</button>`;
@@ -857,7 +907,7 @@ $("bkList").addEventListener("click", e => {
   const y = e.target.closest(".bk-jump"); if (y) { bk.year = y.dataset.y; $("bkQ").value = ""; buzz(); drawBackup(); $("views").scrollTop = 0; return; }
   if (e.target.closest("#bkAll")) { bk.all = true; return drawBackup(); }
   if (e.target.closest("#bkNew2")) return newJob();
-  if (e.target.closest("a")) return;
+  if (e.target.closest("a, [data-job-edit]")) return;
   const r = e.target.closest("[data-job]"); if (r) location.hash = "#/job/" + encodeURIComponent(r.dataset.job);
 });
 $("bkList").addEventListener("keydown", e => { const r = e.target.closest("[data-job]"); if (r && e.key === "Enter") location.hash = "#/job/" + encodeURIComponent(r.dataset.job); });
@@ -934,7 +984,7 @@ function openJob(r, pre) {
   const live = r && classicState().ready ? classicJob(r.id) : null;
   if (live) jfFill(live.r, live.tw, live.no, null, live.sig);
   else jfFill(r, r ? twinOf(r) : null, r ? numbers().get(r.id) || "" : "", pre, "");
-  $("jobScrim").hidden = false; buzz();
+  $("jobScrim").hidden = false; fx("open");
   jfConn();
   if (matchMedia("(hover: hover)").matches) (r ? $("jfName") : $("jfName").value ? $("jfCat") : $("jfName")).focus();
 }
@@ -960,7 +1010,7 @@ function jfFill(r, tw, no, pre, sig) {
   $("jfTypeLbl").textContent = r ? "Job type" : "What does this job have?";
   jfType(); jfDrives();
 }
-function closeJob(force) { if (jf && jf.busy && !force) return; $("jobScrim").hidden = true; if (jf) clearTimeout(jf.t); jf = null; }
+function closeJob(force) { if (jf && jf.busy && !force) return; if (!$("jobScrim").hidden) fx("close"); $("jobScrim").hidden = true; if (jf) clearTimeout(jf.t); jf = null; }
 function normLink(v) {
   v = String(v || "").trim(); if (!v) return "";
   if (!/^https?:\/\//i.test(v)) v = "https://" + v.replace(/^\/+/, "");
@@ -1059,7 +1109,11 @@ $("jfCfmNo").addEventListener("click", () => { $("jfCfm").hidden = true; $("jfAc
 $("jfCfmYes").addEventListener("click", jfDelete);
 function newJob(pre) { openJob(null, pre && pre.name != null ? pre : null); }
 $("bkNew").addEventListener("click", () => newJob());
-document.addEventListener("click", e => { const b = e.target.closest("[data-job-edit]"); if (!b) return; openJob((data.rows || []).find(x => x.id === b.dataset.jobEdit) || null); });
+document.addEventListener("click", e => { const b = e.target.closest("[data-job-edit]"); if (!b) return; openJob((data.rows || []).find(x => x.id === b.dataset.jobEdit) || null);
+  if (b.classList.contains("bk-fix") && jf) {   // "Back up" on a row: the form opens with the missing halves ticked, ready for the drive and Save
+    document.querySelectorAll("#jfMarks .jf-mark:not(.done):not(.on)").forEach(m => m.click());
+    const box = $("jfMarkBox"); if (box && !box.hidden) setTimeout(() => box.scrollIntoView({ block: "center", behavior: STILL ? "auto" : "smooth" }), 320);
+  } });
 
 // Check data: the same name twice (same year and category), or backed up with no drive or no editor
 let chkScope = "year";
@@ -1381,7 +1435,7 @@ function showM() {
 function centerOf(el) { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height }; }
 function openM(text) {
   if (mOpen) { if (text != null) setInput(text); $("aiIn").focus(); return; }
-  mOpen = true; buzz(); status("");
+  mOpen = true; fx("open"); status("");
   if (mAnim) { mAnim.forEach(a => a.cancel()); mAnim = null; }
   const b = $("mBtn"), p = $("mPanel"), from = centerOf(b);
   anchorPanel(); p.hidden = false; b.setAttribute("aria-expanded", "true"); document.body.classList.add("m-open");
@@ -1404,7 +1458,7 @@ function openM(text) {
 }
 function closeM(now) {
   if (!mOpen) return;
-  mOpen = false; $("mpHist").hidden = true; $("histBtn").setAttribute("aria-expanded", "false");
+  mOpen = false; fx("close"); $("mpHist").hidden = true; $("histBtn").setAttribute("aria-expanded", "false");
   const b = $("mBtn"), p = $("mPanel");
   b.setAttribute("aria-expanded", "false"); document.body.classList.remove("m-open");
   if (mAnim) mAnim.forEach(a => a.cancel());
@@ -1495,7 +1549,7 @@ function drawHits() {
   hits = [];
   if (q.length >= 2 && !/^add a shoot/i.test(q)) {
     const has = s => String(s || "").toLowerCase().includes(lq);
-    yearsAll().reverse().flatMap(drivesIn).filter(d => has(d.name)).slice(0, 3).forEach(d => hits.push({ kind: "drive", label: d.name, sub: `${d.n} jobs${d.un ? ", " + d.un + " not backed up" : ""}`, href: "#/drive/" + encodeURIComponent(d.name) }));
+    yearsAll().reverse().flatMap(drivesIn).filter(d => has(d.name)).slice(0, 3).forEach(d => hits.push({ kind: "drive", label: dName(d.name), sub: `${d.n} jobs${d.un ? ", " + d.un + " not backed up" : ""}`, href: "#/drive/" + encodeURIComponent(d.name) }));
     team.filter(has).forEach(n => hits.push({ kind: "editor", label: n, sub: "Editor", href: "#/editor/" + encodeURIComponent(n) }));
     findJobs(q, 5).forEach(r => hits.push({ kind: unbacked(r) ? "no" : "ok", label: r.name + (isPhotoSec(sectionOf(r)) ? " · Photo" : ""), sub: [r.drive, r.editor, fmtShort(r.date)].filter(Boolean).join(", "), href: "#/job/" + encodeURIComponent(r.id) }));
     shoots.filter(s => has(s.name) || has(s.location)).slice(0, 2).forEach(s => hits.push({ kind: "shoot", label: s.name, sub: datesOf(s).map(fmtDay).join(", "), href: "#/calendar/" + encodeURIComponent(datesOf(s)[0] || "") }));
@@ -1544,6 +1598,7 @@ function fillBot(d, m, i, live) {
     b.children[1].onclick = () => openShoot({ dates: ymd(new Date()) }); box.appendChild(b); }
 }
 async function ask(text) {
+  fx("send");
   if (rec) { const r = rec; rec = null; r.onend = null; r.abort(); $("micBtn").classList.remove("on"); }
   if (streaming) return;
   $("hits").hidden = true;
@@ -1660,6 +1715,17 @@ function scenes(on) {
 window.scenesOpen = on => { const f = $("scenes"); if (f) f.classList.toggle("open", on); };
 
 // ---------------------------------------------------------------- settings
+function drawFx() {
+  const F = window.UIFx; if (!F) return;
+  const on = (id, v) => document.querySelectorAll(`#${id} button`).forEach(b => b.classList.toggle("on", b.dataset.v === (v ? "1" : "0")));
+  on("sndSeg", F.sound()); on("hapSeg", F.haptics());
+  $("hapSeg").hidden = $("hapLbl").hidden = !F.canFeel;
+}
+["sndSeg", "hapSeg"].forEach(id => $(id).addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b || !window.UIFx) return; const v = b.dataset.v === "1";
+  if (id === "sndSeg") UIFx.sound(v); else UIFx.haptics(v);
+  drawFx(); if (v) UIFx(id === "sndSeg" ? "ok" : "toggle");
+}));
 function drawTheme() { const t = document.documentElement.getAttribute("data-theme"); document.querySelectorAll("#themeSeg button").forEach(b => b.classList.toggle("on", b.dataset.t === t)); }
 $("themeSeg").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
@@ -1748,7 +1814,7 @@ function halo() {
   let s0 = 0, best = Infinity;
   for (let i = 0; i < 240; i++) { const t = (i / 240) * P, q = probe.getPointAtLength(t), dd = (q.x - cx) ** 2 + (q.y - cy) ** 2; if (dd < best) { best = dd; s0 = t; } }
   const opp = probe.getPointAtLength((s0 + P / 2) % P); probe.remove();
-  haloOn = true; mood("happy");
+  haloOn = true; mood("happy"); fx("ok");
   if (STILL) {   // reduced motion: the edge lights once, nothing travels
     const pa = mk(2, 0); pa.animate([{ opacity: 0 }, { opacity: .9 }, { opacity: 0 }], { duration: 700 }).onfinish = () => { svg.remove(); haloOn = false; };
     return;

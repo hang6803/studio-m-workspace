@@ -215,6 +215,7 @@ writeFileSync(at("dist/index.html"), shell.replace("<!--M_CONFIG-->", `<script>w
 copyFileSync(at("src/app.js"), at("dist/app.js"));
 copyFileSync(at("src/app.css"), at("dist/app.css"));
 copyFileSync(at("src/graph.js"), at("dist/graph.js"));
+copyFileSync(at("src/fx.js"), at("dist/fx.js"));
 copyFileSync(at("vendor/backup/xiaom.js"), at("dist/xiaom.js"));
 writeFileSync(at("dist/backup.html"), backup);
 
@@ -223,7 +224,7 @@ mkdirSync(at("dist/icons"), { recursive: true });
 for (const f of ["icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png"]) copyFileSync(at("src/icons/" + f), at("dist/icons/" + f));
 copyFileSync(at("src/manifest.webmanifest"), at("dist/manifest.webmanifest"));
 const shellHash = createHash("sha256");
-for (const f of ["index.html", "app.js", "app.css", "graph.js", "xiaom.js", "backup.html", "manifest.webmanifest"]) shellHash.update(readFileSync(at("dist/" + f)));
+for (const f of ["index.html", "app.js", "app.css", "fx.js", "graph.js", "xiaom.js", "backup.html", "manifest.webmanifest"]) shellHash.update(readFileSync(at("dist/" + f)));
 const ver = JSON.parse(read("package.json")).version + "-" + shellHash.digest("hex").slice(0, 8);
 writeFileSync(at("dist/sw.js"), read("src/sw.js").replace("__M_VER__", ver));
 console.log("BUILD_OK", api.apiUrl ? "live" : "demo", Buffer.byteLength(backup));
