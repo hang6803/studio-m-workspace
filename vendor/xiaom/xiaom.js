@@ -22,6 +22,13 @@
 /* light: key light from the upper left. Fronts get a sheen (lit top-left, shaded bottom-right), round edges are shaded by the way they face, 小M casts a soft shadow */
 .m25s .m25lit { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(60% 50% at 26% 20%, rgba(255, 255, 255, .5), rgba(255, 255, 255, 0) 70%), linear-gradient(135deg, rgba(255, 255, 255, .22) 0%, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, .42) 100%); -webkit-mask-size: 100% 100%; mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat }
 .m25-scene .m25sh { position: absolute; left: -120px; top: -66px; width: 240px; height: 132px; border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, .62), rgba(0, 0, 0, .25) 55%, transparent); transform: translate3d(34px, 99px, -18px) rotateX(90deg) skewX(-18deg) }
+.m25 .m25sh2, .m25-scene .m25sh2 { position: absolute; left: -100px; top: -26px; width: 200px; height: 52px; border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, .55), rgba(0, 0, 0, .2) 70%, transparent); transform: translate3d(4px, 99px, 6px) rotateX(90deg) }
+.m25 .m25sh2 { transform: translate3d(4px, 90px, 6px) rotateX(90deg) }
+.m25-scene .m25psh { position: absolute; border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, .55), rgba(0, 0, 0, .18) 65%, transparent) }
+/* each scene can light its own way: sunset behind (hang), moon + street lamp (mun), golden sky (michael) */
+.m25-light.l-sunset { background: radial-gradient(70% 55% at 62% 40%, rgba(255, 170, 90, .22), transparent 70%), radial-gradient(140% 120% at 50% 45%, transparent 45%, rgba(10, 6, 20, .55) 100%) }
+.m25-light.l-night { background: radial-gradient(45% 40% at 80% 8%, rgba(190, 210, 255, .16), transparent 70%), radial-gradient(40% 55% at 26% 40%, rgba(255, 200, 120, .16), transparent 70%), radial-gradient(140% 120% at 50% 45%, transparent 40%, rgba(0, 4, 18, .6) 100%) }
+.m25-light.l-gold { background: radial-gradient(90% 70% at 50% 30%, rgba(255, 220, 150, .2), transparent 65%), radial-gradient(140% 120% at 50% 45%, transparent 50%, rgba(10, 14, 40, .45) 100%) }
 .m25-light { position: absolute; inset: 0; pointer-events: none; overflow: hidden; border-radius: inherit; background: radial-gradient(120% 90% at 22% 8%, rgba(255, 236, 210, .22), transparent 55%), radial-gradient(140% 120% at 50% 45%, transparent 45%, rgba(0, 0, 0, .5) 100%) }
 /* festival / birthday scenes on the app's 229x200 card: the model is 2.6x the card, so the world is scaled back down */
 .m25-scene { position: absolute; inset: 0; perspective: 840px; perspective-origin: 114px 118px; pointer-events: none }
@@ -347,7 +354,7 @@
   64.5%{transform:skewX(30deg) scale(.02,.08) rotateZ(-20deg)}65%,100%{transform:scale(0)}}
 .m25s .f-banw{animation:x5fBanW 5.6s linear both}
 @keyframes x5fBanW{0%,47%{transform:none;animation-timing-function:cubic-bezier(.6,0,.9,.6)}56%{transform:skewX(14deg) scale(.85,.9) rotateZ(-6deg)}63%{transform:skewX(26deg) scale(.4,.55) rotateZ(-14deg)}67%{transform:scale(0) rotateZ(-30deg)}68%,100%{transform:scale(0)}}
-.m25s .gban{white-space:nowrap;padding:8px 18px;background:var(--orange);color:#141414;border:4px solid #141414;border-radius:8px;transform-origin:50% 0;font-weight:800;font-size:21px;letter-spacing:.06em}
+.m25s .gban{white-space:nowrap;padding:8px 18px;background:var(--orange);color:#141414;border:4px solid #141414;border-radius:8px;transform-origin:50% 0;font-weight:800;font-size:21px;letter-spacing:.06em;background-image:linear-gradient(180deg,rgba(255,255,255,.28),rgba(255,255,255,0) 45%,rgba(0,0,0,.18));box-shadow:0 8px 16px rgba(0,0,0,.35),inset 0 2px 0 rgba(255,255,255,.4),inset 0 -3px 0 rgba(0,0,0,.2)}
 .m25s .f-banw .gban{animation:x5fBan 5.6s ease-out both}
 @keyframes x5fBan{0%,16%{transform:scaleY(0)}21%{transform:scaleY(1.1)}24%,41%{transform:none}44%{transform:skewX(-8deg)}47%{transform:skewX(6deg)}50%{transform:skewX(-10deg)}53%,100%{transform:skewX(4deg)}}
 .m25s .f-booG{font-weight:800;font-size:46px;color:var(--orange);opacity:0;animation:x5fBooG 5.6s ease-out both}
@@ -435,9 +442,11 @@
     }
   }
   // a prop placed by its spot on the app's 229x200 card: at=[left,top,width(,height)]
-  function prop(parent,{mk,vb,at,d=6,tp=1,z=0,ox=.5,oy=.5,axis,cls='',o=[.5,.5],delay}){
+  function prop(parent,{mk,vb,at,d=6,tp=1,z=0,ox=.5,oy=.5,axis,cls='',o=[.5,.5],delay,sh}){
     const w=at[2]*U,h=(at[3]||at[2]*vb[3]/vb[2])*U;
     const outer=el('abs','transform:translate3d('+X(at[0])+'px,'+Y(at[1])+'px,'+z+'px)',parent);
+    // sh: a soft shadow on the ground under the prop (sh = how far below its bottom the ground is, in card px)
+    if(sh!=null)el('m25psh','left:'+(-w*.1+w*.08)+'px;top:'+(h+sh*U-(d*.6+12))+'px;width:'+(w*1.2)+'px;height:'+(d*1.2+24)+'px;transform:rotateX(90deg)',outer);
     const g=el('abs '+cls,'transform-origin:'+(o[0]*w)+'px '+(o[1]*h)+'px 0'+(delay!=null?';animation-delay:'+delay+'s':''),outer);
     extrude(g,{mk,vb,w,h,d,tp,ox,oy,axis});
     return g;
@@ -676,10 +685,11 @@
       flat(scene,{at:[-120,-60,470,330],z:200,cls:'kflash'});}
   };
   // ---------- per-person birthday scenes (picked by name; others use the 12 rotating ones) ----------
-  const CAKE_SVG='<svg viewBox="40 66 40 46" width="100%" height="100%"><path d="M60 69 C56.5 74 56.5 77.5 60 79 C63.5 77.5 63.5 74 60 69 Z" fill="#f48020" stroke="#141414" stroke-width="1"/><rect x="58" y="79" width="4" height="13" rx="1" fill="#fff" stroke="#141414" stroke-width="1"/><rect x="42" y="94" width="36" height="16" rx="3" fill="#fff" stroke="#141414" stroke-width="1.8"/><path d="M42 98 Q42 92 46 92 H74 Q78 92 78 98 Q74 102 70 98 Q66 103 62 98 Q58 103 54 98 Q50 103 46 98 Q44 101 42 98 Z" fill="#f48020" stroke="#141414" stroke-width="1.5" stroke-linejoin="round"/></svg>';
+  const CAKE_SVG='<svg viewBox="40 66 40 46" width="100%" height="100%"><path d="M60 69 C56.5 74 56.5 77.5 60 79 C63.5 77.5 63.5 74 60 69 Z" fill="#f48020" stroke="#141414" stroke-width="1"/><rect x="58" y="79" width="4" height="13" rx="1" fill="#fff" stroke="#141414" stroke-width="1"/><defs><linearGradient id="xmCakeLit" x1="0" y1="0" x2="1" y2=".4"><stop offset="0" stop-color="#fff" stop-opacity=".35"/><stop offset=".45" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".32"/></linearGradient></defs><rect x="42" y="94" width="36" height="16" rx="3" fill="#fff" stroke="#141414" stroke-width="1.8"/><rect x="42" y="94" width="36" height="16" rx="3" fill="url(#xmCakeLit)"/><path d="M42 98 Q42 92 46 92 H74 Q78 92 78 98 Q74 102 70 98 Q66 103 62 98 Q58 103 54 98 Q50 103 46 98 Q44 101 42 98 Z" fill="#f48020" stroke="#141414" stroke-width="1.5" stroke-linejoin="round"/><path d="M42 98 Q42 92 46 92 H74 Q78 92 78 98 Q74 102 70 98 Q66 103 62 98 Q58 103 54 98 Q50 103 46 98 Q44 101 42 98 Z" fill="url(#xmCakeLit)"/><path d="M46 95 H62" stroke="#fff" stroke-opacity=".7" stroke-width="1.2" stroke-linecap="round"/></svg>';
   const PERSON={
     // Hang：山海。远景慢慢推近舟上小M 的背影 → 转身，尴尬三条杠 + 傻笑 → 把蛋糕丢向屏幕前的你
     hang(name){
+      light='l-sunset';
       flat(scene,{at:[-160,-110,550,330],z:-320,css:'background:linear-gradient(#141a2e 0%,#2b2742 42%,#7a4a4a 64%,#f48020 78%,#f6b26b 84%)'});
       flat(scene,{at:[134,84,44],z:-300,css:'border-radius:50%;background:radial-gradient(circle,#fff6e0 0 40%,#f9c784 60%,transparent 72%)'});
       const far=el('abs h-far','transform-origin:'+X(114)+'px '+Y(130)+'px 0',scene);
@@ -703,6 +713,7 @@
     },
     // Mun：夜深人静的公园。路灯闪灭 → 鬼脸扑向镜头 → 小M 吓跳 → 吸尘器狂吸 → 爆开 → 巨型蛋糕砸下、灯亮
     mun(name){
+      light='l-night';
       const w=el('abs u-shake','transform-origin:0 0 0',scene);
       flat(w,{at:[-160,-110,550,330],z:-320,css:'background:linear-gradient(#070b18 0%,#111a33 55%,#1c2540 100%)'});
       [[20,20],[60,8],[96,30],[140,12],[200,26],[34,56],[176,50],[118,4]].forEach(([x,y],i)=>flat(w,{at:[x,y,3],z:-300,cls:'s-tw',css:'animation-delay:'+i*.37+'s'}));
@@ -711,7 +722,7 @@
       flat(w,{at:[-120,150,470,90],z:-60,css:'background:linear-gradient(#18261c,#0f1912);border-top:2px solid #22341f'});
       flat(w,{at:[16,40,90,150],z:-50,cls:'u-lamp',css:'background:radial-gradient(ellipse 50% 70% at 50% 8%,rgba(255,214,140,.4),transparent 70%)'});
       flat(w,{at:[52,30,22,140],z:-40,html:'<svg viewBox="0 0 22 140" width="100%" height="100%"><rect x="9" y="14" width="4" height="126" fill="#2c3242"/><path d="M3 8 H19 L16 16 H6 Z" fill="#2c3242"/><circle class="u-lamp" cx="11" cy="17" r="4" fill="#ffe2a8"/></svg>'});
-      prop(w,{vb:[0,0,70,30],at:[150,150,64],d:60,tp:1,axis:'y',oy:.5,z:-30,mk:'<rect x="2" y="2" width="66" height="5" rx="2" fill="#5a3a24" stroke="#141414" stroke-width="1"/><rect x="2" y="12" width="66" height="5" rx="2" fill="#5a3a24" stroke="#141414" stroke-width="1"/><path d="M8 17 V30 M62 17 V30" stroke="#2c3242" stroke-width="3"/>'});
+      prop(w,{vb:[0,0,70,30],at:[150,150,64],d:60,tp:1,axis:'y',oy:.5,z:-30,sh:0,mk:'<rect x="2" y="2" width="66" height="5" rx="2" fill="#5a3a24" stroke="#141414" stroke-width="1"/><rect x="2" y="12" width="66" height="5" rx="2" fill="#5a3a24" stroke="#141414" stroke-width="1"/><path d="M8 17 V30 M62 17 V30" stroke="#2c3242" stroke-width="3"/>'});
       prop(w,{...P.GHOST,at:[156,70,52,62],d:84,tp:0,z:-20,cls:'u-ghost',o:[.5,1]});
       const r=el('abs u-rumble','',w);
       const a=M(r,{left:30,top:84,cls:'u-me'});
@@ -735,6 +746,7 @@
     },
     // Michael：山峰云海。闪电 → 巨龙贴镜头飞过 → 小M 乘龙俯冲落地（冲击波、云爆）→ 金光中举起蛋糕 → 横幅砸下
     michael(name){
+      light='l-gold';
       const dragon=(parent,big)=>{
         flat(parent,{at:[196,160,30,22],z:-10,html:'<svg viewBox="0 0 30 22" width="100%" height="100%"><path d="M2 10 Q14 2 28 2 Q22 10 28 20 Q14 18 2 12 Z" fill="#fff" stroke="#141414" stroke-width="1.5" stroke-linejoin="round"/></svg>'});
         for(let i=0;i<8;i++)flat(parent,{at:[184-i*17,168,20,20],z:-6+i,cls:'m-seg',css:'--dl:'+(-i*.17)+'s',html:'<svg viewBox="0 -4 20 24" width="100%" height="100%"><circle cx="10" cy="10" r="9" fill="#f48020" stroke="#141414" stroke-width="1.5"/><path d="M3 13 Q10 18 17 13" fill="none" stroke="#fff" stroke-width="2.4"/><path d="M6 2 L10 -3 L14 2" fill="#fff" stroke="#141414" stroke-width="1"/></svg>'});
@@ -835,13 +847,14 @@
       '<g transform="translate(84 58) scale(2) translate(-60 -64)"><path class="scr-heart" d="M60 72 C52 66 50 60 54 57 C57 55 59 57 60 59 C61 57 63 55 66 57 C70 60 68 66 60 72 Z" fill="#f48020"/></g>' +
       '<g class="scr-rec"><circle cx="62" cy="56" r="6" fill="#f48020"/><text x="74" y="63" font-size="20" font-weight="800" fill="#fff" font-family="Century Gothic,system-ui,sans-serif">REC</text></g>' +
       '<text class="scr-num" x="84" y="68" text-anchor="middle" font-size="30" font-weight="800" fill="#fff" font-family="Century Gothic,system-ui,sans-serif"></text></svg>';
-    slab(m, { w: 104, h: 104, r: '50%', depth: 6, z: F + 3, front: DEEP, side: DEEP }); rim(m, { w: 103, h: 103, r: 51.5, depth: 5, z: F + 3, color: DEEP, n: 6 });
+    slab(m, { w: 104, h: 104, r: '50%', depth: 6, z: F + 3, front: 'linear-gradient(135deg, color-mix(in srgb, ' + DEEP + ', #fff 22%), ' + DEEP + ' 50%, color-mix(in srgb, ' + DEEP + ', #000 35%))', side: DEEP }); rim(m, { w: 103, h: 103, r: 51.5, depth: 5, z: F + 3, color: DEEP, n: 6 });
     rim(m, { w: 91, h: 91, r: 45.5, depth: 15, z: F + 8, color: '#dcdcdc', n: 6 });
     const id = 'm25c' + (++uid);
     slab(m, { w: 92, h: 92, r: '50%', depth: 16, z: F + 8, front: '#ffffff', side: '#dcdcdc', html: '<svg width="92" height="92" viewBox="37 47 46 46" style="position:absolute;inset:0;overflow:visible"><defs><clipPath id="' + id + '"><circle cx="60" cy="70" r="23"/></clipPath>' +
       '<radialGradient id="' + id + 'w" cx=".4" cy=".35" r=".7"><stop offset=".55" stop-color="#fff"/><stop offset="1" stop-color="#c9c9c9"/></radialGradient>' +
       '<radialGradient id="' + id + 'p" cx=".38" cy=".32" r=".75"><stop offset="0" stop-color="#3a3a3a"/><stop offset=".7" stop-color="#141414"/><stop offset="1" stop-color="#000"/></radialGradient></defs>' +
-      '<circle cx="60" cy="70" r="23" fill="url(#' + id + 'w)"/><circle cx="60" cy="70" r="22" fill="none" stroke="#000" stroke-opacity=".12" stroke-width="2"/>' +
+      '<circle cx="60" cy="70" r="23" fill="url(#' + id + 'w)"/><circle cx="60" cy="70" r="22" fill="none" stroke="#000" stroke-opacity=".14" stroke-width="2"/>' +
+      '<path d="M41 76 A20 20 0 0 1 66 50.8" fill="none" stroke="#000" stroke-opacity=".16" stroke-width="5" stroke-linecap="round"/>' +
       '<g class="cm-pupil"><circle cx="60" cy="70" r="12" fill="url(#' + id + 'p)"/><circle cx="64" cy="65" r="3.5" fill="#fff"/><circle cx="56.5" cy="74" r="1.5" fill="#fff"/></g>' +
       '<path d="M44 60 A18 18 0 0 1 58 50" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".9"/>' +
       '<rect class="cm-lid" x="36" y="46" width="48" height="48" fill="#f48020" clip-path="url(#' + id + ')"/></svg>' });
@@ -852,7 +865,7 @@
     const s = size / 100, cx = left + size * .5, cy = top + size * .615;
     const pos = el('abs', 'transform:translate3d(' + X(cx) + 'px,' + Y(cy) + 'px,0) scale3d(' + s + ',' + s + ',' + s + ')', parent);
     const act = el('abs ' + cls, 'transform-origin:0 99px 0' + (delay != null ? ';animation-delay:' + delay + 's' : ''), pos);
-    el('m25sh', '', act);
+    el('m25sh', '', act); el('m25sh2', '', act);
     build(el('abs cm-body', '', el('abs cm-all', '', act)), hat, hold);
     return act;
   }
@@ -867,7 +880,7 @@
     const root = document.createElement("div");
     root.className = "cam-svg m25s m25" + (back ? " cam-back" : ""); root.setAttribute("role", "img"); root.setAttribute("aria-label", label);
     const w = el("abs m25w", "", el("m25v", "", root));
-    el("m25sh", "", w);
+    el("m25sh", "", w); el("m25sh2", "", w);
     build(el("abs cm-body", "", el("abs cm-all", "", el("abs m25r", "", el("abs m25t", "", w)))), hat, hold);
     return root.outerHTML.replace(/<\/div>$/, OVER + "</div>");
   }
@@ -887,10 +900,10 @@
     }, 280);
   }
   // ov: full-card 2D layers (flashes, blackouts, jump scares) kept outside the 3D world so no 3D plane can cut through them
-  let ov = null;
+  let ov = null, light = '';
   function stage(fn) {
-    scene = document.createElement("div"); scene.className = "abs"; ov = [];
-    try { fn(); return `<div class="m25s m25-scene"><div class="m25sw">${scene.outerHTML}</div></div>` + `<div class="m25-light"></div>` + (ov.length ? `<div class="m25s m25-ov">${ov.join("")}</div>` : ""); } finally { scene = null; ov = null; }
+    scene = document.createElement("div"); scene.className = "abs"; ov = []; light = '';
+    try { fn(); return `<div class="m25s m25-scene"><div class="m25sw">${scene.outerHTML}</div></div>` + `<div class="m25-light${light ? ' ' + light : ''}"></div>` + (ov.length ? `<div class="m25s m25-ov">${ov.join("")}</div>` : ""); } finally { scene = null; ov = null; }
   }
 
   // browsers without tan(atan2()) in CSS: size each 小M to its box from here
