@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.8.3";
+const APP_VER = "0.8.4";
 const $ = id => document.getElementById(id);
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
 const DEMO = !CFG.apiUrl;
@@ -14,6 +14,9 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
 };
 const STILL = matchMedia("(prefers-reduced-motion: reduce)").matches;
+// the phone keyboard: pop-ups size themselves to the part of the screen above it
+if (window.visualViewport) { const vv = visualViewport, fit = () => { const r = document.documentElement.style; r.setProperty("--vvh", vv.height + "px"); r.setProperty("--vvtop", vv.offsetTop + "px"); };
+  vv.addEventListener("resize", fit); vv.addEventListener("scroll", fit); fit(); }
 let session = null;   // { name, token } — kept only in memory, so closing the app always asks for the PIN again
 
 // ---------------------------------------------------------------- API
@@ -824,6 +827,14 @@ function numbers() {   // No. within year + category, in the Sheet's order (as B
   return n;
 }
 const bkYears = () => [...new Set([String(new Date().getFullYear()), ...(data.rows || []).map(r => String(r.year || ""))].filter(Boolean))].sort().reverse();
+// the Backup page's own tabs: one per section (Event, Event · Photo, Corporate …), each with its own numbers
+function secsIn(list) {
+  const pos = {};
+  list.forEach(r => { const s = sectionOf(r), sec = r.sec != null && r.sec !== "" && isFinite(+r.sec) ? +r.sec : null, k = sec ?? 99 + (SECTIONS.indexOf(s) + 1 || 50); if (!(s in pos) || k < pos[s]) pos[s] = k; });
+  return Object.keys(pos).sort((a, b) => pos[a] - pos[b] || a.localeCompare(b));
+}
+// one card per row of a section; its badges still show both halves (Video and its Photo twin)
+const secJobs = rs => rs.map(r => { const j = jobsOf([r, twinOf(r)].filter(Boolean))[0]; return { ...j, main: r }; });
 function catsIn(list) {
   const pos = {};
   // the order Backup gives its sections (r.sec, or 99 + its place in SECTIONS), each category placed where its first section is
@@ -902,10 +913,10 @@ function drawBackup(first) {
   const ts = bkTerms(), searching = ts.length > 0, num = numbers();
   $("bkScope").hidden = !searching; $("bkScope").querySelector('[data-v="year"]').textContent = "Only " + bk.year;
   $("bkScope").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === bk.scope));
-  const cats = catsIn(inYear);
+  const cats = secsIn(inYear);
   if (!cats.includes(bk.cat)) bk.cat = cats[0] || null;
   $("bkCats").hidden = searching || bk.un;
-  $("bkCats").innerHTML = cats.map(c => { const js = jobsOf(inYear.filter(r => baseOf(sectionOf(r)) === c)); return `<button type="button" role="tab" data-c="${esc(c)}" aria-selected="${c === bk.cat}">${esc(c)}<span>${js.length}</span>${js.some(j => j.un) ? '<i class="dot red"></i>' : ""}</button>`; }).join("");
+  $("bkCats").innerHTML = cats.map(c => { const js = secJobs(inYear.filter(r => sectionOf(r) === c)); return `<button type="button" role="tab" data-c="${esc(c)}" aria-selected="${c === bk.cat}">${esc(c)}<span>${js.length}</span>${js.some(j => j.un) ? '<i class="dot red"></i>' : ""}</button>`; }).join("");
   const row = (j, i) => jobCard(j, i, { num, ts });
   const sortJ = js => bk.desc ? js.slice().reverse() : js;
   const head = (title, n, jump) => `<h3 class="bk-gh">${jump ? `<button type="button" class="bk-jump" data-y="${esc(title)}">${esc(title)}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>` : esc(title)}<span>${n} ${n === 1 ? "job" : "jobs"}</span></h3>`;
@@ -919,14 +930,14 @@ function drawBackup(first) {
       + (shown.length < hits.length ? `<button type="button" class="btn ghost" id="bkAll">Show all ${hits.length}</button>` : "")
       : `<div class="bk-empty">Nothing matches “${esc($("bkQ").value.trim())}”${bk.scope === "year" ? ` in ${esc(bk.year)}` : ""}.</div>`;
   } else if (bk.un) {
-    const js = jobsOf(inYear).filter(j => j.un);
+    const js = secJobs(inYear.filter(unbacked));
     filt = `<button type="button" class="fchip on" id="bkUnOff">Not backed up in ${esc(bk.year)} ✕</button>${js.length > 1 ? sortBtn : ""}`;
-    html = cats.map(c => [c, js.filter(j => baseOf(sectionOf(j.main)) === c)]).filter(([, l]) => l.length).map(([c, l]) => `<section class="bk-group">${head(c, l.length)}<div class="bk-rows">${sortJ(l).map(row).join("")}</div></section>`).join("");
+    html = cats.map(c => [c, js.filter(j => sectionOf(j.main) === c)]).filter(([, l]) => l.length).map(([c, l]) => `<section class="bk-group">${head(c, l.length)}<div class="bk-rows">${sortJ(l).map(row).join("")}</div></section>`).join("");
   } else {
-    const inCat = inYear.filter(r => baseOf(sectionOf(r)) === bk.cat);
+    const inCat = inYear.filter(r => sectionOf(r) === bk.cat);
     const drives = [...new Set(inCat.flatMap(drivesOf))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     if (bk.drive && !drives.includes(bk.drive)) bk.drive = null;
-    const js = jobsOf(inCat).filter(j => !bk.drive || j.rows.some(r => drivesOf(r).includes(bk.drive)));
+    const js = secJobs(inCat).filter(j => !bk.drive || drivesOf(j.main).includes(bk.drive));
     filt = (drives.length > 1 ? `<span class="muted small">Drives</span>${drives.map(d => `<button type="button" class="fchip${bk.drive === d ? " on" : ""}" data-drive="${esc(d)}" aria-pressed="${bk.drive === d}">${esc(d === "未知" ? "Unknown" : d)}</button>`).join("")}` : "") + (js.length > 1 ? sortBtn : "");
     html = js.length ? `<div class="bk-rows">${sortJ(js).map(row).join("")}</div>` : `<div class="bk-empty">No jobs in ${esc(bk.year)} yet. <button type="button" class="btn sm" id="bkNew2">+ New job</button></div>`;
   }
@@ -1026,7 +1037,7 @@ function jfSetParts(ps) {
   $("jfParts").innerHTML = ps.map((p, i) => `<div class="jf-part">${many ? `<span class="jf-pn">${ROMAN(i + 1)}.</span>` : ""}<input type="date" value="${esc(p.date || "")}" aria-label="Day ${i + 1}"><input class="jf-pl" value="${esc(p.label || "")}" placeholder="Note, e.g. venue" aria-label="Day ${i + 1} note">${many ? `<button type="button" class="ibtn sm jf-rm" data-i="${i}" aria-label="Remove day ${i + 1}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>` : ""}</div>`).join("");
 }
 function jfCats() {
-  const st = classicState(), cur = $("jfCat").value || (jf.r ? baseOf(sectionOf(jf.r)) : bk.cat || "Event");
+  const st = classicState(), cur = $("jfCat").value || (jf.r ? baseOf(sectionOf(jf.r)) : baseOf(bk.cat || "Event"));
   const l = st.ready && st.cats && st.cats.length ? st.cats.slice() : [...new Set([...SECTIONS, ...(data.rows || []).map(sectionOf)].map(baseOf))];
   if (!l.includes(cur)) l.push(cur);
   $("jfCat").innerHTML = l.map(c => `<option${c === cur ? " selected" : ""}>${esc(c)}</option>`).join("");
@@ -1161,7 +1172,7 @@ async function jfSave(force) {
   closeJob(); buzz();
   toast(res.queued ? "Saved on this device. It syncs when the connection is back." : marked ? `Marked backed up: ${name}` : r ? `Saved: ${name}` : `Added to ${res.year || jfYear()}: ${name}`);
   halo();
-  if (!r && res.year) { bk.year = String(res.year); bk.cat = p.cat; }
+  if (!r && res.year) { bk.year = String(res.year); bk.cat = p.type === "photo" ? p.cat + " · Photo" : p.cat; }
   await refresh();
 }
 async function jfDelete() {
@@ -1564,9 +1575,11 @@ function openM(text) {
   if (mAnim) mAnim.forEach(a => a.cancel());
   if (STILL) { b.style.visibility = "hidden"; $("mpAv").style.visibility = ""; $("aiIn").focus(); return; }
   $("mpAv").style.visibility = "hidden";
-  const big = Math.hypot(Math.max(cx, pr.width - cx), Math.max(cy, pr.height - cy));
+  const big = Math.hypot(Math.max(cx, pr.width - cx), Math.max(cy, pr.height - cy)), ph = phoneW();
   mAnim = [
-    p.animate([{ clipPath: `circle(${from.w / 2}px at ${cx}px ${cy}px)` }, { clipPath: `circle(${big}px at ${cx}px ${cy}px)` }], { duration: 460, easing: "cubic-bezier(.2,.8,.2,1)" }),
+    // phone: grows out of 小M with transform + opacity only (drawn by the GPU, no repaint of the whole screen each frame)
+    ph ? p.animate([{ transform: "scale(.12)", opacity: 0, borderRadius: "40px", transformOrigin: `${cx}px ${cy}px` }, { transform: "none", opacity: 1, borderRadius: "0px", transformOrigin: `${cx}px ${cy}px` }], { duration: 420, easing: "cubic-bezier(.2,.8,.2,1)" })
+      : p.animate([{ clipPath: `circle(${from.w / 2}px at ${cx}px ${cy}px)` }, { clipPath: `circle(${big}px at ${cx}px ${cy}px)` }], { duration: 460, easing: "cubic-bezier(.2,.8,.2,1)" }),
     p.animate([{ opacity: .4 }, { opacity: 1 }], { duration: 220, easing: "ease-out" }),
     // 小M hops in an arc up into the chat's header and shrinks to the size of the avatar there
     b.animate([{ transform: "none" },
@@ -1574,7 +1587,7 @@ function openM(text) {
       { transform: `translate(${av.x - from.x}px, ${av.y - from.y}px) scale(${av.w / from.w})` }], { duration: 460, easing: "cubic-bezier(.3,.7,.3,1)" })
   ];
   mAnim[2].onfinish = () => { b.style.visibility = "hidden"; $("mpAv").style.visibility = ""; act($("mpAv"), "land", 450); };
-  setTimeout(() => $("aiIn").focus({ preventScroll: true }), 120);
+  if (!phoneW()) setTimeout(() => $("aiIn").focus({ preventScroll: true }), 120);   // phone: the keyboard comes up when you tap the box, not mid-animation
 }
 function closeM(now) {
   if (!mOpen) return;
@@ -1587,7 +1600,8 @@ function closeM(now) {
   const big = Math.hypot(Math.max(cx, pr.width - cx), Math.max(cy, pr.height - cy));
   $("mpAv").style.visibility = "hidden";
   mAnim = [
-    p.animate([{ clipPath: `circle(${big}px at ${cx}px ${cy}px)`, opacity: 1 }, { clipPath: `circle(${to.w / 2}px at ${cx}px ${cy}px)`, opacity: .3 }], { duration: 360, easing: "cubic-bezier(.5,0,.75,0)" }),
+    phoneW() ? p.animate([{ transform: "none", opacity: 1, transformOrigin: `${cx}px ${cy}px` }, { transform: "scale(.12)", opacity: 0, borderRadius: "40px", transformOrigin: `${cx}px ${cy}px` }], { duration: 320, easing: "cubic-bezier(.5,0,.75,0)" })
+      : p.animate([{ clipPath: `circle(${big}px at ${cx}px ${cy}px)`, opacity: 1 }, { clipPath: `circle(${to.w / 2}px at ${cx}px ${cy}px)`, opacity: .3 }], { duration: 360, easing: "cubic-bezier(.5,0,.75,0)" }),
     b.animate([{ transform: `translate(${av.x - to.x}px, ${av.y - to.y}px) scale(${av.w / to.w})` },
       { transform: `translate(${(av.x - to.x) * .5}px, ${(av.y - to.y) * .5 - 30}px) scale(.8)`, offset: .5 }, { transform: "none" }], { duration: 420, easing: "cubic-bezier(.3,.7,.3,1)" })
   ];
