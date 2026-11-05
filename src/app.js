@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.8.2";
+const APP_VER = "0.8.3";
 const $ = id => document.getElementById(id);
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
 const DEMO = !CFG.apiUrl;
@@ -321,7 +321,7 @@ function paint() {
   if (v === "job") drawJob();
   if (v === "calendar") { if (route.key && parseYmd(route.key)) { selDay = route.key; const d = parseYmd(route.key); calY = d.getFullYear(); calM = d.getMonth(); } drawCal(); }
   if (v === "backup") drawBackup(true);
-  if (v === "classic" || v === "backup") loadBackup();   // Backup saves through Classic Backup, kept ready in the background
+  if (v === "classic") loadBackup(); else if (v === "backup" && !backupLoaded) (window.requestIdleCallback || (g => setTimeout(g, 600)))(() => { if (session) loadBackup(); }, { timeout: 1500 });   // after the list has drawn   // Backup saves through Classic Backup, kept ready in the background
   if (v === "team") drawTeam();
   shownView = v;
   if (v === "settings") { drawTheme(); drawAI(); drawVoice(); drawFx(); }
@@ -539,13 +539,17 @@ function drawList() {
     const num = numbers();
     html = js.length ? `<div class="bk-rows">${js.map((j, i) => jobCard(j, i, { num })).join("")}</div>` : "";
   } else if (route.name === "drives") {
-    const ds = drivesIn(gYear); title = "Drives"; ico = ICON.drives;
-    sub = `${ds.length} in ${gYear}. A drive is where a job's footage lives: open one to see what's on it.`;
-    html = `<div class="hub-list">${ds.map((d, i) => driveCard(d, gYear, i)).join("")}</div>`;
-    // jobs with no drive at all don't sit under any drive: show them here so "All backed up" never hides them
-    const none = jobsOf(rowsOf(gYear).filter(r => !drivesOf(r).length));
-    if (none.length) { const u = none.filter(j => j.un).length;
-      html += `<a class="row hubrow" href="#/backup"><span class="hub drive none"></span><span class="r-name">No drive<small>${none.length} ${none.length === 1 ? "job" : "jobs"} without a drive yet</small></span><span class="r-links">${u ? `<em class="red">${u} not backed up</em>` : `<em>All backed up</em>`}</span></a>`; }
+    // every year, newest first: a jump strip on top, then each year's drives as cards
+    const ys = bkYears().filter(y => rowsOf(y).length); title = "Drives"; ico = ICON.drives;
+    let total = 0;
+    html = ys.map(y => {
+      const ds = drivesIn(y); total += ds.length;
+      const none = jobsOf(rowsOf(y).filter(r => !drivesOf(r).length)), nu = none.filter(j => j.un).length, un = jobsOf(rowsOf(y)).filter(j => j.un).length;
+      return `<section class="bk-group dv-year" id="dy-${y}"><h3 class="bk-gh">${y}<span>${ds.length} ${ds.length === 1 ? "drive" : "drives"}${un ? ` · <b class="red">${un} not backed up</b>` : ""}</span></h3>
+        <div class="hub-list">${ds.map((d, i) => driveCard(d, y, i)).join("")}${none.length ? `<a class="row hubrow" href="#/backup"><span class="hub drive none"></span><span class="r-name">No drive<small>${none.length} ${none.length === 1 ? "job" : "jobs"} without a drive yet</small></span><span class="r-links">${nu ? `<em class="red">${nu} not backed up</em>` : `<em>All backed up</em>`}</span></a>` : ""}</div></section>`;
+    }).join("");
+    sub = `${total} drives from ${ys[ys.length - 1] || ""} to ${ys[0] || ""}. A drive is where a job's footage lives: open one to see what's on it.`;
+    tools = ys.length > 1 ? `<div class="list-tools dv-years">${ys.map(y => `<button type="button" class="fchip" data-dy="${y}">${y}${jobsOf(rowsOf(y)).some(j => j.un) ? '<i class="dot red"></i>' : ""}</button>`).join("")}</div>` : "";
   } else {
     const es = editorsIn(gYear); title = "Team"; ico = ICON.team; sub = `${team.length} people. Jobs counted for ${gYear}.`;
     html = es.map(e => hubRow("editor", e)).join("");
@@ -566,11 +570,15 @@ function driveCard(d, y, i) {
 }
 $("v-list").addEventListener("click", e => {
   if (e.target.closest("#listUn")) { listUn = !listUn; buzz(); drawList(); return; }
+  const dy = e.target.closest("[data-dy]"); if (dy) { const sec = $("dy-" + dy.dataset.dy); if (sec) sec.scrollIntoView({ behavior: STILL ? "auto" : "smooth", block: "start" }); return; }
   const c = e.target.closest("#listCopy");
   if (c && drawList.copy) { const t = drawList.copy(); (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast("List copied. Paste it on the drive's label or in a message."), () => toast("Couldn't copy here.")); buzz(); }
 });
 document.addEventListener("click", e => {   // a whole job row opens the job; its own links still go where they point
-  const r = e.target.closest(".row[data-job], .bk-row[data-job]"); if (!r || e.target.closest("a, button") || r.closest("#bkList")) return;
+  if (e.target.closest(".bk-det")) return;
+  const k = e.target.closest(".bk-row[data-job]");
+  if (k) { if (!e.target.closest("a, button:not(.bk-more)")) bkToggle(k); return; }
+  const r = e.target.closest(".row[data-job]"); if (!r || e.target.closest("a, button")) return;
   location.hash = "#/job/" + encodeURIComponent(r.dataset.job);
 });
 
@@ -836,14 +844,50 @@ function jobCard(j, i, o) {
     const st = k => j[k] ? `<span class="md ${selfUnbacked(j[k]) ? "no" : "ok"}" title="${k === "video" ? "Video" : "Photo"}: ${!j[k].backupDate && !j[k].backedUp ? "not backed up" : "backed up" + (j[k].backupDate ? " " + esc(fmtDates([j[k].backupDate])) : "")}">${k === "video" ? "Video" : "Photo"}</span>` : "";
     const drives = [...new Set(j.rows.flatMap(drivesOf))];
     const meta = [w.place && hl(w.place, ts), o.hide !== "editor" && r.editor && `<a href="#/editor/${encodeURIComponent(r.editor)}">${hl(r.editor, ts)}</a>`, r.notes && `<span class="bk-notes">${hl(r.notes, ts)}</span>`].filter(Boolean).join(" · ");
-    return `<div class="bk-row${j.un ? " un" : ""}" data-job="${esc(r.id)}" tabindex="0" role="link" style="--i:${Math.min(i, 14)}">
+    const open = bkOpen.has(r.id);
+    return `<div class="bk-row${j.un ? " un" : ""}${open ? " open" : ""}" data-job="${esc(r.id)}" tabindex="0" aria-expanded="${open}" style="--i:${Math.min(i, 14)}">
       <span class="bk-no">${no ? String(no).padStart(2, "0") : ""}</span>
       <span class="bk-main"><b>${hl(t, ts)}</b>${meta ? `<small>${meta}</small>` : ""}${w.list ? `<ol class="bk-parts">${w.parts.map((p, k) => `<li><span>${ROMAN(k + 1)}.</span>${hl([p.date ? fmtDates([p.date]) : "", p.label].filter(Boolean).join(" · "), ts)}</li>`).join("")}</ol>` : ""}</span>
       <span class="bk-when">${hl(w.when, ts)}</span>
       <span class="bk-media">${st("video")}${st("photo")}</span>
       <span class="bk-drv">${j.un ? `<button type="button" class="btn sm bk-fix" data-job-edit="${esc(r.id)}">Back up</button>` : ""}${o.hide === "drive" ? "" : drives.map(d => `<a href="#/drive/${encodeURIComponent(d)}">${hl(dName(d), ts)}</a>`).join("") || '<span class="muted small">No drive</span>'}</span>
+      <button type="button" class="bk-more" aria-label="Details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+      ${open ? `<div class="bk-det">${bkDetail(r.id)}</div>` : ""}
     </div>`;
   }
+// tap a job (or its arrow) and it opens in place, as on the Backup page: days, what's backed up where, who, notes, links, history
+const bkOpen = new Set();
+function relAt(at) {
+  const d = new Date(at); if (isNaN(d)) return String(at || "");
+  const m = Math.round((Date.now() - d) / 6e4);
+  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : m < 10080 ? `${Math.round(m / 1440)} ${Math.round(m / 1440) === 1 ? "day" : "days"} ago` : fmtShort(String(at).slice(0, 10)) + (d.getFullYear() !== new Date().getFullYear() ? " " + d.getFullYear() : "");
+}
+function bkDetail(id) {
+  const r0 = (data.rows || []).find(x => x.id === id); if (!r0) return "";
+  const j = jobsOf([r0, twinOf(r0)].filter(Boolean))[0], r = j.main, w = whenOf(r), both = j.video && j.photo;
+  const half = (k, x) => !x ? "" : `<dt>${k}</dt><dd>${selfUnbacked(x) ? `<span class="red">Not backed up</span>` : `<span class="green">Backed up</span>${x.backupDate ? " " + esc(fmtDates([x.backupDate])) : ""}`}${drivesOf(x).length ? " · " + drivesOf(x).map(d => `<a href="#/drive/${encodeURIComponent(d)}">${esc(dName(d))}</a>`).join(", ") : ""}</dd>`;
+  const days = w.list ? `<ol class="bk-parts">${w.parts.map((p, k) => `<li><span>${ROMAN(k + 1)}.</span>${esc([p.date ? fmtDates([p.date]) : "", p.label].filter(Boolean).join(" · "))}</li>`).join("")}</ol>` : esc([w.when, w.place].filter(Boolean).join(" · ")) || "–";
+  const links = j.rows.flatMap(x => String(x.link || "").split(/\s*\n\s*/)).filter(Boolean).filter((u, i, a) => a.indexOf(u) === i);
+  const notes = [...new Set(j.rows.map(x => x.notes).filter(Boolean))];
+  const hist = j.rows.flatMap(x => (x.history || []).filter(h => h && h.at).map(h => ({ ...h, half: both ? (isPhotoSec(sectionOf(x)) ? "Photo" : "Video") : "" }))).sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  const made = j.rows.map(x => x.createdAt).filter(Boolean).sort()[0];
+  return `<dl class="bk-facts"><dt>Date</dt><dd>${days}</dd>${half("Video", j.video)}${half("Photo", j.photo)}
+    ${r.editor ? `<dt>Editor</dt><dd><a href="#/editor/${encodeURIComponent(r.editor)}">${esc(r.editor)}</a></dd>` : ""}
+    ${notes.length ? `<dt>Notes</dt><dd>${esc(notes.join(" · "))}</dd>` : ""}
+    ${links.length ? `<dt>Links</dt><dd class="bk-links">${links.map((u, i) => `<a href="${esc(normLink(u) || u)}" target="_blank" rel="noopener">${links.length > 1 ? "Link " + (i + 1) : "Open link"}</a>`).join("")}</dd>` : ""}</dl>
+    <div class="bk-hist"><b>History</b>${hist.length ? `<ol>${hist.map(h => `<li><i class="${/新增/.test(h.action) ? "add" : /备份/.test(h.action) ? "bk" : "ed"}"></i><span><b>${esc(h.by || "Someone")}</b> ${esc(ACT[h.action] || h.action || "")}${h.half ? ` <em>${h.half}</em>` : ""}</span><time title="${esc(String(h.at).slice(0, 16).replace("T", " "))}">${esc(relAt(h.at))}</time></li>`).join("")}</ol>` : `<p class="muted small">${made ? "Added " + esc(relAt(made)) + ". " : ""}No changes recorded yet.</p>`}</div>
+    <div class="bk-acts"><button type="button" class="btn ghost sm" data-job-edit="${esc(r.id)}">Edit</button>${j.un ? `<button type="button" class="btn sm bk-fix" data-job-edit="${esc(r.id)}">Back up</button>` : ""}</div>`;
+}
+function bkToggle(row) {
+  const id = row.dataset.job, open = !row.classList.contains("open");
+  open ? bkOpen.add(id) : bkOpen.delete(id);
+  let d = row.querySelector(".bk-det");
+  if (open && !d) { d = document.createElement("div"); d.className = "bk-det"; d.innerHTML = bkDetail(id); row.appendChild(d); }
+  row.classList.toggle("open", open); row.setAttribute("aria-expanded", open);
+  if (d && !STILL) d.animate(open ? [{ opacity: 0, transform: "translateY(-6px)" }, { opacity: 1, transform: "none" }] : [{ opacity: 1 }, { opacity: 0 }], { duration: open ? 260 : 140, easing: "cubic-bezier(.2,.8,.2,1)" }).onfinish = () => { if (!row.classList.contains("open")) d.remove(); };
+  else if (!open && d) d.remove();
+  fx(open ? "open" : "close");
+}
 function drawBackup(first) {
   if (!session) return;
   const rows = bkRows(), ys = bkYears();
@@ -908,9 +952,65 @@ $("bkList").addEventListener("click", e => {
   if (e.target.closest("#bkAll")) { bk.all = true; return drawBackup(); }
   if (e.target.closest("#bkNew2")) return newJob();
   if (e.target.closest("a, [data-job-edit]")) return;
-  const r = e.target.closest("[data-job]"); if (r) location.hash = "#/job/" + encodeURIComponent(r.dataset.job);
 });
-$("bkList").addEventListener("keydown", e => { const r = e.target.closest("[data-job]"); if (r && e.key === "Enter") location.hash = "#/job/" + encodeURIComponent(r.dataset.job); });
+document.addEventListener("keydown", e => { const r = e.target.closest && e.target.closest(".bk-row[data-job]"); if (r && e.target === r && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); bkToggle(r); } });
+// ---------------------------------------------------------------- step-by-step forms
+// A new job / new shoot is asked one question at a time (Name, then Date, then Video or Photo, ...), with Next all the way.
+// It is the same form underneath: the steps only show and hide its fields, and the last step's Save is the form's own Save.
+// "All fields" (or editing an existing job) shows the whole form at once.
+function wizOn(form, o) {
+  const units = [...form.querySelectorAll("[data-wz]")], n = Math.max(...units.map(u => +u.dataset.wz || 0));
+  let w = form._wz;
+  if (!w) {
+    const head = document.createElement("div"); head.className = "wz-head";
+    head.innerHTML = `<div class="wz-dots" aria-hidden="true"></div><p class="wz-q" aria-live="polite"></p><button type="button" class="wz-all">All fields</button>`;
+    (form.querySelector(".jf-top") || form.querySelector("h2")).after(head);
+    const acts = [...form.querySelectorAll(".actions")].pop(), save = acts.querySelector("button:not([type=button])"), cancel = [...acts.querySelectorAll("button")].find(b => /Cancel/.test(b.textContent));
+    const back = document.createElement("button"); back.type = "button"; back.className = "btn ghost wz-back"; back.textContent = "Back";
+    const next = document.createElement("button"); next.type = "button"; next.className = "btn wz-next"; next.textContent = "Next";
+    cancel.after(back); save.before(next);
+    w = form._wz = { head, back, next, save, cancel, i: 0, n: 0, o: null };
+    back.addEventListener("click", () => wizGo(form, w.i - 1));
+    next.addEventListener("click", () => wizNext(form));
+    head.querySelector(".wz-all").addEventListener("click", () => { wizOff(form); fx("open"); });
+    form.addEventListener("keydown", e => {
+      if (!form.classList.contains("wiz") || e.key !== "Enter" || e.isComposing || e.target.tagName === "TEXTAREA" || e.target.tagName === "BUTTON") return;
+      if (w.i < w.n - 1) { e.preventDefault(); wizNext(form); }
+    });
+  }
+  w.n = n; w.o = o; w.i = -1; form.classList.add("wiz");
+  w.head.querySelector(".wz-dots").innerHTML = Array.from({ length: n }, () => "<i></i>").join("");
+  wizGo(form, 0, true);
+}
+function wizOff(form) {
+  const w = form._wz; if (!w || !form.classList.contains("wiz")) return;
+  form.classList.remove("wiz"); delete form.dataset.step;
+  form.querySelectorAll(".wz-off, .wz-in, .wz-in-back").forEach(u => u.classList.remove("wz-off", "wz-in", "wz-in-back"));
+  w.back.hidden = w.next.hidden = true; w.save.hidden = false; w.cancel.hidden = false;
+}
+function wizNext(form) {
+  const w = form._wz, bad = w.o.check && w.o.check(w.i);
+  if (bad) { w.o.need ? w.o.need(bad) : toast(bad[0]); fx("err"); return; }
+  wizGo(form, w.i + 1);
+}
+function wizGo(form, i, first) {
+  const w = form._wz; if (!w || i < 0 || i >= w.n || i === w.i) return;
+  const back = i < w.i; w.i = i; form.dataset.step = i + 1;
+  form.querySelectorAll("[data-wz]").forEach(u => {
+    const on = u.dataset.wz === String(i + 1); u.classList.toggle("wz-off", !on);
+    u.classList.remove("wz-in", "wz-in-back"); if (on && !first && !STILL) { void u.offsetWidth; u.classList.add(back ? "wz-in-back" : "wz-in"); }
+  });
+  w.head.querySelectorAll(".wz-dots i").forEach((d, k) => { d.classList.toggle("on", k === i); d.classList.toggle("done", k < i); });
+  w.head.querySelector(".wz-q").textContent = (w.o.titles || [])[i] || "";
+  w.back.hidden = i === 0; w.cancel.hidden = i > 0; w.next.hidden = i === w.n - 1; w.save.hidden = i !== w.n - 1;
+  const msg = form.querySelector(".msg"); if (msg) msg.textContent = "";
+  if (w.o.enter) w.o.enter(i);
+  if (!first) fx(back ? "close" : "nav");
+  const f = form.querySelector(`[data-wz="${i + 1}"] input:not([type=date]):not([type=checkbox]), [data-wz="${i + 1}"] select, [data-wz="${i + 1}"]:is(input, select)`);
+  if (f && (matchMedia("(hover: hover)").matches || i === 0 || f.type === "number")) setTimeout(() => f.focus({ preventScroll: true }), first ? 60 : 260);
+}
+// the step a field is on: a check on Save that fails on an earlier step goes back to it
+function wizShow(form, el) { const u = el && el.closest("[data-wz]"); if (form.classList.contains("wiz") && u && /^\d+$/.test(u.dataset.wz)) wizGo(form, +u.dataset.wz - 1); }
 // ---------------------------------------------------------------- job form: add, edit, back up, delete
 // The form is the Workspace's own; Save hands it to Classic Backup (loaded unseen in the background), which saves it with
 // its own code: the same rows, numbers, history, twin rules and outbox as before. Nothing here writes to the Sheet itself.
@@ -985,8 +1085,11 @@ function openJob(r, pre) {
   if (live) jfFill(live.r, live.tw, live.no, null, live.sig);
   else jfFill(r, r ? twinOf(r) : null, r ? numbers().get(r.id) || "" : "", pre, "");
   $("jobScrim").hidden = false; fx("open");
-  jfConn();
-  if (matchMedia("(hover: hover)").matches) (r ? $("jfName") : $("jfName").value ? $("jfCat") : $("jfName")).focus();
+  jfConn(); jfNoHint();
+  if (!r) wizOn($("jobForm"), { titles: ["What's the job?", "Which days?", "Video or photo?", "Which No.?"],
+    check: i => { const p = jfPayload(); return i === 0 && !p.name ? ["Fill in the name.", "jfName"] : i === 1 && !p.parts.some(x => x.date) ? ["Pick the day.", "jfParts"] : i === 2 && !p.type ? ["Choose Video, Photo or Video + Photo.", "jfType"] : null; },
+    need: b => { $("jfMsg").textContent = b[0]; jfNeed(b[1]); }, enter: i => { if (i === 3) jfNoHint(); } });
+  else { wizOff($("jobForm")); if (matchMedia("(hover: hover)").matches) $("jfName").focus(); }
 }
 function jfFill(r, tw, no, pre, sig) {
   const j = r ? splitJob(r) : null;
@@ -1035,7 +1138,7 @@ function jfCheck(p) {
   if (p.no != null && !(Number.isInteger(p.no) && p.no >= 1)) return ["No. is a whole number from 1.", "jfNo"];
   return null;
 }
-function jfNeed(id) { const el = $(id); el.classList.remove("need"); void el.offsetWidth; el.classList.add("need"); (el.querySelector("input,button") || el).focus({ preventScroll: true }); el.scrollIntoView({ behavior: STILL ? "auto" : "smooth", block: "center" }); }
+function jfNeed(id) { const el = $(id); wizShow($("jobForm"), el); el.classList.remove("need"); void el.offsetWidth; el.classList.add("need"); (el.querySelector("input,button") || el).focus({ preventScroll: true }); el.scrollIntoView({ behavior: STILL ? "auto" : "smooth", block: "center" }); }
 async function jfSave(force) {
   if (!jf || jf.busy) return;
   const p = jfPayload(), bad = jfCheck(p);
@@ -1074,7 +1177,20 @@ async function jfDelete() {
   if (wasJob) location.hash = "#/backup";
   await refresh();
 }
-$("jfType").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (!b || !jf) return; jf.type = b.dataset.v; jfType(); });
+$("jfType").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (!b || !jf) return; jf.type = b.dataset.v; jfType(); jfNoHint(); if ($("jobForm").dataset.step === "3") setTimeout(() => wizNext($("jobForm")), 260); });
+// No.: empty = the job goes last; a number already taken = it goes in at that place and the ones after move down (Backup's own rule)
+function jfNoHint() {
+  const h = $("jfNoHint"); if (!jf) return;
+  const d = (jfParts().find(x => x.date) || {}).date || "", y = d.slice(0, 4) || (jf.r ? String(jf.r.year) : String(new Date().getFullYear()));
+  const cat = $("jfCat").value, sec = jf.r ? sectionOf(jf.r) : cat + (jf.type === "photo" ? " · Photo" : "");
+  const n = bkRows().filter(r => (!jf.r || r.id !== jf.r.id) && String(r.year) === y && sectionOf(r) === sec).length;
+  const v = parseInt($("jfNo").value, 10);
+  h.textContent = !cat ? "" : v > 0 && v <= n ? `It goes in as No. ${v} in ${sec} ${y}; No. ${v} to ${n} move down one.`
+    : v > n + 1 ? `${sec} ${y} has ${n} jobs, so it goes last, as No. ${n + 1}.`
+    : `Leave it empty and it goes last in ${sec} ${y}, as No. ${n + 1}. Type a number that's taken to put it in that place.`;
+}
+["jfNo", "jfCat"].forEach(id => $(id).addEventListener("input", jfNoHint));
+$("jfParts").addEventListener("input", jfNoHint);
 $("jfMarks").addEventListener("click", e => { const b = e.target.closest("[data-h]"); if (!b || !jf) return; jf.tick[b.dataset.h] = !jf.tick[b.dataset.h]; if (jf.tick[b.dataset.h] && !$("jfEditor").value.trim()) $("jfEditor").value = session.name; buzz(); jfType(); });
 $("jfDrives").addEventListener("click", e => { const b = e.target.closest("[data-d]"); if (!b || !jf) return; const d = b.dataset.d; jf.drives.has(d) ? jf.drives.delete(d) : jf.drives.add(d); jfDrives(); });
 function jfAddDrive() { const d = $("jfDriveNew").value.trim().replace(/\s+/g, " ").toUpperCase(); if (!d || !jf) return; if (d.includes(",")) { $("jfMsg").textContent = "A drive name can't have a comma."; return; } if (!jf.extra.includes(d)) jf.extra.push(d); jf.drives.add(d); $("jfDriveNew").value = ""; jfDrives(); }
@@ -1229,11 +1345,15 @@ function openShoot(s, onSaved) {
   $("sfName").value = s.name || ""; $("sfFrom").value = ds[0] || ""; $("sfTo").value = ds.length > 1 ? ds[ds.length - 1] : "";
   $("sfLoc").value = s.location || ""; $("sfNotes").value = s.notes || ""; $("sfMsg").textContent = "";
   sfType = s.type || "both"; sfCrew = new Set(crewOf(s));
-  drawSeg(); drawCrew(); $("sfDel").hidden = !s.id; $("shootScrim").hidden = false; $("sfName").focus();
+  drawSeg(); drawCrew(); $("sfDel").hidden = !s.id; $("shootScrim").hidden = false;
+  if (!s.id) wizOn($("shootForm"), { titles: ["What's the shoot?", "When and where?", "Video or photo?", "Who's going?"],
+    check: i => i === 0 && !$("sfName").value.trim() ? ["Fill in the name.", "sfName"] : i === 1 && !$("sfFrom").value ? ["Pick the day.", "sfFrom"] : null,
+    need: b => { $("sfMsg").textContent = b[0]; $(b[1]).focus(); } });
+  else { wizOff($("shootForm")); $("sfName").focus(); }
 }
 function drawSeg() { document.querySelectorAll("#sfType button").forEach(b => b.classList.toggle("on", b.dataset.v === sfType)); }
 function drawCrew() { $("sfCrew").innerHTML = team.map(n => `<button type="button" class="${sfCrew.has(n) ? "on" : ""}" data-n="${esc(n)}">${esc(n)}</button>`).join(""); }
-$("sfType").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { sfType = b.dataset.v; drawSeg(); } });
+$("sfType").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { sfType = b.dataset.v; drawSeg(); if ($("shootForm").dataset.step === "3") setTimeout(() => wizNext($("shootForm")), 260); } });
 $("sfCrew").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; const n = b.dataset.n; sfCrew.has(n) ? sfCrew.delete(n) : sfCrew.add(n); drawCrew(); });
 const closeShoot = () => { $("shootScrim").hidden = true; editing = null; };
 $("sfCancel").addEventListener("click", closeShoot);
@@ -1435,7 +1555,7 @@ function showM() {
 function centerOf(el) { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height }; }
 function openM(text) {
   if (mOpen) { if (text != null) setInput(text); $("aiIn").focus(); return; }
-  mOpen = true; fx("open"); status("");
+  mOpen = true; fx("open"); status(""); fanHide(true);
   if (mAnim) { mAnim.forEach(a => a.cancel()); mAnim = null; }
   const b = $("mBtn"), p = $("mPanel"), from = centerOf(b);
   anchorPanel(); p.hidden = false; b.setAttribute("aria-expanded", "true"); document.body.classList.add("m-open");
@@ -1474,7 +1594,45 @@ function closeM(now) {
   mAnim[0].onfinish = () => { p.hidden = true; $("mpAv").style.visibility = ""; };
   mAnim[1].onfinish = () => act($("mSvg"), "land", 450);
 }
-$("mBtn").addEventListener("click", e => { if (mDragged) { mDragged = false; e.preventDefault(); return; } openM(); });
+// Tap 小M: he does one of five little things (never the same twice in a row). Point at him (or tap, on a phone) and three
+// choices fan out beside him: Ask M (the chat), Add backup (a new job, step by step), Add calendar (a new shoot).
+const TRICKS = [["t-ha", "ok", 1500], ["t-spin", "nav", 1400], ["t-shy", "toggle", 1600], ["t-sneeze", "err", 1500], ["cheer", "pin", 1900]];
+let lastTrick = -1;
+function trick() {
+  let i; do { i = Math.floor(Math.random() * TRICKS.length); } while (i === lastTrick && TRICKS.length > 1); lastTrick = i;
+  const [name, sound, ms] = TRICKS[i]; act($("mSvg"), name, ms); fx(sound);
+}
+$("mBtn").addEventListener("click", e => { if (mDragged) { mDragged = false; e.preventDefault(); return; }
+  if (e.detail === 0) { openM(); return; }   // keyboard: Enter / Space opens the chat as before
+  trick(); if (!matchMedia("(hover: hover)").matches) fanShow(); });
+const fan = document.createElement("div"); fan.className = "m-fan"; fan.id = "mFan"; fan.hidden = true; fan.setAttribute("role", "menu");
+fan.innerHTML = `<button type="button" role="menuitem" data-f="ask"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>Ask M</button>
+  <button type="button" role="menuitem" data-f="job"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5"/></svg>Add backup</button>
+  <button type="button" role="menuitem" data-f="shoot"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>Add calendar</button>`;
+document.body.appendChild(fan);
+let fanT = 0;
+function fanShow() {
+  clearTimeout(fanT); if (mOpen || $("mBtn").hidden || $("mBtn").classList.contains("dragging")) return;
+  const r = $("mBtn").getBoundingClientRect(), left = r.left + r.width / 2 > innerWidth / 2, up = r.top > innerHeight / 2;
+  fan.classList.toggle("to-left", left); fan.classList.toggle("up", up);
+  fan.style.top = (up ? "auto" : r.top + 4 + "px"); fan.style.bottom = (up ? innerHeight - r.bottom + 4 + "px" : "auto");
+  fan.style.left = left ? "auto" : r.right + 8 + "px"; fan.style.right = left ? innerWidth - r.left + 8 + "px" : "auto";
+  if (fan.hidden) { fan.hidden = false; fan.classList.remove("in"); void fan.offsetWidth; fan.classList.add("in"); }
+  if (!matchMedia("(hover: hover)").matches) fanT = setTimeout(fanHide, 4000);
+}
+function fanHide(now) { clearTimeout(fanT); if (fan.hidden) return; if (now || STILL) { fan.hidden = true; return; } fan.classList.add("out"); fanT = setTimeout(() => { fan.hidden = true; fan.classList.remove("out"); }, 180); }
+const fanLater = () => { clearTimeout(fanT); fanT = setTimeout(fanHide, 280); };
+$("mBtn").addEventListener("pointerenter", e => { if (e.pointerType === "mouse") fanShow(); });
+$("mBtn").addEventListener("pointerleave", e => { if (e.pointerType === "mouse") fanLater(); });
+fan.addEventListener("pointerenter", () => clearTimeout(fanT));
+fan.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") fanLater(); });
+fan.addEventListener("click", e => {
+  const b = e.target.closest("[data-f]"); if (!b) return; fanHide(true);
+  if (b.dataset.f === "ask") openM();
+  else if (b.dataset.f === "job") newJob();
+  else openShoot({ dates: route.name === "calendar" && selDay ? selDay : ymd(new Date()) });
+});
+document.addEventListener("pointerdown", e => { if (!fan.hidden && !fan.contains(e.target) && !$("mBtn").contains(e.target)) fanHide(); }, true);
 // 小M floats: drag him anywhere, he snaps to the nearest side and stays there next time
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 let mDragged = false, mPos = store.get("mPos", null);
@@ -1492,9 +1650,12 @@ function placeM() {
   b.style.top = clamp(mPos.y * window.innerHeight, minY, Math.max(minY, maxY)) + "px";
   b.classList.toggle("on-left", mPos.side === "l");
 }
-// on a wide screen the chat opens on 小M's side of the screen
+// on a wide screen the chat opens on 小M's side of the screen, or where you last dragged it (by its top bar)
+let mpPos = store.get("mpPos", null);
 function anchorPanel() {
   const p = $("mPanel"), c = centerOf($("mBtn"));
+  if (!phoneW() && mpPos) { const w = p.offsetWidth || 420, h = p.offsetHeight || 600;
+    p.style.right = p.style.bottom = "auto"; p.style.left = clamp(mpPos.x * innerWidth, 8, Math.max(8, innerWidth - w - 8)) + "px"; p.style.top = clamp(mpPos.y * innerHeight, 8, Math.max(8, innerHeight - h - 8)) + "px"; return; }
   if (phoneW() || !mPos) { p.style.left = p.style.right = p.style.top = p.style.bottom = ""; return; }
   const left = c.x < window.innerWidth / 2, top = c.y < window.innerHeight / 2;
   p.style.left = left ? "24px" : "auto"; p.style.right = left ? "auto" : "";
@@ -1506,7 +1667,7 @@ addEventListener("resize", () => { placeM(); if (mOpen) anchorPanel(); });
   b.addEventListener("pointerdown", e => { if (e.button || mOpen) return; const r = b.getBoundingClientRect(); st = { x: e.clientX, y: e.clientY, dx: e.clientX - r.left, dy: e.clientY - r.top, on: false, id: e.pointerId }; });
   b.addEventListener("pointermove", e => {
     if (!st || e.pointerId !== st.id) return;
-    if (!st.on) { if (Math.hypot(e.clientX - st.x, e.clientY - st.y) < 7) return; st.on = true; b.setPointerCapture(e.pointerId); b.classList.add("dragging", "walk"); }
+    if (!st.on) { if (Math.hypot(e.clientX - st.x, e.clientY - st.y) < 7) return; st.on = true; fanHide(true); b.setPointerCapture(e.pointerId); b.classList.add("dragging", "walk"); }
     const { w } = mBounds();
     b.style.right = b.style.bottom = "auto";
     b.style.left = clamp(e.clientX - st.dx, 0, window.innerWidth - w) + "px";
@@ -1529,6 +1690,21 @@ addEventListener("resize", () => { placeM(); if (mOpen) anchorPanel(); });
   placeM();
 })();
 $("mClose").addEventListener("click", () => closeM());
+(() => {
+  const p = $("mPanel"), h = p.querySelector(".mp-head"); let st = null;
+  h.addEventListener("pointerdown", e => { if (phoneW() || e.button || e.target.closest("input")) return; const r = p.getBoundingClientRect(); st = { dx: e.clientX - r.left, dy: e.clientY - r.top, id: e.pointerId, on: false, x: e.clientX, y: e.clientY }; });
+  h.addEventListener("pointermove", e => {
+    if (!st || e.pointerId !== st.id) return;
+    if (!st.on) { if (Math.hypot(e.clientX - st.x, e.clientY - st.y) < 4) return; st.on = true; h.setPointerCapture(e.pointerId); p.classList.add("moving"); if (mAnim) mAnim.forEach(a => a.finish()); }
+    p.style.right = p.style.bottom = "auto";
+    p.style.left = clamp(e.clientX - st.dx, 8, innerWidth - p.offsetWidth - 8) + "px"; p.style.top = clamp(e.clientY - st.dy, 8, innerHeight - p.offsetHeight - 8) + "px";
+  });
+  const end = e => { if (!st || e.pointerId !== st.id) return; const was = st.on; st = null; if (!was) return; p.classList.remove("moving");
+    h._moved = true; setTimeout(() => { h._moved = false; }, 300); const r = p.getBoundingClientRect(); mpPos = { x: r.left / innerWidth, y: r.top / innerHeight }; store.set("mpPos", mpPos); fx("drag"); };
+  h.addEventListener("pointerup", end); h.addEventListener("pointercancel", end);
+  h.addEventListener("click", e => { if (h._moved) { h._moved = false; e.stopPropagation(); e.preventDefault(); } }, true);   // a drag that started on a button doesn't press it
+  h.addEventListener("dblclick", e => { if (e.target.closest("button")) return; mpPos = null; store.set("mpPos", null); anchorPanel(); });   // double-click the bar: back to its usual place
+})();
 document.addEventListener("keydown", e => {
   if (!session) return;
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); mOpen ? closeM() : openM(); return; }

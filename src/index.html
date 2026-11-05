@@ -243,12 +243,12 @@
 <div class="scrim" id="shootScrim" hidden>
   <form class="card sheet" id="shootForm" role="dialog" aria-modal="true" aria-labelledby="sfTitle">
     <h2 id="sfTitle">New shoot</h2>
-    <label>Name<input id="sfName" required maxlength="200" placeholder="Wedding · Tan & Lim"></label>
-    <div class="row2"><label>From<input id="sfFrom" type="date" required></label><label>To<input id="sfTo" type="date"></label></div>
-    <label>Location<input id="sfLoc" maxlength="200"></label>
-    <div class="seg" id="sfType"><button type="button" data-v="video">Video</button><button type="button" data-v="photo">Photo</button><button type="button" data-v="both">Video + Photo</button></div>
-    <div><span class="lbl">Crew</span><div class="chips" id="sfCrew"></div></div>
-    <label>Notes<textarea id="sfNotes" rows="2" maxlength="2000"></textarea></label>
+    <label data-wz="1">Name<input id="sfName" required maxlength="200" placeholder="Wedding · Tan & Lim"></label>
+    <div class="row2" data-wz="2"><label>From<input id="sfFrom" type="date" required></label><label>To<input id="sfTo" type="date"></label></div>
+    <label data-wz="2">Location<input id="sfLoc" maxlength="200"></label>
+    <div class="seg" id="sfType" data-wz="3"><button type="button" data-v="video">Video</button><button type="button" data-v="photo">Photo</button><button type="button" data-v="both">Video + Photo</button></div>
+    <div data-wz="4"><span class="lbl">Crew</span><div class="chips" id="sfCrew"></div></div>
+    <label data-wz="4">Notes<textarea id="sfNotes" rows="2" maxlength="2000"></textarea></label>
     <p class="msg" id="sfMsg"></p>
     <div class="actions"><button type="button" class="btn danger ghost" id="sfDel" hidden>Delete</button><span class="spacer"></span><button type="button" class="btn ghost" id="sfCancel">Cancel</button><button class="btn" id="sfSave">Save</button></div>
   </form>
@@ -258,15 +258,16 @@
 <div class="scrim" id="jobScrim" hidden>
   <form class="card sheet job-sheet" id="jobForm" role="dialog" aria-modal="true" aria-labelledby="jfTitle" novalidate>
     <div class="jf-top"><h2 id="jfTitle">New job</h2><span class="jf-conn" id="jfConn" hidden>Connecting to Backup</span></div>
-    <div class="jf-grid"><label>Category<select id="jfCat"></select></label><label>No.<input id="jfNo" type="number" min="1" inputmode="numeric"></label></div>
-    <label>Name<input id="jfName" maxlength="300" placeholder="CNY Performance" autocomplete="off"></label>
-    <div class="jf-f"><span class="lbl">Days</span><div class="jf-parts" id="jfParts"></div><button type="button" class="btn ghost sm jf-add" id="jfAddPart">+ Add a day</button></div>
-    <div class="jf-f"><span class="lbl" id="jfTypeLbl">What does this job have?</span><div class="seg" id="jfType"><button type="button" data-v="video">Video</button><button type="button" data-v="photo">Photo</button><button type="button" data-v="both">Video + Photo</button></div><p class="jf-note" id="jfTypeNote" hidden></p></div>
-    <div class="jf-f" id="jfMarkBox" hidden><span class="lbl">Mark backed up today</span><div class="jf-marks" id="jfMarks"></div></div>
-    <div class="jf-f"><span class="lbl" id="jfDrvLbl">Drives</span><div class="chips" id="jfDrives"></div><div class="jf-new"><input id="jfDriveNew" placeholder="New drive, e.g. SSD 7" autocomplete="off" aria-label="New drive"><button type="button" class="btn ghost sm" id="jfDriveAdd">Add</button></div></div>
-    <label data-jf-edit>Editor<input id="jfEditor" list="jfTeam" autocomplete="off"></label><datalist id="jfTeam"></datalist>
-    <div class="jf-f" data-jf-edit><label>Notes<input id="jfNotes" maxlength="2000" autocomplete="off"></label><div class="chips sm" id="jfNoteChips"></div></div>
-    <label data-jf-edit>Links<textarea id="jfLinks" rows="2" placeholder="One link per line"></textarea></label>
+    <div class="jf-grid"><label data-wz="1">Category<select id="jfCat"></select></label><label data-wz="4">No.<input id="jfNo" type="number" min="1" inputmode="numeric"></label></div>
+    <p class="wz-hint" id="jfNoHint" data-wz="4"></p>
+    <label data-wz="1">Name<input id="jfName" maxlength="300" placeholder="CNY Performance" autocomplete="off"></label>
+    <div class="jf-f" data-wz="2"><span class="lbl">Days</span><div class="jf-parts" id="jfParts"></div><button type="button" class="btn ghost sm jf-add" id="jfAddPart">+ Add a day</button></div>
+    <div class="jf-f" data-wz="3"><span class="lbl" id="jfTypeLbl">What does this job have?</span><div class="seg" id="jfType"><button type="button" data-v="video">Video</button><button type="button" data-v="photo">Photo</button><button type="button" data-v="both">Video + Photo</button></div><p class="jf-note" id="jfTypeNote" hidden></p></div>
+    <div class="jf-f" id="jfMarkBox" data-wz="x" hidden><span class="lbl">Mark backed up today</span><div class="jf-marks" id="jfMarks"></div></div>
+    <div class="jf-f" data-wz="x"><span class="lbl" id="jfDrvLbl">Drives</span><div class="chips" id="jfDrives"></div><div class="jf-new"><input id="jfDriveNew" placeholder="New drive, e.g. SSD 7" autocomplete="off" aria-label="New drive"><button type="button" class="btn ghost sm" id="jfDriveAdd">Add</button></div></div>
+    <label data-jf-edit data-wz="x">Editor<input id="jfEditor" list="jfTeam" autocomplete="off"></label><datalist id="jfTeam"></datalist>
+    <div class="jf-f" data-jf-edit data-wz="x"><label>Notes<input id="jfNotes" maxlength="2000" autocomplete="off"></label><div class="chips sm" id="jfNoteChips"></div></div>
+    <label data-jf-edit data-wz="x">Links<textarea id="jfLinks" rows="2" placeholder="One link per line"></textarea></label>
     <details class="jf-hist" id="jfHist" hidden></details>
     <div class="jf-cfm" id="jfCfm" hidden><b id="jfCfmT"></b><ul id="jfCfmList"></ul><div class="actions"><span class="spacer"></span><button type="button" class="btn ghost" id="jfCfmNo">Keep</button><button type="button" class="btn danger-solid" id="jfCfmYes">Delete</button></div></div>
     <div class="jf-foot"><p class="msg" id="jfMsg"></p>

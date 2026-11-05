@@ -62,7 +62,7 @@ const M_SCENES = `<script>if (/[?&]scenes\\b/.test(location.search)) document.do
 html:not(.m-scenes) .bd-ov, html:not(.m-scenes) .fx-layer { display: none !important }
 html.m-scenes, html.m-scenes body { background: transparent !important }
 html.m-scenes body::before, html.m-scenes body::after { display: none !important }
-html.m-scenes body > * { visibility: hidden !important }
+html.m-scenes body > *:not(.bd-ov):not(.fx-layer):not(script):not(style) { display: none !important }   /* the rest of the page is not drawn at all (was only invisible, and still animating) */
 html.m-scenes body > .bd-ov, html.m-scenes body > .fx-layer { visibility: visible !important }
 html.m-scenes .fx-layer { position: fixed !important; inset: 0 !important; height: auto !important; -webkit-mask-image: none !important; mask-image: none !important }
 </style>\n`;
