@@ -456,7 +456,7 @@ body.cal-dragging, body.cal-dragging * { cursor: grabbing !important; user-selec
 }
 
 /* ---- Team: one card per person, then the list and your PIN ---- */
-.team-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px }
+.team-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px }
 .tm { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 18px; display: flex; flex-direction: column; gap: 14px; animation: rise .45s var(--ease) both; animation-delay: calc(var(--i) * 60ms) }
 .tm.me { border-color: var(--accent) }
 .tm-h { display: flex; align-items: center; gap: 14px } .tm-h > div { display: flex; flex-direction: column; gap: 2px; min-width: 0 } .tm-h b { font-size: 19px } .tm-name { display: flex; align-items: center }
@@ -789,10 +789,10 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
 
 /* point at 小M: three round buttons open in a ring around him; the one you point at grows a little */
 .m-fan { position: fixed; z-index: 28; width: 0; height: 0; pointer-events: none }
-.m-fan button { position: absolute; left: -24px; top: -24px; width: 48px; height: 48px; border-radius: 50%; padding: 0; display: grid; place-items: center; pointer-events: auto; color: var(--fg);
+.m-fan button { position: absolute; left: -18px; top: -18px; width: 36px; height: 36px; border-radius: 50%; padding: 0; display: grid; place-items: center; pointer-events: auto; color: var(--fg);
   background: var(--sheen), var(--raised); border: 1px solid var(--rim); border-top-color: var(--edge); box-shadow: var(--hi), var(--d2);
   transform: translate(var(--x), var(--y)) scale(var(--s, 1)); transition: transform .35s var(--spring), border-color .2s, box-shadow .25s }
-.m-fan button svg { width: 22px; height: 22px; color: var(--accent-text) }
+.m-fan button svg { width: 17px; height: 17px; color: var(--accent-text) }
 .m-fan button[data-f="ask"] { background: linear-gradient(180deg, #ff9d45, var(--accent)); border-color: var(--accent); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 8px 20px -8px rgba(244, 128, 32, .85) }
 .m-fan button[data-f="ask"] svg { color: #141414 }
 .m-fan button:hover, .m-fan button:focus-visible { --s: 1.16; border-color: color-mix(in srgb, var(--accent) 70%, transparent); box-shadow: var(--hi), var(--d2), 0 0 0 4px var(--accent-soft) }
@@ -811,7 +811,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
 /* Drives: every year, with a strip to jump between them */
 .dv-years { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 2px 2px 6px; margin: 0 -2px; -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent) }
 .dv-years::-webkit-scrollbar { display: none } .dv-years .fchip { flex: none; display: inline-flex; align-items: center; gap: 5px } .dv-years .dot { width: 6px; height: 6px }
-.dv-year { scroll-margin-top: 12px } .dv-year .bk-gh { font-size: 22px } .dv-year .bk-gh b { font-weight: 700 }
+.dv-year { scroll-margin-top: 12px } .dv-year .bk-gh { font-size: 22px; font-weight: 700; color: var(--fg) } .dv-year .bk-gh b { font-weight: 700 }
 
 /* not backed up: the name is red, as on the Backup page */
 .bk-row.un .bk-main > b { color: var(--danger) }
@@ -826,12 +826,13 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
 /* 小M standing on the page's main panel (as on the Backup page), and his own layer in page transitions */
 .m-seat { position: relative; height: 0; z-index: 6; pointer-events: none }
 .cal-box > .m-seat { position: absolute; left: 0; right: 0; top: 0 }
+.cal-box > .m-seat .mbtn.perched { bottom: -3px }   /* feet on the edge, not on the weekday row */
 .mbtn.perched { position: absolute; left: auto; top: auto; right: 18px; bottom: -14px; pointer-events: auto }
 @media (max-width: 899px) { .mbtn.perched { right: 10px; bottom: -11px } }
 .mbtn { view-transition-name: mpet }
 ::view-transition-old(mpet) { display: none }
 ::view-transition-new(mpet) { animation: none }
-::view-transition-group(mpet) { animation-duration: .55s; animation-timing-function: cubic-bezier(.34, 1.25, .64, 1) }
+::view-transition-group(mpet) { animation: none }   /* he follows his own hop (hop() in app.js), not a glide */
 
 /* the details a job opens into: what's backed up where, the days (each with its link), who, and what happened to it */
 .bk-det { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 14px 22px; margin: 8px 0 2px; padding: 14px 16px;
@@ -867,3 +868,23 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
 /* phones: no pinch / double-tap zoom on the app, and 16px fields so iPhone doesn't zoom in when one is tapped */
 html { touch-action: pan-x pan-y }
 @media (hover: none) and (pointer: coarse) { input, select, textarea { font-size: 16px } }
+
+/* ---- polish 0.8.7 ---- */
+/* spacing: details read left to right, one rhythm */
+.bk-det { text-align: left } .dt-days.one { flex-direction: row; justify-content: flex-start }
+.bk-row .bk-fix { margin-right: 8px }
+/* section tabs: "Event · Photo" with an even dot, and a fade where the strip scrolls on */
+.sec-n { font-style: normal; display: inline-flex; align-items: baseline } .sec-sep { font-style: normal; margin: 0 .3em; opacity: .55 }
+.bk-cats { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); padding-right: 24px }
+/* touch screens: a tapped link doesn't stay underlined */
+@media (hover: none) { a:hover { text-decoration: none } }
+/* Settings → Sound & touch: two labelled switches with room between them */
+.fx-set { display: grid; grid-template-columns: auto auto; justify-content: start; align-items: center; gap: 10px 14px; margin-top: 12px } .fx-set > span { font-size: 14px; color: var(--muted); min-width: 64px }
+.dv-year .bk-gh .yr { font-style: normal } .dv-year .bk-gh em { font-style: normal; color: var(--accent) }   /* years read as on the Backup page: 20 + orange 26 */
+/* small line icons inside text buttons (Check data, Export, Copy list) */
+.btn .bi, .fchip .bi { width: 14px; height: 14px; margin-right: 6px; vertical-align: -2px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none }
+/* motion: a drive's backed-up bar fills in when its card appears (GPU only: a scale from the left), one card after another */
+@keyframes barFill { from { transform: scaleX(0) } }
+.dc-bar i { transform-origin: 0 50%; animation: barFill .9s cubic-bezier(.2, .8, .2, 1) both }
+.drive-card:nth-child(2) .dc-bar i { animation-delay: .06s } .drive-card:nth-child(3) .dc-bar i { animation-delay: .12s } .drive-card:nth-child(n+4) .dc-bar i { animation-delay: .18s }
+@media (prefers-reduced-motion: reduce) { .dc-bar i { animation: none } }
