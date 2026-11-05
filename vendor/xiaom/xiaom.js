@@ -19,6 +19,10 @@
 .m25 .m25w { position: absolute; left: 50%; top: 61.5%; width: 0; height: 0; transform: scale3d(var(--k), var(--k), var(--k)) }
 .m25 .m25sh { position: absolute; left: -110px; top: -60px; width: 220px; height: 120px; border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, .4), transparent); transform: translate3d(0, 90px, 0) rotateX(90deg) }
 .m25 .m25o { position: absolute; inset: 0; pointer-events: none }
+/* light: key light from the upper left. Fronts get a sheen (lit top-left, shaded bottom-right), round edges are shaded by the way they face, 小M casts a soft shadow */
+.m25s .m25lit { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(60% 50% at 26% 20%, rgba(255, 255, 255, .5), rgba(255, 255, 255, 0) 70%), linear-gradient(135deg, rgba(255, 255, 255, .22) 0%, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, .42) 100%); -webkit-mask-size: 100% 100%; mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat }
+.m25-scene .m25sh { position: absolute; left: -120px; top: -66px; width: 240px; height: 132px; border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, .62), rgba(0, 0, 0, .25) 55%, transparent); transform: translate3d(34px, 99px, -18px) rotateX(90deg) skewX(-18deg) }
+.m25-light { position: absolute; inset: 0; pointer-events: none; overflow: hidden; border-radius: inherit; background: radial-gradient(120% 90% at 22% 8%, rgba(255, 236, 210, .22), transparent 55%), radial-gradient(140% 120% at 50% 45%, transparent 45%, rgba(0, 0, 0, .5) 100%) }
 /* festival / birthday scenes on the app's 229x200 card: the model is 2.6x the card, so the world is scaled back down */
 .m25-scene { position: absolute; inset: 0; perspective: 840px; perspective-origin: 114px 118px; pointer-events: none }
 .m25-scene .m25sw { position: absolute; left: 114px; top: 146px; width: 0; height: 0; transform: scale3d(.3846, .3846, .3846) }
@@ -416,13 +420,18 @@
   // side slices keep only filled shapes (no outlines), shaded 20% darker; lines/strings live on the front, back and middle slice only
   const sideOf=mk=>mk.replace(/<(path|circle|ellipse|rect|text)\b[^>]*?(\/>|>[^<]*<\/text>)/g,t=>/fill="(?!none)/.test(t)&&!/^<text/.test(t)?t.replace(/\sstroke(-[a-z]+)?="[^"]*"/g,'').replace(/\sclass="[^"]*"/,''):'')
     .replace(/#([0-9a-f]{6}|[0-9a-f]{3})\b/gi,(_,h)=>darkHex(h));
+  // the lit sheen over a front face, cut to the drawing's own shape
+  const litMask=(mk,vb,w,h)=>{const u="url('data:image/svg+xml,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'" viewBox="'+vb.join(' ')+'" overflow="visible">'+mk.replace(/var\(--[a-z-]+\)/g,'#000')+'</svg>').replace(/'/g,'%27')+"')";return '<div class="m25lit" style="-webkit-mask-image:'+u+';mask-image:'+u+'"></div>';};
+  // a shade of a colour for a surface that faces the light (lit>0) or away from it (lit<0)
+  const shade=(c,lit)=>lit>=0?'color-mix(in srgb, '+c+', #fff '+Math.min(40,Math.round(lit*22))+'%)':'color-mix(in srgb, '+c+', #000 '+Math.min(55,Math.round(-lit*38))+'%)';
   function extrude(parent,{mk,vb,w,h,d=6,tp=1,ox=.5,oy=.5,axis='x',sliceCss=''}){
     const n=d?Math.max(2,Math.round(d/STEP)):0, side=sideOf(mk), mid=Math.round(n/2);
     const svg=m=>'<svg width="'+w+'" height="'+h+'" viewBox="'+vb.join(' ')+'" style="position:absolute;inset:0;overflow:visible">'+m+'</svg>';
     for(let i=0;i<=n;i++){
       const zz=n?-d/2+d*i/n:0,t=n?zz/(d/2):0,k=Math.max(.04,tp+(1-tp)*Math.sqrt(Math.max(0,1-t*t)));
       const s=el('slice','left:0;top:0;width:'+w+'px;height:'+h+'px;transform-origin:'+(ox*w)+'px '+(oy*h)+'px;transform:translateZ('+zz.toFixed(1)+'px) '+(axis==='x'?'scaleX':'scaleY')+'('+k.toFixed(3)+');'+sliceCss,parent);
-      s.innerHTML=svg(i===0||i===n||i===mid?mk:side);
+      s.innerHTML=svg(i===0||i===n||i===mid?mk:side)+(i===n&&d?litMask(mk,vb,w,h):'');
+      if(n&&i<n&&i!==mid&&i!==0)s.style.filter='brightness('+(.72+.2*i/n).toFixed(2)+')';
     }
   }
   // a prop placed by its spot on the app's 229x200 card: at=[left,top,width(,height)]
@@ -475,7 +484,7 @@
   };
   const OUTFIT3={cny:['cny','orange'],lantern:['cny','orange'],raya:['songkok','ketupat'],duanwu:['zongzi',''],midautumn:['','lantern'],halloween:['pumpkin',''],deepavali:['','diya'],dongzhi:['','bowl'],christmas:['santa','']};
 
-  function slab(parent,{w,h,r,depth,z=0,x=0,y=0,front,side,html,svg}){
+  function slab(parent,{w,h,r,depth,z=0,x=0,y=0,front,side,html,svg,lit}){
     const g=el('abs','transform:translate3d('+x+'px,'+y+'px,'+z+'px)',parent);
     const n=Math.max(2,Math.round(depth/STEP));
     for(let i=0;i<=n;i++){
@@ -483,13 +492,14 @@
       const ends=i===n||i===0;
       if(svg)s.innerHTML=svg(ends?front:side);else s.style.background=ends?front:side;
       if(i===n&&html)s.innerHTML=html;
+      if(i===n&&lit)s.insertAdjacentHTML('beforeend','<div class="m25lit" style="border-radius:inherit"></div>');
     }
     return g;
   }
   function blob(parent,{x,y,z,rx,rz,hgt}){
     const g=el('abs','transform:translate3d('+x+'px,'+y+'px,'+z+'px)',parent),n=Math.round(hgt/STEP);
     for(let i=0;i<=n;i++){const t=-1+2*i/n,k=Math.sqrt(Math.max(0,1-t*t))*.85+.15,w=rx*2*k,d=rz*2*k;
-      el('slice','left:'+(-w/2)+'px;top:'+(-d/2)+'px;width:'+w+'px;height:'+d+'px;border-radius:50%;background:'+(i<n/2?ORANGE:SIDE)+';transform:translateY('+(t*hgt/2)+'px) rotateX(90deg)',g);}
+      el('slice','left:'+(-w/2)+'px;top:'+(-d/2)+'px;width:'+w+'px;height:'+d+'px;border-radius:50%;background:'+shade(ORANGE,.35-.9*i/n)+';transform:translateY('+(t*hgt/2)+'px) rotateX(90deg)',g);}
   }
   const camLayer=mk=>'<svg width="260" height="260" viewBox="-5 -10 130 130" style="position:absolute;inset:0;overflow:visible">'+mk+'</svg>';
   // side-on, a stack of slices shows gaps; each outfit part also gets one plane standing across its middle, as tall as the
@@ -519,7 +529,7 @@
     const n=d?Math.max(2,Math.round(d/STEP)):0,side=sideOf(mk),mid=Math.round(n/2);
     for(let i=0;i<=n;i++){
       const zz=n?-d/2+d*i/n:0,t=n?zz/(d/2):0,k=tp+(1-tp)*Math.sqrt(Math.max(0,1-t*t));
-      el(d?'slice':'slice m25-decal','left:-130px;top:-160px;width:260px;height:260px;transform-origin:'+((ox+5)*2)+'px 50%;transform:translateZ('+zz.toFixed(1)+'px) scaleX('+Math.max(k,.04).toFixed(3)+')',g).innerHTML=camLayer(i===0||i===n||i===mid?mk:side);
+      el(d?'slice':'slice m25-decal','left:-130px;top:-160px;width:260px;height:260px;transform-origin:'+((ox+5)*2)+'px 50%;transform:translateZ('+zz.toFixed(1)+'px) scaleX('+Math.max(k,.04).toFixed(3)+')',g).innerHTML=camLayer(i===0||i===n||i===mid?mk:side)+(i===n&&d?litMask(mk,[-5,-10,130,130],260,260):'');
     }
     if(d>=8)sidePlane(g,mk,side,d,ox);
   }
@@ -790,7 +800,9 @@
   // the outside wall of a rounded slab (w x h, corner radius r, depth along z), as flat strips standing round its edge
   function rim(parent, { w, h, r, depth, color, x = 0, y = 0, z = 0, n = 4 }) {
     const g = el('abs', 'transform:translate3d(' + x + 'px,' + y + 'px,' + z + 'px)', parent);
-    const strip = (cx, cy, ang, len) => el('slice', 'left:' + (-depth / 2) + 'px;top:' + (-len / 2 - .5) + 'px;width:' + depth + 'px;height:' + (len + 1) + 'px;background:' + color +
+    // light from the upper left: a strip facing up-left is lit, one facing down-right is in shade
+    const face = ang => { const a = ang * Math.PI / 180, l = -(Math.cos(a) * .55 + Math.sin(a) * .83); return l > 0 ? l * 1.4 : l * 1.2; };
+    const strip = (cx, cy, ang, len) => el('slice', 'left:' + (-depth / 2) + 'px;top:' + (-len / 2 - .5) + 'px;width:' + depth + 'px;height:' + (len + 1) + 'px;background:' + shade(color, face(ang)) +
       ';transform:translate(' + cx.toFixed(2) + 'px,' + cy.toFixed(2) + 'px) rotateZ(' + ang.toFixed(2) + 'deg) rotateY(90deg)', g);
     const sx = w / 2 - r, sy = h / 2 - r;
     if (sy > 0) { strip(w / 2, 0, 0, 2 * sy); strip(-w / 2, 0, 180, 2 * sy); }
@@ -808,10 +820,10 @@
     if (tuft) slab(tuft, { w: 72, h: 34, r: '0', depth: 18, front: '#f48020', side: '#cf6612',
       svg: c => '<svg width="72" height="34" viewBox="33 24 38 17"><path d="M36 40 C34 30 42 26 48 32 L52 36 L56 32 C62 26 70 30 68 40 Z" fill="' + c + '"/></svg>' });
     if (tuft) el('slice', 'left:-9px;top:-11px;width:18px;height:26px;border-radius:9px 9px 0 0;background:#cf6612;transform:rotateY(90deg)', tuft);
-    slab(m, { w: 32, h: 20, r: '6px', depth: 22, x: 48, y: -H / 2 - 8, z: -6, front: '#ffffff', side: '#d9d9d9' }); rim(m, { w: 31, h: 19, r: 5.5, depth: 21, x: 48, y: -H / 2 - 8, z: -6, color: '#d9d9d9', n: 3 });
+    slab(m, { w: 32, h: 20, r: '6px', depth: 22, x: 48, y: -H / 2 - 8, z: -6, front: '#ffffff', side: '#d9d9d9', lit: 1 }); rim(m, { w: 31, h: 19, r: 5.5, depth: 21, x: 48, y: -H / 2 - 8, z: -6, color: '#d9d9d9', n: 3 });
     el('slice cm-burst', 'left:28px;top:' + (-H / 2 - 22) + 'px;width:40px;height:28px;opacity:0;transform:translateZ(12px)', m);
     const noMouth = HATS[hat]?.mouth === 0 || HOLDS[hold]?.mouth === 0;
-    const body = slab(m, { w: W, h: H, r: R + 'px', depth: D, front: ORANGE, side: SIDE, html: '<svg width="' + W + '" height="' + H + '" viewBox="18 38 84 64" style="position:absolute;inset:0;overflow:visible">' +
+    const body = slab(m, { w: W, h: H, r: R + 'px', depth: D, front: 'radial-gradient(130% 120% at 24% 18%, color-mix(in srgb, ' + ORANGE + ', #fff 30%), ' + ORANGE + ' 42%, color-mix(in srgb, ' + ORANGE + ', #000 30%))', side: SIDE, lit: 1, html: '<svg width="' + W + '" height="' + H + '" viewBox="18 38 84 64" style="position:absolute;inset:0;overflow:visible">' +
       '<ellipse cx="28" cy="88" rx="4" ry="2.5" fill="#fff" opacity=".35"/><ellipse cx="92" cy="88" rx="4" ry="2.5" fill="#fff" opacity=".35"/>' +
       '<g class="cm-blush"><ellipse cx="29" cy="86" rx="8" ry="5" fill="#e5322b"/><ellipse cx="91" cy="86" rx="8" ry="5" fill="#e5322b"/></g>' +
       '<path class="cm-brow" d="M45 47 L56 42 M75 47 L64 42" stroke="#141414" stroke-width="2.6" stroke-linecap="round"/>' +
@@ -826,8 +838,12 @@
     slab(m, { w: 104, h: 104, r: '50%', depth: 6, z: F + 3, front: DEEP, side: DEEP }); rim(m, { w: 103, h: 103, r: 51.5, depth: 5, z: F + 3, color: DEEP, n: 6 });
     rim(m, { w: 91, h: 91, r: 45.5, depth: 15, z: F + 8, color: '#dcdcdc', n: 6 });
     const id = 'm25c' + (++uid);
-    slab(m, { w: 92, h: 92, r: '50%', depth: 16, z: F + 8, front: '#ffffff', side: '#dcdcdc', html: '<svg width="92" height="92" viewBox="37 47 46 46" style="position:absolute;inset:0;overflow:visible"><defs><clipPath id="' + id + '"><circle cx="60" cy="70" r="23"/></clipPath></defs><circle cx="60" cy="70" r="23" fill="#fff"/>' +
-      '<g class="cm-pupil"><circle cx="60" cy="70" r="12" fill="#141414"/><circle cx="64" cy="65" r="3.5" fill="#fff"/><circle cx="56.5" cy="74" r="1.5" fill="#fff"/></g>' +
+    slab(m, { w: 92, h: 92, r: '50%', depth: 16, z: F + 8, front: '#ffffff', side: '#dcdcdc', html: '<svg width="92" height="92" viewBox="37 47 46 46" style="position:absolute;inset:0;overflow:visible"><defs><clipPath id="' + id + '"><circle cx="60" cy="70" r="23"/></clipPath>' +
+      '<radialGradient id="' + id + 'w" cx=".4" cy=".35" r=".7"><stop offset=".55" stop-color="#fff"/><stop offset="1" stop-color="#c9c9c9"/></radialGradient>' +
+      '<radialGradient id="' + id + 'p" cx=".38" cy=".32" r=".75"><stop offset="0" stop-color="#3a3a3a"/><stop offset=".7" stop-color="#141414"/><stop offset="1" stop-color="#000"/></radialGradient></defs>' +
+      '<circle cx="60" cy="70" r="23" fill="url(#' + id + 'w)"/><circle cx="60" cy="70" r="22" fill="none" stroke="#000" stroke-opacity=".12" stroke-width="2"/>' +
+      '<g class="cm-pupil"><circle cx="60" cy="70" r="12" fill="url(#' + id + 'p)"/><circle cx="64" cy="65" r="3.5" fill="#fff"/><circle cx="56.5" cy="74" r="1.5" fill="#fff"/></g>' +
+      '<path d="M44 60 A18 18 0 0 1 58 50" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".9"/>' +
       '<rect class="cm-lid" x="36" y="46" width="48" height="48" fill="#f48020" clip-path="url(#' + id + ')"/></svg>' });
     (HATS[hat]?.p || []).forEach(p => outfitPart(m, p)); (HOLDS[hold]?.p || []).forEach(p => outfitPart(m, p));
   }
@@ -836,6 +852,7 @@
     const s = size / 100, cx = left + size * .5, cy = top + size * .615;
     const pos = el('abs', 'transform:translate3d(' + X(cx) + 'px,' + Y(cy) + 'px,0) scale3d(' + s + ',' + s + ',' + s + ')', parent);
     const act = el('abs ' + cls, 'transform-origin:0 99px 0' + (delay != null ? ';animation-delay:' + delay + 's' : ''), pos);
+    el('m25sh', '', act);
     build(el('abs cm-body', '', el('abs cm-all', '', act)), hat, hold);
     return act;
   }
@@ -873,7 +890,7 @@
   let ov = null;
   function stage(fn) {
     scene = document.createElement("div"); scene.className = "abs"; ov = [];
-    try { fn(); return `<div class="m25s m25-scene"><div class="m25sw">${scene.outerHTML}</div></div>` + (ov.length ? `<div class="m25s m25-ov">${ov.join("")}</div>` : ""); } finally { scene = null; ov = null; }
+    try { fn(); return `<div class="m25s m25-scene"><div class="m25sw">${scene.outerHTML}</div></div>` + `<div class="m25-light"></div>` + (ov.length ? `<div class="m25s m25-ov">${ov.join("")}</div>` : ""); } finally { scene = null; ov = null; }
   }
 
   // browsers without tan(atan2()) in CSS: size each 小M to its box from here
