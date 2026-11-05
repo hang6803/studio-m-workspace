@@ -3,16 +3,19 @@
 // upcoming shoots (hollow). A 3D force layout settles in front of you; the camera turns slowly until you touch it.
 // Drag = orbit, wheel / pinch = zoom, hover = light up the neighbours, click = pin (the camera glides to it),
 // double-click (or tap a pinned node again) = open. Nothing here reads or writes data: app.js hands it nodes + links.
+// 0.8.1: the layout and the drawing run in a Web Worker on an OffscreenCanvas when the browser can (phones stay smooth:
+// taps, scrolling and 小M never wait for the graph). The same file is the worker; without OffscreenCanvas it runs in the page.
 "use strict";
 (function () {
+  const IN_WORKER = typeof window === "undefined";
   const TAU = Math.PI * 2;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const ease = (dt, k) => 1 - Math.exp(-dt * k);   // frame-rate independent smoothing
 
-  function Graph3D(canvas, opt) {
-    opt = opt || {};
+  // env: { canvas, still, makeCanvas(w, h), emit(type, value), raf(f), caf(id) }; the page side sends it size, theme and pointers
+  function Core(env) {
+    const canvas = env.canvas, still = env.still, emit = env.emit;
     const ctx = canvas.getContext("2d");
-    const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     let W = 0, H = 0, dpr = 1, raf = 0, last = 0, running = false;
     let nodes = [], links = [], byId = new Map(), adj = new Map();
     let col = {};
@@ -22,17 +25,14 @@
     let hover = null, pinned = null, idleAt = 0, filter = null, fly = null;
     const ptrs = new Map(); let drag = null, pinch = 0, moved = 0, lastTap = { id: null, t: 0 };
 
-    function theme() {
-      const s = getComputedStyle(canvas);
-      const v = n => s.getPropertyValue(n).trim();
-      col = { bg: v("--bg"), ink: v("--fg"), muted: v("--muted"), line: v("--line"), ok: v("--ok"), no: v("--danger"), acc: v("--accent") || "#f48020", s1: v("--surface"), panel: v("--panel") };
+    function theme(c) {
+      col = c;
       const rgb = /^#[0-9a-f]{6}$/i.test(col.bg) ? [1, 3, 5].map(i => parseInt(col.bg.slice(i, i + 2), 16)) : [0, 0, 0];
       col.dark = rgb[0] * 0.3 + rgb[1] * 0.59 + rgb[2] * 0.11 < 110; sprites.clear();
     }
-    function size() {
-      const r = canvas.getBoundingClientRect();
-      dpr = Math.min(2, window.devicePixelRatio || 1);
-      W = Math.max(1, r.width); H = Math.max(1, r.height);
+    function size(w, h, d) {
+      dpr = d;
+      W = Math.max(1, w); H = Math.max(1, h);
       canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
       refit(); cam.dist = cam.gDist;
       kick();
@@ -62,7 +62,7 @@
       adj = new Map(nodes.map(n => [n.id, new Set()]));
       links.forEach(l => { adj.get(l.a.id).add(l.b.id); adj.get(l.b.id).add(l.a.id); });
       nodes.forEach(n => { n.deg = adj.get(n.id).size; });
-      if (pinned && !byId.has(pinned.id)) { pinned = null; opt.onPin && opt.onPin(null); }
+      if (pinned && !byId.has(pinned.id)) { pinned = null; emit("pin", null); }
       else if (pinned) pinned = byId.get(pinned.id);
       hover = null;
       alpha = 1;
@@ -131,7 +131,7 @@
     const sprites = new Map();
     function glow(c) {
       let g = sprites.get(c); if (g) return g;
-      g = document.createElement("canvas"); g.width = g.height = 128;
+      g = env.makeCanvas(128, 128);
       const x = g.getContext("2d"), rg = x.createRadialGradient(64, 64, 0, 64, 64, 64), m = /^#[0-9a-f]{6}$/i.test(c) ? [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)).join(",") : "244,128,32";
       [[0, 1], [0.12, 0.85], [0.3, 0.38], [0.55, 0.12], [0.8, 0.03], [1, 0]].forEach(([o, al]) => rg.addColorStop(o, `rgba(${m},${al})`));
       x.fillStyle = rg; x.fillRect(0, 0, 128, 128);
@@ -227,8 +227,8 @@
       ctx.globalCompositeOperation = "source-over";
       ctx.globalAlpha = 1;
     }
-    let fontName = "";
-    const font = () => fontName || (fontName = getComputedStyle(canvas).fontFamily || "sans-serif");
+    let fontName = "sans-serif";
+    const font = () => fontName;
 
     // ---------------------------------------------------------------- loop
     function frame(now) {
@@ -248,10 +248,10 @@
       if (fly && (now - fly.t0 > 520)) { const f = fly; fly = null; f.done && f.done(); }
       // keep drawing while anything moves; with reduced motion it rests 1.5 s after the last touch
       const busy = !still || alpha > 0 || drag || fly || now - idleAt < 1500 || now - kickAt < 1500;
-      if (running && busy) raf = requestAnimationFrame(frame);
+      if (running && busy) raf = env.raf(frame);
     }
     let kickAt = 0;
-    function kick() { kickAt = performance.now(); if (running && !raf) { last = 0; raf = requestAnimationFrame(frame); } }
+    function kick() { kickAt = performance.now(); if (running && !raf) { last = 0; raf = env.raf(frame); } }
 
     // ---------------------------------------------------------------- picking + pointer
     function pick(x, y) {
@@ -262,69 +262,69 @@
       }
       return null;
     }
-    const local = e => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
     function setHover(n) {
-      if (n === hover) return; hover = n; canvas.style.cursor = n ? "pointer" : "grab";
-      opt.onHover && opt.onHover(n); kick();
+      if (n === hover) return; hover = n; emit("cursor", n ? "pointer" : "grab");
+      emit("hover", n && n.id); kick();
     }
     function setPin(n) {
-      pinned = n; opt.onPin && opt.onPin(n);
-      if (n && navigator.vibrate) try { navigator.vibrate(6); } catch (e) {}
+      pinned = n; emit("pin", n && n.id);
+      if (n) emit("buzz");
       kick();
     }
-    canvas.addEventListener("pointerdown", e => {
-      canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, local(e)); idleAt = performance.now();
-      if (ptrs.size === 1) { drag = { ...local(e), yaw: cam.yaw, pitch: cam.pitch }; moved = 0; }
-      else if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); drag = null; }
-      kick();
-    });
-    canvas.addEventListener("pointermove", e => {
-      const p = local(e);
-      if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, p);
-      if (ptrs.size === 2 && pinch) {
-        const [a, b] = [...ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
-        cam.zoom = clamp(cam.zoom * pinch / d, 0.35, 3); refit(); pinch = d; idleAt = performance.now(); kick(); return;
-      }
-      if (drag) {
-        const dx = p.x - drag.x, dy = p.y - drag.y; moved = Math.max(moved, Math.abs(dx) + Math.abs(dy));
-        if (moved > 4) { cam.yaw = drag.yaw + dx * 0.006; cam.pitch = clamp(drag.pitch + dy * 0.004, -1.3, 1.3); canvas.style.cursor = "grabbing"; setHover(null); }
-        idleAt = performance.now(); kick(); return;
-      }
-      if (e.pointerType === "mouse") setHover(pick(p.x, p.y));
-    });
-    const up = e => {
-      const p = local(e), was = drag; ptrs.delete(e.pointerId);
-      if (ptrs.size < 2) pinch = 0;
-      if (was && moved <= 4) {
-        const n = pick(p.x, p.y), now = performance.now();
-        if (n && n === pinned && (e.pointerType !== "mouse" || (lastTap.id === n.id && now - lastTap.t < 380))) open(n);
-        else setPin(n);
-        lastTap = { id: n && n.id, t: now };
-      }
-      drag = null; canvas.style.cursor = hover ? "pointer" : "grab"; idleAt = performance.now(); kick();
-    };
-    canvas.addEventListener("pointerup", up);
-    canvas.addEventListener("pointercancel", e => { ptrs.delete(e.pointerId); drag = null; pinch = 0; });
-    canvas.addEventListener("pointerleave", e => { if (e.pointerType === "mouse" && !drag) setHover(null); });
-    canvas.addEventListener("dblclick", e => { const p = local(e), n = pick(p.x, p.y); if (n) open(n); });
-    canvas.addEventListener("wheel", e => { e.preventDefault(); cam.zoom = clamp(cam.zoom * Math.exp(e.deltaY * 0.0012), 0.35, 3); refit(); idleAt = performance.now(); kick(); }, { passive: false });
-    function open(n) { if (opt.onOpen) flyTo(n, () => opt.onOpen(n)); }
+    // pointer events arrive as plain objects { type, id, x, y, mouse, dy } (canvas-local coordinates)
+    function pointer(e) {
+      const p = { x: e.x, y: e.y }, now = performance.now();
+      if (e.type === "down") {
+        ptrs.set(e.id, p); idleAt = now;
+        if (ptrs.size === 1) { drag = { ...p, yaw: cam.yaw, pitch: cam.pitch }; moved = 0; }
+        else if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); drag = null; }
+        kick();
+      } else if (e.type === "move") {
+        if (ptrs.has(e.id)) ptrs.set(e.id, p);
+        if (ptrs.size === 2 && pinch) {
+          const [a, b] = [...ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
+          cam.zoom = clamp(cam.zoom * pinch / d, 0.35, 3); refit(); pinch = d; idleAt = now; kick(); return;
+        }
+        if (drag) {
+          const dx = p.x - drag.x, dy = p.y - drag.y; moved = Math.max(moved, Math.abs(dx) + Math.abs(dy));
+          if (moved > 4) { cam.yaw = drag.yaw + dx * 0.006; cam.pitch = clamp(drag.pitch + dy * 0.004, -1.3, 1.3); emit("cursor", "grabbing"); setHover(null); }
+          idleAt = now; kick(); return;
+        }
+        if (e.mouse) setHover(pick(p.x, p.y));
+      } else if (e.type === "up") {
+        const was = drag; ptrs.delete(e.id);
+        if (ptrs.size < 2) pinch = 0;
+        if (was && moved <= 4) {
+          const n = pick(p.x, p.y);
+          if (n && n === pinned && (!e.mouse || (lastTap.id === n.id && now - lastTap.t < 380))) open(n);
+          else setPin(n);
+          lastTap = { id: n && n.id, t: now };
+        }
+        drag = null; emit("cursor", hover ? "pointer" : "grab"); idleAt = now; kick();
+      } else if (e.type === "cancel") { ptrs.delete(e.id); drag = null; pinch = 0; }
+      else if (e.type === "leave") { if (e.mouse && !drag) setHover(null); }
+      else if (e.type === "dbl") { const n = pick(p.x, p.y); if (n) open(n); }
+      else if (e.type === "wheel") { cam.zoom = clamp(cam.zoom * Math.exp(e.dy * 0.0012), 0.35, 3); refit(); idleAt = now; kick(); }
+    }
+    function open(n) { flyTo(n, () => emit("open", n.id)); }
     function flyTo(n, done) { if (still) { done && done(); return; } fly = { node: n, t0: performance.now(), done }; kick(); }
 
-    const ro = new ResizeObserver(() => { size(); });
-    ro.observe(canvas);
-    theme();
-
-    return {
-      setData,
-      setFilter(fn) { filter = fn; kick(); },
-      pin(id) { setPin(id ? byId.get(id) || null : null); },
-      get pinned() { return pinned; },
-      open(id) { const n = byId.get(id); if (n) open(n); },
-      theme() { theme(); fontName = ""; kick(); },
-      start() { if (running) return; running = true; theme(); kick(); },
-      stop() { running = false; fly = null; if (raf) cancelAnimationFrame(raf); raf = 0; },
-      reset() { fly = null; refit(); cam.dist = cam.gDist * 0.6; kick(); }   // a small zoom-out "breath" when Home comes back
+    // one message in, from the page (or the in-page shim)
+    return function msg(m) {
+      switch (m.t) {
+        case "size": size(m.w, m.h, m.dpr); break;
+        case "theme": theme(m.col); if (m.font) fontName = m.font; kick(); break;
+        case "font": fontName = m.font; kick(); break;
+        case "data": setData(m.d); break;
+        case "filter": { const hide = m.hide ? new Set(m.hide) : null; filter = hide ? n => !hide.has(n.id) : null; kick(); break; }
+        case "pin": setPin(m.id ? byId.get(m.id) || null : null); break;
+        case "open": { const n = byId.get(m.id); if (n) open(n); break; }
+        case "start": if (!running) { running = true; kick(); } break;
+        case "stop": running = false; fly = null; if (raf) env.caf(raf); raf = 0; break;
+        case "reset": fly = null; refit(); cam.dist = cam.gDist * 0.6; kick(); break;   // a small zoom-out "breath" when Home comes back
+        case "ptr": pointer(m.e); break;
+        case "kick": kick(); break;
+      }
     };
   }
   // mix two #rrggbb colours (anything else is returned as is)
@@ -333,5 +333,97 @@
     const x = p(a), y = p(b); if (!x || !y) return a;
     return "#" + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, "0")).join("");
   }
+
+  // ---------------------------------------------------------------- worker side
+  if (IN_WORKER) {
+    let send = null;
+    const fontsReady = (async () => {   // the page's Century Gothic, loaded into the worker so labels look the same
+      try {
+        for (const [w, f] of [["400", "assets/cg-400.woff"], ["700", "assets/cg-700.woff"]]) {
+          const ff = new FontFace("Century Gothic", `url(${f})`, { weight: w }); self.fonts.add(ff); await ff.load();
+        }
+      } catch (e) {}
+    })();
+    self.onmessage = e => {
+      const m = e.data;
+      if (m.t === "init") {
+        const raf = self.requestAnimationFrame ? f => self.requestAnimationFrame(f) : f => setTimeout(() => f(performance.now()), 16);
+        const caf = self.cancelAnimationFrame ? id => self.cancelAnimationFrame(id) : id => clearTimeout(id);
+        send = Core({ canvas: m.canvas, still: m.still, makeCanvas: (w, h) => new OffscreenCanvas(w, h), raf, caf,
+          emit: (type, value) => self.postMessage({ type, value }) });
+        fontsReady.then(() => send && send({ t: "kick" }));
+        return;
+      }
+      if (send) send(m);
+    };
+    return;
+  }
+
+  // ---------------------------------------------------------------- page side: same API as before
+  function Graph3D(canvas, opt) {
+    opt = opt || {};
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let nodes = new Map(), pinnedId = null, filterFn = null, send, worker = null;
+    const nodeOf = id => id == null ? null : nodes.get(id) || null;
+    function on(type, value) {
+      if (type === "pin") { pinnedId = value; opt.onPin && opt.onPin(nodeOf(value)); }
+      else if (type === "hover") opt.onHover && opt.onHover(nodeOf(value));
+      else if (type === "open") opt.onOpen && opt.onOpen(nodeOf(value));
+      else if (type === "cursor") canvas.style.cursor = value;
+      else if (type === "buzz") { if (navigator.vibrate) try { navigator.vibrate(6); } catch (e) {} }
+    }
+    const src = document.currentScript && document.currentScript.src || "graph.js";
+    try {
+      if (canvas.transferControlToOffscreen && typeof OffscreenCanvas !== "undefined" && new OffscreenCanvas(1, 1).getContext("2d") && !/[?&]graph=page\b/.test(location.search)) {
+        worker = new Worker(Graph3D.src || src);
+        const off = canvas.transferControlToOffscreen();
+        worker.postMessage({ t: "init", canvas: off, still }, [off]);
+        worker.onmessage = e => on(e.data.type, e.data.value);
+        send = m => worker.postMessage(m);
+      }
+    } catch (e) { worker = null; }
+    if (!worker) {   // older browsers: the same engine on the page
+      send = Core({ canvas, still, makeCanvas: (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; },
+        raf: f => requestAnimationFrame(f), caf: id => cancelAnimationFrame(id), emit: on });
+    }
+    function colours() {
+      const s = getComputedStyle(canvas), v = n => s.getPropertyValue(n).trim();
+      return { bg: v("--bg"), ink: v("--fg"), muted: v("--muted"), line: v("--line"), ok: v("--ok"), no: v("--danger"), acc: v("--accent") || "#f48020", s1: v("--surface"), panel: v("--panel") };
+    }
+    const theme = () => send({ t: "theme", col: colours(), font: getComputedStyle(canvas).fontFamily || "sans-serif" });
+    function size() { const r = canvas.getBoundingClientRect(); send({ t: "size", w: r.width, h: r.height, dpr: Math.min(3, window.devicePixelRatio || 1) }); }
+    // pointers: page coordinates turned canvas-local, then handed over
+    const local = e => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+    const ptr = (type, e, extra) => send({ t: "ptr", e: Object.assign({ type, id: e.pointerId, mouse: e.pointerType === "mouse" }, local(e), extra) });
+    canvas.addEventListener("pointerdown", e => { canvas.setPointerCapture(e.pointerId); ptr("down", e); });
+    canvas.addEventListener("pointermove", e => ptr("move", e));
+    canvas.addEventListener("pointerup", e => ptr("up", e));
+    canvas.addEventListener("pointercancel", e => ptr("cancel", e));
+    canvas.addEventListener("pointerleave", e => ptr("leave", e));
+    canvas.addEventListener("dblclick", e => send({ t: "ptr", e: Object.assign({ type: "dbl", id: -1 }, local(e)) }));
+    canvas.addEventListener("wheel", e => { e.preventDefault(); send({ t: "ptr", e: Object.assign({ type: "wheel", id: -1, dy: e.deltaY }, local(e)) }); }, { passive: false });
+    new ResizeObserver(size).observe(canvas);
+    theme(); size();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(theme);
+
+    return {
+      setData(d) {
+        nodes = new Map(d.nodes.map(n => [n.id, n]));
+        if (pinnedId != null && !nodes.has(pinnedId)) pinnedId = null;
+        send({ t: "data", d });
+        if (filterFn) this.setFilter(filterFn);
+      },
+      setFilter(fn) { filterFn = fn; send({ t: "filter", hide: fn ? [...nodes.values()].filter(n => !fn(n)).map(n => n.id) : null }); },
+      pin(id) { pinnedId = id && nodes.has(id) ? id : null; send({ t: "pin", id: pinnedId }); opt.onPin && opt.onPin(nodeOf(pinnedId)); },
+      get pinned() { return nodeOf(pinnedId); },
+      open(id) { send({ t: "open", id }); },
+      theme() { theme(); },
+      start() { theme(); send({ t: "start" }); },
+      stop() { send({ t: "stop" }); },
+      reset() { send({ t: "reset" }); },
+      get offThread() { return !!worker; }
+    };
+  }
+  Graph3D.src = document.currentScript && document.currentScript.src;
   window.Graph3D = Graph3D;
 })();

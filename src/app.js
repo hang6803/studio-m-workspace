@@ -1655,7 +1655,7 @@ function festStatus() {
   return F.status(simDate() || new Date(), { people, me: session.name });
 }
 function scenes(on, replay) {
-  FX.stop(); FX.stop = () => {}; clearTimeout(FX.t);
+  clearTimeout(FX.wait); FX.stop(); FX.stop = () => {}; clearTimeout(FX.t);
   const T = window.XiaoMFestTheme;
   if (!on) { if (T) T.clear(); celeClose(true); if (window.XiaoMSfx && XiaoMSfx.stop) XiaoMSfx.stop(); if (X) Pet.wear(face(false)); return; }
   const s = festStatus(); if (!s || !T) return;
@@ -1690,7 +1690,12 @@ let festKey = "";
 const festKeyNow = () => JSON.stringify(birthdays || {}) + (simDate() || ymd(new Date()));   // real date in the key: a new day re-runs while unlocked
 function festAfterData() {
   const k = festKeyNow();
-  if (session && k !== festKey) { festKey = k; scenes(true); }
+  if (!session || k === festKey) return;
+  const first = !festKey; festKey = k;
+  if (!first) { scenes(true); return; }
+  // the first run after sign-in waits until Home has drawn and the phone is idle, so it never competes with the first screen
+  clearTimeout(FX.wait);
+  FX.wait = setTimeout(() => (window.requestIdleCallback || (g => g()))(() => { if (session && festKey === k) scenes(true); }, { timeout: 2500 }), 1800);
 }
 function drawFest(s) {
   s = s || festStatus(); const t = s && s.theme, el = $("festNow"); if (!el) return;
