@@ -918,8 +918,8 @@ html { touch-action: pan-x pan-y }
 
 /* 0.8.9: 小M's blink (闪现) and the paper letters it bursts into */
 .m-ghost .m-fan, .m-ghost .pet-say { display: none }
-.paper-burst { position: fixed; z-index: 41; width: 0; height: 0; pointer-events: none }
-.paper-burst .pb { position: absolute; left: 0; top: 0; background: #fff; backface-visibility: visible }
+.paper-burst { position: fixed; z-index: 41; width: 0; height: 0; pointer-events: none; contain: layout style }
+.paper-burst .pb { position: absolute; left: 0; top: 0; background: #fff; backface-visibility: visible; will-change: transform, opacity }
 .paper-burst .pb.o { background: var(--accent) } .paper-burst .pb.g { background: #d9d4cc }
 :root:not([data-theme="dark"]) .paper-burst .pb:not(.o) { background: #bfb8ad } :root:not([data-theme="dark"]) .paper-burst .pb.g { background: #8f8a82 }
 /* sitting on a pop-up's top edge */

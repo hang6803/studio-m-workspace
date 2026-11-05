@@ -1959,30 +1959,27 @@ const want1Row = el => el && /grid|flex/.test(getComputedStyle(el).display) && e
 // 闪现, the blink: at the old spot he jumps, spins and bursts into paper letters and is gone; at the new spot paper letters
 // burst, he springs out of them and lands with a bounce. The old spot is played by a copy of him, so the page never waits.
 function blink(b, from, to) {
-  const ghost = b.cloneNode(true); ghost.removeAttribute("id"); ghost.querySelectorAll("[id]").forEach(e => e.removeAttribute("id"));
-  ghost.className = "mbtn m-ghost"; ghost.setAttribute("aria-hidden", "true"); ghost.tabIndex = -1;
-  Object.assign(ghost.style, { position: "fixed", left: from.left + "px", top: from.top + "px", width: from.width + "px", height: from.height + "px", right: "auto", bottom: "auto", margin: 0, zIndex: 40, pointerEvents: "none", viewTransitionName: "none" });
-  document.body.appendChild(ghost);
-  ghost.animate([
-    { transform: "none" },
-    { transform: "translateY(4px) scale(1.12, .86)", offset: .14 },
-    { transform: "translateY(-34px) scale(.92, 1.1) rotate(0)", offset: .42 },
-    { transform: "translateY(-40px) scale(.6) rotate(320deg)", opacity: 1, offset: .74 },
-    { transform: "translateY(-42px) scale(0) rotate(540deg)", opacity: 0 }
-  ], { duration: 520, easing: "cubic-bezier(.3,.6,.4,1)", fill: "forwards" }).onfinish = () => ghost.remove();
-  setTimeout(() => paperBurst(from.left + from.width / 2, from.top + from.height / 2 - 38), 360);
-  // the new spot: a burst, then he springs out and lands
-  const IN = 470;
-  b.animate([{ opacity: 0 }, { opacity: 0 }], { duration: IN, fill: "backwards" });
-  setTimeout(() => { const r = b.getBoundingClientRect(); paperBurst(r.left + r.width / 2, r.top + r.height / 2 - 10, true); }, IN - 120);
+  // one 小M, one continuous motion (no copy of him: a copy is hundreds of 3D slices more for the phone to draw). He starts
+  // where he was (shifted back there), crouches, leaps and spins away into the burst; a beat later he pops out of the
+  // burst at the new spot, arcs up, falls and lands with a squash and two small bounces. Each step has its own easing,
+  // so rising slows down and falling speeds up like a real jump.
+  const dx = from.left - to.left, dy = from.top - to.top, at = (x, y) => `translate3d(${(dx + x).toFixed(1)}px, ${(dy + y).toFixed(1)}px, 0)`;
+  const OUT = 400, GAP = 70, IN = 660, T = OUT + GAP + IN, o = x => +(x / T).toFixed(4);
+  const up = "cubic-bezier(.2,.7,.35,1)", down = "cubic-bezier(.55,0,.85,.4)", soft = "cubic-bezier(.3,.6,.4,1)";
   b.animate([
-    { transform: "translateY(-46px) scale(0) rotate(-200deg)", opacity: 0 },
-    { transform: "translateY(-58px) scale(1.08, 1.12) rotate(0)", opacity: 1, offset: .38 },
-    { transform: "translateY(0) scale(1.24, .76)", offset: .66 },
-    { transform: "translateY(-12px) scale(.94, 1.08)", offset: .8 },
-    { transform: "translateY(0) scale(1.06, .95)", offset: .92 },
-    { transform: "none", opacity: 1 }
-  ], { duration: 640, delay: IN, easing: "cubic-bezier(.3,.7,.3,1)", fill: "backwards" }).onfinish = () => { act($("mSvg"), "land", 450); fx("drag"); };
+    { transform: at(0, 0) + " scale(1)", opacity: 1, easing: "cubic-bezier(.3,0,.6,1)" },
+    { transform: at(0, 5) + " scale(1.14, .84)", offset: o(90), easing: up },
+    { transform: at(0, -44) + " rotate(200deg) scale(.82, 1.08)", offset: o(280), easing: "cubic-bezier(.4,0,.8,.6)" },
+    { transform: at(0, -52) + " rotate(420deg) scale(0)", opacity: 0, offset: o(OUT) },
+    { transform: "translate3d(0, -40px, 0) rotate(-180deg) scale(0)", opacity: 0, offset: o(OUT + GAP), easing: up },
+    { transform: "translate3d(0, -64px, 0) rotate(0deg) scale(1.06, 1.1)", opacity: 1, offset: o(OUT + GAP + 260), easing: down },
+    { transform: "translate3d(0, 0, 0) scale(1.22, .78)", offset: o(OUT + GAP + 420), easing: up },
+    { transform: "translate3d(0, -14px, 0) scale(.95, 1.06)", offset: o(OUT + GAP + 520), easing: down },
+    { transform: "translate3d(0, 0, 0) scale(1.06, .95)", offset: o(OUT + GAP + 590), easing: soft },
+    { transform: "translate3d(0, 0, 0) scale(1)", opacity: 1 }
+  ], { duration: T }).onfinish = () => { act($("mSvg"), "land", 450); fx("drag"); };
+  setTimeout(() => paperBurst(from.left + from.width / 2, from.top + from.height / 2 - 48), OUT - 70);
+  setTimeout(() => { const r = b.getBoundingClientRect(); paperBurst(r.left + r.width / 2, r.top + r.height / 2 - 30, true); }, OUT + GAP - 40);
   fx("pin");
 }
 // shredded paper: torn scraps of every shape, thrown out (or sucked in), then fluttering down and turning over as they fall
@@ -1990,7 +1987,7 @@ const SHRED = ["polygon(0 8%,100% 0,92% 100%,6% 88%)", "polygon(10% 0,100% 18%,8
   "polygon(0 0,100% 0,100% 40%,85% 55%,100% 70%,100% 100%,0 100%)", "polygon(5% 10%,95% 0,100% 90%,0 100%)"];
 function paperBurst(x, y, inward) {
   const wrap = document.createElement("div"); wrap.className = "paper-burst"; wrap.style.left = x + "px"; wrap.style.top = y + "px"; document.body.appendChild(wrap);
-  const n = 30;
+  const n = 22;
   for (let i = 0; i < n; i++) {
     const p = document.createElement("i"), a = (i / n) * Math.PI * 2 + Math.random() * .5, d = 26 + Math.random() * 62;
     const w = 3 + Math.random() * 8, h = w * (.6 + Math.random() * 1.8);   // strips and flakes
