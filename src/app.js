@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.8.7";
+const APP_VER = "0.8.8";
 const $ = id => document.getElementById(id);
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
 const DEMO = !CFG.apiUrl;
@@ -552,7 +552,7 @@ function drawList() {
     n = all.length; un = all.filter(j => j.un).length;
     title = drive ? dName(k) : k; ico = drive ? ICON.drive : `<span class="hub ed big">${esc(initials(k))}</span>`;
     const eds = drive ? [...new Set(rs.map(r => r.editor).filter(Boolean))] : [], drvs = drive ? [] : [...new Set(rs.flatMap(drivesOf))];
-    sub = n ? [`${n} ${n === 1 ? "job" : "jobs"}`, un ? `<b class="red">${un} not backed up</b>` : `<span class="green">all backed up</span>`, spanOf(rs)].filter(Boolean).join(" · ") : "No jobs yet";
+    sub = n ? metaRow(`${n} ${n === 1 ? "job" : "jobs"}`, un ? `<b class="red">${un} not backed up</b>` : `<span class="green">all backed up</span>`, spanOf(rs)) : "No jobs yet";
     const who = drive ? (eds.length ? `<span class="muted small">Edited by</span>${eds.map(e => `<a class="fchip" href="#/editor/${encodeURIComponent(e)}">${esc(e)}</a>`).join("")}` : "")
       : (drvs.length ? `<span class="muted small">On</span>${drvs.slice(0, 8).map(d => `<a class="fchip" href="#/drive/${encodeURIComponent(d)}">${esc(dName(d))}</a>`).join("")}` : "");
     tools = `<div class="list-tools">${who}<span class="spacer"></span>${un ? `<button type="button" class="fchip${listUn ? " on" : ""}" id="listUn" aria-pressed="${listUn}"><i class="dot red"></i>Not backed up</button>` : ""}<button type="button" class="fchip" id="listCopy" data-title="${esc(title)}"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>Copy list</button></div>`;
@@ -576,7 +576,7 @@ function drawList() {
     html = ys.map(y => {
       const ds = drivesIn(y); total += ds.length;
       const none = jobsOf(rowsOf(y).filter(r => !drivesOf(r).length)), nu = none.filter(j => j.un).length, un = jobsOf(rowsOf(y)).filter(j => j.un).length;
-      return `<section class="bk-group dv-year" id="dy-${y}"><h3 class="bk-gh"><i class="yr">${y.slice(0, 2)}<em>${y.slice(2)}</em></i><span>${ds.length} ${ds.length === 1 ? "drive" : "drives"}${un ? ` · <b class="red">${un} not backed up</b>` : ""}</span></h3>
+      return `<section class="bk-group dv-year" id="dy-${y}"><h3 class="bk-gh"><i class="yr">${y.slice(0, 2)}<em>${y.slice(2)}</em></i><span>${ds.length} ${ds.length === 1 ? "drive" : "drives"}</span>${un ? `<span><b class="red">${un} not backed up</b></span>` : ""}</h3>
         <div class="hub-list">${ds.map((d, i) => driveCard(d, y, i)).join("")}${none.length ? `<a class="row hubrow" href="#/backup"><span class="hub drive none"></span><span class="r-name">No drive<small>${none.length} ${none.length === 1 ? "job" : "jobs"} without a drive yet</small></span><span class="r-links">${nu ? `<em class="red">${nu} not backed up</em>` : `<em>All backed up</em>`}</span></a>` : ""}</div></section>`;
     }).join("");
     sub = `${total} drives, ${ys[ys.length - 1] || ""}–${ys[0] || ""}. Open one to see its jobs.`;
@@ -595,7 +595,7 @@ function driveCard(d, y, i) {
   const rs = rowsOf(y).filter(r => drivesOf(r).includes(d.name)), js = jobsOf(rs), u = js.filter(j => j.un).length, eds = [...new Set(rs.map(r => r.editor).filter(Boolean))];
   const pct = js.length ? Math.round(100 * (js.length - u) / js.length) : 100;
   return `<a class="drive-card${u ? " has-un" : ""}" style="--i:${i || 0}" href="#/drive/${encodeURIComponent(d.name)}"><span class="hub drive"></span>
-    <span class="dc-main"><b>${esc(dName(d.name))}</b><small>${js.length} ${js.length === 1 ? "job" : "jobs"}${spanOf(rs) ? " · " + esc(spanOf(rs)) : ""}${eds.length ? " · " + esc(eds.join(", ")) : ""}</small>
+    <span class="dc-main"><b>${esc(dName(d.name))}</b><small>${metaRow(`${js.length} ${js.length === 1 ? "job" : "jobs"}`, esc(spanOf(rs) || ""), esc(eds.join(", ")))}</small>
     <span class="dc-bar" aria-hidden="true"><i style="width:${pct}%"></i></span></span>
     <span class="dc-st">${u ? `<em class="red">${u}</em><small>not backed up</small>` : `<em class="green">✓</em><small>all backed up</small>`}</span></a>`;
 }
@@ -882,7 +882,7 @@ function jobCard(j, i, o) {
   const r = j.main, w = whenOf(r), t = splitJob(r).title, no = num.get(r.id);
     const st = k => j[k] ? `<span class="md ${selfUnbacked(j[k]) ? "no" : "ok"}" title="${k === "video" ? "Video" : "Photo"}: ${!j[k].backupDate && !j[k].backedUp ? "not backed up" : "backed up" + (j[k].backupDate ? " " + esc(fmtDates([j[k].backupDate])) : "")}">${k === "video" ? "Video" : "Photo"}</span>` : "";
     const drives = [...new Set(j.rows.flatMap(drivesOf))];
-    const meta = [w.place && hl(w.place, ts), o.hide !== "editor" && r.editor && `<a href="#/editor/${encodeURIComponent(r.editor)}">${hl(r.editor, ts)}</a>`, r.notes && `<span class="bk-notes">${hl(r.notes, ts)}</span>`].filter(Boolean).join(" · ");
+    const meta = [w.place && hl(w.place, ts), o.hide !== "editor" && r.editor && `<a href="#/editor/${encodeURIComponent(r.editor)}">${hl(r.editor, ts)}</a>`, r.notes && `<span class="bk-notes">${hl(r.notes, ts)}</span>`].filter(Boolean).map(x => `<span class="mr">${x}</span>`).join("");
     const open = bkOpen.has(r.id);
     return `<div class="bk-row${j.un ? " un" : ""}${open ? " open" : ""}" data-job="${esc(r.id)}" tabindex="0" aria-expanded="${open}" style="--i:${Math.min(i, 14)}">
       <span class="bk-no">${no ? String(no).padStart(2, "0") : ""}</span>
@@ -923,7 +923,7 @@ function bkDetail(id) {
   return `<div class="dt-main">
       <div class="dt-halves">${half("Video", j.video)}${half("Photo", j.photo)}</div>
       ${days}${extra.length ? `<div class="dt-days one">${extra.map(l => linkA(l, "dt-link")).join("")}</div>` : ""}
-      ${r.editor || notes.length ? `<p class="dt-meta">${r.editor ? `<a href="#/editor/${encodeURIComponent(r.editor)}">${esc(r.editor)}</a>` : ""}${r.editor && notes.length ? " · " : ""}${esc(notes.join(" · "))}</p>` : ""}
+      ${r.editor || notes.length ? `<p class="dt-meta">${r.editor ? `<a href="#/editor/${encodeURIComponent(r.editor)}">${esc(r.editor)}</a>` : ""}${notes.map(n => `<span>${esc(n)}</span>`).join("")}</p>` : ""}
     </div>
     <div class="dt-hist"><b>History</b>${hist.length ? `<ol>${hist.slice(0, 8).map(h => `<li class="${/新增/.test(h.action) ? "add" : /备份/.test(h.action) ? "bk" : "ed"}"><span><b>${esc(h.by || "Someone")}</b> ${esc((ACT[h.action] || h.action || "").toLowerCase())}${h.half ? ` <em>${h.half}</em>` : ""}</span><time title="${esc(String(h.at).slice(0, 16).replace("T", " "))}">${esc(relAt(h.at))}</time></li>`).join("")}</ol>` : `<p>${made ? "Added " + esc(relAt(made)) + ". " : ""}No edits yet.</p>`}</div>
     <div class="bk-acts"><button type="button" class="btn ghost sm" data-job-edit="${esc(r.id)}">Edit</button>${j.un ? `<button type="button" class="btn sm bk-fix" data-job-edit="${esc(r.id)}">Back up</button>` : ""}</div>`;
@@ -938,6 +938,8 @@ function bkToggle(row) {
   else if (!open && d) d.remove();
   fx(open ? "open" : "close");
 }
+// facts side by side, spaced, never strung together with dots
+const metaRow = (...xs) => xs.filter(Boolean).map(x => `<span class="mr">${x}</span>`).join("");
 // a page drawn again with nothing changed keeps its rows as they are: no rebuild, no restyle of hundreds of rows
 function setHTML(el, html) { if (el._html === html && el.isConnected) return false; el.innerHTML = html; el._html = html; return true; }
 function drawBackup(first) {
@@ -1811,7 +1813,7 @@ function drawHits() {
   hitI = -1;
   const h = $("hits");
   h.innerHTML = hits.map((x, i) => `<a class="hit" href="${esc(x.href)}" data-i="${i}" role="option"><span class="hub ${x.kind === "drive" ? "drive" : x.kind === "editor" ? "ed" : x.kind === "no" ? "red" : x.kind === "ok" ? "green" : "hollow"}">${x.kind === "editor" ? esc(initials(x.label)) : ""}</span><b>${esc(x.label)}</b><small>${esc(x.sub)}</small></a>`).join("")
-    + (hits.length ? `<p class="hits-foot">Enter asks M · ↑↓ picks a match</p>` : "");
+    + (hits.length ? `<p class="hits-foot">Enter asks M. ↑↓ picks a match.</p>` : "");
   h.hidden = !hits.length;
 }
 function markHit() { [...$("hits").querySelectorAll(".hit")].forEach((a, i) => a.classList.toggle("sel", i === hitI)); }
@@ -2029,7 +2031,7 @@ $("demoBday").addEventListener("click", () => {
   try { localStorage.removeItem("bdaySeen"); } catch (e) {}
   scenes(false); scenes(true); location.hash = "#/home";
 });
-$("ver").textContent = "Studio M Workspace v" + APP_VER + (DEMO ? " · demo" : "");
+$("ver").textContent = "Studio M Workspace v" + APP_VER + (DEMO ? " (demo)" : "");
 
 // ---------------------------------------------------------------- 小M's hooks for the Classic Backup page and the scenes layer
 // The Backup page's own 小M is hidden; its moods and moves (worried about unbacked jobs, hops, shrugs…) show on this one,
