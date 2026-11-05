@@ -1,7 +1,7 @@
 {
   "name": "studio-m-workspace",
   "private": true,
-  "version": "0.8.5",
+  "version": "0.8.6",
   "scripts": {
     "build:web": "node tools/build.mjs",
     "icons": "tauri icon src-tauri/icons/app-icon.png",

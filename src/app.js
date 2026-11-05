@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.8.5";
+const APP_VER = "0.8.6";
 const $ = id => document.getElementById(id);
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
 const DEMO = !CFG.apiUrl;
@@ -330,10 +330,10 @@ addEventListener("hashchange", () => { if (session) { fx("nav"); render(false); 
 function render(first) {
   const next = parse(location.hash);
   const b = $("mBtn"), from = b.hidden ? null : b.getBoundingClientRect();
-  // with a page transition, 小M is his own layer in it: he isn't cross-faded with the page (that was the flash), he glides to his new spot
+  // with a page transition, 小M is his own layer in it: he isn't cross-faded with the page (that was the flash), he hops to his new spot
   const vt = !first && !STILL && document.startViewTransition;
-  const apply = () => { route = next; paint(); perch(vt ? null : from); };
-  if (vt) { const t = document.startViewTransition(apply); t.finished.then(() => { if (!b.hidden && from && from.width) act($("mSvg"), "land", 450); }, () => {}); } else apply();
+  const apply = () => { route = next; paint(); perch(from); };
+  if (vt) document.startViewTransition(apply); else apply();
   if (window.innerWidth < 900 && !$("mPanel").hidden) closeM();
 }
 let shownView = "";
@@ -1664,14 +1664,14 @@ const fan = document.createElement("div"); fan.className = "m-fan"; fan.id = "mF
 fan.innerHTML = [["ask", "Ask M", '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 10h8M8 13h5"/>'],
   ["job", "Add backup", '<path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5"/>'],
   ["shoot", "Add calendar", '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4M12 13v4M10 15h4"/>']]
-  .map(([f, t, d], i) => `<button type="button" role="menuitem" data-f="${f}" aria-label="${t}" style="--i:${i}"><svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg><span class="fan-tip">${t}</span></button>`).join("");
+  .map(([f, t, d], i) => `<button type="button" role="menuitem" data-f="${f}" aria-label="${t}" style="--i:${i}"><svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg></button>`).join("");
 document.body.appendChild(fan);
 let fanT = 0;
 // the three buttons open in a ring round 小M, on the side that has room (towards the middle of the screen)
 function fanShow() {
   clearTimeout(fanT); const b = $("mBtn"); if (mOpen || b.hidden) return;
-  const r = b.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2, R = r.width / 2 + (phoneW() ? 40 : 44);
-  const a0 = Math.atan2(innerHeight * .45 - cy, innerWidth / 2 - cx), step = phoneW() ? .95 : .9;
+  const r = b.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2, R = r.width / 2 + (phoneW() ? 28 : 30);
+  const a0 = Math.atan2(innerHeight * .45 - cy, innerWidth / 2 - cx), step = phoneW() ? .78 : .74;
   fan.style.left = cx + "px"; fan.style.top = cy + "px"; fan.sy = $("views").scrollTop;
   fan.querySelectorAll("button").forEach((x, i) => { const a = a0 + (i - 1) * step; x.style.setProperty("--x", Math.cos(a) * R + "px"); x.style.setProperty("--y", Math.sin(a) * R + "px"); x.classList.toggle("tip-l", Math.cos(a) < -.3); });
   if (fan.hidden) { fan.hidden = false; fan.classList.remove("in", "out"); void fan.offsetWidth; fan.classList.add("in"); }
@@ -1700,6 +1700,7 @@ const seat = document.createElement("div"); seat.className = "m-seat";
 function perch(from) {
   const b = $("mBtn"); if (!b.isConnected) document.body.appendChild(b);
   if (b.hidden || mOpen) return;
+  if (b.getAnimations().some(a => a.playState === "running") && !from) return;   // mid-hop: a redraw doesn't move him
   const want = PERCH[shownView], t = want && document.querySelector(want[0]);
   const ok = t && t.offsetParent && t.getBoundingClientRect().height > 30;
   if (ok) {
@@ -1707,15 +1708,49 @@ function perch(from) {
     else if (t.previousElementSibling !== seat) { t.before(seat); }
     if (!want[1]) { const g = parseFloat(getComputedStyle(t.parentElement).rowGap) || 0; seat.style.marginBottom = -g + "px"; }
     if (b.parentElement !== seat) seat.appendChild(b);
-    b.classList.add("perched");
-  } else { if (b.parentElement !== document.body) document.body.appendChild(b); b.classList.remove("perched"); seat.remove(); }
-  // the hop: from where he stood to the new spot, in an arc, then a little landing squash
+    b.classList.add("perched"); fitPerch(b, !!want[1]);
+  } else { if (b.parentElement !== document.body) document.body.appendChild(b); b.classList.remove("perched"); b.style.right = ""; seat.remove(); }
+  // the hop: up off the old spot, an arc through the air with a motion blur that follows his speed, a squash on landing
   const to = b.getBoundingClientRect();
-  if (from && from.width && !STILL && (Math.abs(from.left - to.left) > 2 || Math.abs(from.top - to.top) > 2)) {
-    const dx = from.left - to.left, dy = from.top - to.top, up = Math.min(-60, Math.min(dy, 0) - 50);
-    b.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: `translate(${dx * .45}px, ${dy * .5 + up}px) rotate(${dx > 0 ? -8 : 8}deg)`, offset: .5 }, { transform: "none" }],
-      { duration: 560, easing: "cubic-bezier(.3,.7,.3,1)" }).onfinish = () => act($("mSvg"), "land", 450);
-  }
+  if (from && from.width && !STILL && (Math.abs(from.left - to.left) > 2 || Math.abs(from.top - to.top) > 2)) hop(b, from, to);
+}
+// where on the panel's edge he stands: clear of buttons and tabs right above it (tries spots from the right towards the left),
+// and with room above him inside the scrolling page so his head is never cut off
+function fitPerch(b, inside) {
+  seat.style.height = ""; b.style.right = ""; if (fitPerch.pushed) { fitPerch.pushed.style.marginTop = ""; fitPerch.pushed = null; }
+  const views = $("views"), vr = views.getBoundingClientRect(), host = seat.parentElement, hr = host.getBoundingClientRect();
+  // stand over the panel's own content: on a wide grid (team cards) that is the right end of its first row, not the empty space
+  let edge = hr.right;
+  if (!inside && want1Row(seat.nextElementSibling)) { const kids = [...seat.nextElementSibling.children].filter(k => k.offsetParent);
+    if (kids.length) { const top = kids[0].getBoundingClientRect().top; edge = Math.max(...kids.filter(k => Math.abs(k.getBoundingClientRect().top - top) < 4).map(k => k.getBoundingClientRect().right)); } }
+  const base = (parseFloat(getComputedStyle(b).right) || 10) + Math.max(0, hr.right - edge);
+  // things he must not stand on: buttons, tabs, fields and headings of this page (by their boxes, so it works mid page-change too)
+  const page = document.querySelector("#v-" + shownView) || document.body;
+  const edgeTop = (inside ? host : seat.nextElementSibling || host).getBoundingClientRect().top;   // what he stands on is below his feet: only what is above the edge counts
+  const things = [...page.querySelectorAll("button, a[href], input, select, textarea, [role=tab], .btn, .fchip, h1, h2, h3")].filter(x => !b.contains(x) && x.offsetParent).map(x => x.getBoundingClientRect()).filter(q => q.top < edgeTop - 2);
+  const busy = () => { const r = b.getBoundingClientRect(), L = r.left + 6, R = r.right - 6, T = r.top, B = r.bottom - 4;
+    return things.some(q => q.width && q.left < R && q.right > L && q.top < B && q.bottom > T); };
+  let pick = null;
+  for (let c = base; c < hr.width - b.offsetWidth - 4; c += 14) { b.style.right = c + "px"; if (!busy()) { pick = c; break; } }
+  b.style.right = (pick == null ? base : pick) + "px";
+  // nowhere free along the edge (a full row of buttons right above it): open a gap above the panel just tall enough for him
+  let push = 0;
+  if (pick == null) { const r = b.getBoundingClientRect(); push = Math.max(0, ...things.filter(q => q.left < r.right - 6 && q.right > r.left + 6 && q.top < r.bottom).map(q => q.bottom - r.top + 4)); }
+  if (!inside) { const top = b.getBoundingClientRect().top - vr.top + views.scrollTop; push = Math.max(push, 6 - top); }
+  if (push > 0) { if (inside) { host.style.marginTop = push + "px"; fitPerch.pushed = host; } else seat.style.height = push + "px"; }
+}
+const want1Row = el => el && /grid|flex/.test(getComputedStyle(el).display) && el.children.length > 1;
+function hop(b, from, to) {
+  const dx = from.left - to.left, dy = from.top - to.top, up = Math.min(-70, Math.min(dy, 0) - 60), tilt = dx > 0 ? -10 : 10;
+  const k = Math.min(1.6, Math.hypot(dx, dy) / 260 + .5);   // longer jumps blur and stretch a little more
+  b.animate([
+    { transform: `translate(${dx}px, ${dy}px) scale(1.08, .88)`, filter: "blur(0)", offset: 0 },
+    { transform: `translate(${dx}px, ${dy - 8}px) scale(.9, 1.14)`, filter: `blur(${.6 * k}px)`, offset: .12 },
+    { transform: `translate(${dx * .5}px, ${dy * .55 + up}px) rotate(${tilt}deg) scale(.94, 1.08)`, filter: `blur(${1.8 * k}px)`, offset: .48 },
+    { transform: `translate(${dx * .08}px, ${dy * .1 - 18}px) rotate(${-tilt * .3}deg) scale(.92, 1.12)`, filter: `blur(${1.1 * k}px)`, offset: .82 },
+    { transform: "translate(0, 0) scale(1.16, .84)", filter: "blur(0)", offset: .92 },
+    { transform: "none", filter: "blur(0)", offset: 1 }
+  ], { duration: 640, easing: "cubic-bezier(.33,.0,.25,1)" }).onfinish = () => { act($("mSvg"), "land", 450); fx("drag"); };
 }
 // on a wide screen the chat opens on 小M's side of the screen, or where you last dragged it (by its top bar)
 let mpPos = store.get("mpPos", null);
