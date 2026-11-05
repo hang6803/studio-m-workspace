@@ -888,3 +888,13 @@ html { touch-action: pan-x pan-y }
 .dc-bar i { transform-origin: 0 50%; animation: barFill .9s cubic-bezier(.2, .8, .2, 1) both }
 .drive-card:nth-child(2) .dc-bar i { animation-delay: .06s } .drive-card:nth-child(3) .dc-bar i { animation-delay: .12s } .drive-card:nth-child(n+4) .dc-bar i { animation-delay: .18s }
 @media (prefers-reduced-motion: reduce) { .dc-bar i { animation: none } }
+
+/* ---- unslop 0.8.8: one direction, the viewfinder ----
+   Facts sit side by side with space between them, not strung on dots. Orange is kept for what you act on and what needs
+   you (primary buttons, the chosen tab, today, the year's last two digits, not backed up); names, drives and links read in
+   the text colours, so the orange moments stand out. */
+.mr { display: inline-block } .mr + .mr { margin-left: 14px }
+.bk-main small a, .dt-meta a, .tm-next a { color: var(--fg); font-weight: 700 }
+.dt-meta { display: flex; flex-wrap: wrap; gap: 4px 14px } .dt-meta span { color: var(--muted) }
+.bk-drv a, .dt-drv { color: var(--fg) }
+.dt-n { color: var(--muted) }
