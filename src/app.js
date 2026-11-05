@@ -1707,6 +1707,7 @@ function trick() {
   const [name, sound, ms] = TRICKS[i]; act($("mSvg"), name, ms); fx(sound);
 }
 MBTN.addEventListener("click", e => {
+  e.preventDefault();   // he may stand inside a card that is a link: tapping him never follows it
   if (e.detail === 0) { openM(); return; }   // keyboard: Enter / Space opens the chat as before
   trick(); if (!matchMedia("(hover: hover)").matches) fanShow(); });
 const fan = document.createElement("div"); fan.className = "m-fan"; fan.id = "mFan"; fan.hidden = true; fan.setAttribute("role", "menu");
@@ -1748,11 +1749,21 @@ const PERCH = { home: ["#monitor"], calendar: [".cal-box", true], backup: ["#bkH
 const seat = document.createElement("div"); seat.className = "m-seat";
 // on a page of cards (Team, Drives) he has a card to stand on at a time: the one in view; scrolled out of sight, he blinks
 // to the next card, and back to the first when you go back to the top
+// stations: as you scroll, he blinks from panel to panel so he is always in view. Team and Drives are all cards (the first
+// card is his first spot); on the other pages his first spot is the page's own (PERCH), then the panels and rows below it.
 const STATIONS = { team: "#teamGrid > .tm", drives: "#listRows .drive-card" };
+const SCROLL = { calendar: "#day", backup: "#bkList .bk-row", settings: "#v-settings .card", job: "#v-job .facts ~ *, #v-job .bk-row",
+  list: "#listRows .bk-row, #listRows .drive-card, #listRows .row" };
 const stationSel = () => STATIONS[shownView === "list" ? route.name : shownView];
+function stationEls() {   // every spot on this page, in order; [0] is his first one
+  const sel = stationSel(); if (sel) return [...document.querySelectorAll(sel)].filter(e => e.offsetParent);
+  const w = PERCH[shownView], s = SCROLL[shownView]; if (!w || !s) return [];
+  const first = document.querySelector(w[0]); return [first, ...[...document.querySelectorAll(s)].filter(e => e.offsetParent && e !== first && !e.contains(first))].filter(Boolean);
+}
 function perchWant() {
   const sel = stationSel();
-  if (sel) { const els = [...document.querySelectorAll(sel)].filter(e => e.offsetParent); if (els.length) { perch.st = clamp(perch.st || 0, 0, els.length - 1); return [els[perch.st], true, true]; } }
+  if (sel) { const els = stationEls(); if (els.length) { perch.st = clamp(perch.st || 0, 0, els.length - 1); return [els[perch.st], true, true]; } }
+  if (perch.st > 0) { const els = stationEls(); if (els[perch.st]) return [els[perch.st], true, true]; perch.st = 0; }
   const w = PERCH[shownView]; return w && [document.querySelector(w[0]), w[1]];
 }
 function perch(from, how) {
@@ -1853,13 +1864,15 @@ function sitOn(b, sh) {
 }
 // on Team / Drives: when his card is almost out of sight he blinks to the next card in view; quickly back at the top, to the first
 let stT = 0;
-$("views").addEventListener("scroll", () => { if (stT || !stationSel()) return; stT = requestAnimationFrame(() => { stT = 0;
+$("views").addEventListener("scroll", () => { if (stT || shownView === "home") return; stT = requestAnimationFrame(() => { stT = 0;
   const b = MBTN; if (b.hidden || mOpen || !b.classList.contains("perched") || b.getAnimations().some(a => a.playState === "running")) return;
-  const els = [...document.querySelectorAll(stationSel())].filter(e => e.offsetParent); if (els.length < 2) return;
-  const vr = $("views").getBoundingClientRect(), br = b.getBoundingClientRect(), cur = perch.st || 0;
+  const els = stationEls(); if (els.length < 2) return;
+  const vr = $("views").getBoundingClientRect(), br = b.getBoundingClientRect(), cur = Math.min(perch.st || 0, els.length - 1);
   let next = cur;
   if ($("views").scrollTop < 40) next = 0;
-  else if (br.bottom < vr.top + 26 || br.top > vr.bottom - 20) { const i = els.findIndex(e => e.getBoundingClientRect().top > vr.top + 70); next = i < 0 ? els.length - 1 : i; }
+  else if (br.bottom < vr.top + 26 || br.top > vr.bottom - 20) {   // gone from sight: the first spot whose top edge is in view
+    const i = els.findIndex(e => { const t = e.getBoundingClientRect().top; return t > vr.top + 70 && t < vr.bottom - 90; });
+    next = i < 0 ? cur : i; }
   if (next !== cur && Math.abs(els[next].getBoundingClientRect().top - els[cur].getBoundingClientRect().top) > 4) { perch.st = next; perch(br); }
 }); }, { passive: true });
 // where on the panel's edge he stands: clear of buttons and tabs right above it (tries spots from the right towards the left),
@@ -1867,6 +1880,19 @@ $("views").addEventListener("scroll", () => { if (stT || !stationSel()) return; 
 function fitPerch(b, inside, station) {
   seat.style.height = ""; b.style.right = ""; if (fitPerch.pushed) { fitPerch.pushed.style.marginTop = fitPerch.pushed.style.paddingTop = ""; fitPerch.pushed = null; }
   if (station) {   // a card of his own: he stands at its right end; the first card gets room above it so his head isn't cut off
+    // on a job row he stands over the quiet middle, clear of the row above's tags, drive and Back up
+    // on a job row he looks along its top edge for the spot that hides least of the row above (its name, tags, drive, Back up)
+    const host = seat.parentElement;
+    if (host.matches(".bk-row, .row")) {
+      const prev = host.previousElementSibling, hr = host.getBoundingClientRect();
+      const things = prev && !prev.classList.contains("bk-th") ? [...prev.querySelectorAll("b, .mr, .md, .bk-drv > *, .bk-more, .bk-when, .bk-no, .bk-parts li, span, a, button")].filter(x => x.offsetParent && !x.children.length || x.matches("button, a, .md"))
+        .map(x => x.getBoundingClientRect()).filter(q => q.width && q.bottom > hr.top - b.offsetHeight) : [];
+      const cover = () => { const r = b.getBoundingClientRect(), L = r.left + 8, R = r.right - 8, T = r.top + 6, B = r.bottom - 4;
+        return things.reduce((a, q) => a + Math.max(0, Math.min(R, q.right) - Math.max(L, q.left)) * Math.max(0, Math.min(B, q.bottom) - Math.max(T, q.top)), 0); };
+      let best = 8, least = Infinity;
+      for (let c = 8; c < hr.width - b.offsetWidth - 4; c += 10) { b.style.right = c + "px"; const k = cover(); if (k < least - 1) { least = k; best = c; } if (!k) break; }
+      b.style.right = best + "px";
+    }
     const views = $("views"), top = b.getBoundingClientRect().top - views.getBoundingClientRect().top + views.scrollTop;
     if (top < 6) { const g = seat.parentElement.parentElement; g.style.paddingTop = (6 - top) + "px"; fitPerch.pushed = g; }
     return; }

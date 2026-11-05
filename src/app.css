@@ -987,3 +987,5 @@ html { touch-action: pan-x pan-y }
   .bk-media { grid-area: media; align-self: center } .bk-drv { grid-area: drv; justify-content: flex-end }
   .bk-cats button { padding: 10px 10px 11px }
 }
+/* the list he stands in lets his head show above its row */
+:is(.bk-rows, .rows, #listRows):has(.m-host) { overflow: visible }
