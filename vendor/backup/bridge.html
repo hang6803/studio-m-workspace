@@ -1,0 +1,244 @@
+<!-- Studio M Backup — Google Sheets bridge (v3.2.00: team birthdays). Built into google/Index.html by tools/build_google.py. -->
+<style>[hidden] { display: none !important } body { margin: 0 } .pin-in { letter-spacing: .3em; font-size: 18px !important; text-align: center }
+/* v3.2.01: the page's sheets became see-through glass, so the PIN dialog (which opens on top of the Add / Edit form)
+   gets its own solid card and a darker backdrop, otherwise the form shows through it */
+#pinScrim { z-index: 40; background: rgba(0, 0, 0, .55) !important }
+#pinScrim .sheet { max-width: 400px; background: var(--surface) !important; box-shadow: 0 30px 80px rgba(0,0,0,.45) }
+/* Google version only: if anything goes wrong while loading, never leave the loading screen up — show the error instead */
+.boot { animation: bootSafe .4s ease 20s forwards } @keyframes bootSafe { to { opacity: 0; visibility: hidden } }
+.gs-err { position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 99; padding: 12px 14px; border-radius: 12px; font: 13px/1.45 ui-monospace, Menlo, monospace;
+  background: #2a0d0b; color: #ffd9d5; border: 1px solid #c8281c; white-space: pre-wrap; word-break: break-word }</style>
+<div class="gs-err" id="gsErr" hidden></div>
+<script>
+// Show the first load error on screen (and drop the loading screen) so problems are visible instead of a black page
+window.__gsErr = function (msg) {
+  try {
+    const box = document.getElementById("gsErr"); if (!box || !box.hidden) return;
+    box.textContent = "Studio M Backup couldn't load:\n" + msg; box.hidden = false;
+    const boot = document.getElementById("boot"); if (boot) boot.remove();
+    document.body.classList.remove("booting");
+  } catch (e) {}
+};
+window.addEventListener("error", e => window.__gsErr((e.message || "error") + (e.lineno ? " (line " + e.lineno + ")" : "")));
+window.addEventListener("unhandledrejection", e => window.__gsErr(String(e.reason && e.reason.message || e.reason)));
+</script>
+<div class="scrim" id="pinScrim" hidden>
+  <form class="sheet" id="pinForm" role="dialog" aria-modal="true" aria-labelledby="pinTitle">
+    <h3 id="pinTitle">Studio PIN</h3>
+    <p class="sub">Enter the studio PIN to add, update or delete. You only need to do this once on each device.</p>
+    <input id="pinInput" class="pin-in" type="password" inputmode="numeric" autocomplete="off" aria-label="PIN">
+    <span class="msg" id="pinMsg"></span>
+    <div class="actions"><span class="spacer"></span>
+      <button class="btn ghost" type="button" id="pinCancel">Cancel</button>
+      <button class="btn" type="submit">OK</button>
+    </div>
+  </form>
+</div>
+<script>
+// ---- Google Sheets bridge: gives the page the same small API it had on Claude (window.claude.use("db"|"user"|"downloads")) ----
+(function () {
+  const NUM = ["sec", "ord", "no"], JSONF = ["parts", "history"];
+  const call = (fn, ...args) => new Promise((ok, fail) =>
+    google.script.run.withSuccessHandler(ok).withFailureHandler(e => fail(e instanceof Error ? e : new Error(String(e))))[fn](...args));
+  let rows = [], team = null, birthdays = {}, settings = {}, rev = -1, pinRequired = false, loaded = false;
+  // v3.0.01: the opening logo film comes from Google Drive through Code.gs (getIntro); it is only fetched when this
+  // device is about to play it, and may take a few seconds to arrive, so the page waits up to 15s before skipping it
+  window.__introWait = 15000;
+  window.__introFilm = () => call("getIntro").then(b64 => {
+    const bin = atob(b64), bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: "video/mp4" });
+  });
+  const jobsCbs = [], teamCbs = [], errCbs = [], setCbs = {};
+
+  function fromSheet(o) {
+    const r = {};
+    for (const k in o) {
+      const v = o[k];
+      if (v === "" || v == null) continue;
+      if (NUM.includes(k)) r[k] = Number(v);
+      else if (JSONF.includes(k)) { if (typeof v === "object") r[k] = v; else try { r[k] = JSON.parse(v); } catch (e) {} }
+      else if (k === "backedUp") r[k] = String(v).toUpperCase() === "TRUE";
+      else r[k] = String(v);
+    }
+    return r;
+  }
+  function emitJobs() { const s = { docs: [{ id: "all", exists: true, data: () => ({ rows }) }] }; jobsCbs.forEach(cb => cb(s)); }
+  // Small settings: hidden drives come from the "Drives" tab, each person's sort order from "Settings" (key + JSON)
+  const setSnap = key => ({ exists: settings[key] != null, data: () => settings[key] });
+  function emitSettings() { for (const k in setCbs) setCbs[k].forEach(cb => cb(setSnap(k))); }
+  function emitTeam() { const s = { exists: !!team, data: () => ({ members: team || [], birthdays: birthdays || {} }) }; teamCbs.forEach(cb => cb(s)); }
+  // only what really changed is passed on, so a background re-read doesn't redraw the list or M for nothing
+  let sig = {};
+  function apply(res) {
+    rev = res.rev; pinRequired = res.pinRequired;
+    const s = { rows: JSON.stringify(res.rows), team: JSON.stringify([res.team, res.birthdays]), set: JSON.stringify(res.settings || {}) };
+    if (s.team !== sig.team) { team = res.team.length ? res.team : null; birthdays = res.birthdays || {}; }
+    if (s.rows !== sig.rows) rows = res.rows.map(fromSheet);
+    if (s.set !== sig.set) settings = res.settings || {};
+    const first = !loaded; loaded = true;
+    if (first || s.rows !== sig.rows) emitJobs();
+    if (first || s.team !== sig.team) emitTeam();
+    if (first || s.set !== sig.set) emitSettings();
+    sig = s;
+  }
+  const keep = () => { try { localStorage.setItem(CACHE, JSON.stringify({ rev, rows, team: team || [], birthdays, settings, pinRequired })); } catch (e) {} };
+  // v3.0.02: the last records this device saw are kept, so the page can open with them straight away while the
+  // fresh copy loads from the Sheet (it replaces them a moment later)
+  const CACHE = "gsCache:v1";
+  let cached = false;
+  try { const c = JSON.parse(localStorage.getItem(CACHE) || "null"); if (c && Array.isArray(c.rows)) { apply(c); cached = true; } } catch (e) {}
+  async function refresh() {
+    const res = await call("getAll");
+    apply(res); keep();
+  }
+  let loadErr = null;
+  refresh().catch(e => {
+    loadErr = { code: "unavailable", message: e.message };
+    if (cached) return; // still showing the saved copy; the 15s check below keeps trying
+    errCbs.forEach(cb => cb(loadErr)); window.__gsErr && window.__gsErr(e.message);
+  });
+  // Pick up other people's changes: a cheap revision check every 15s while the page is visible
+  async function check() {
+    if (document.hidden || !loaded) return;
+    try { if (loadErr || await call("getRev") !== rev) { await refresh(); loadErr = null; } } catch (e) {}
+  }
+  setInterval(check, 15000);
+  document.addEventListener("visibilitychange", check); // coming back to the app: look for changes at once
+
+  // ---- PIN (asked on the first write, remembered on this device) ----
+  let pin = ""; try { localStorage.removeItem("pin"); pin = sessionStorage.getItem("pin") || ""; } catch (e) {}   // v3.2.04: PIN only lasts until the app is closed
+  let pinResolve = null;
+  function askPin(msg) {
+    return new Promise(resolve => {
+      pinResolve = resolve;
+      const el = document.getElementById("pinScrim");
+      document.getElementById("pinInput").value = "";
+      document.getElementById("pinMsg").textContent = msg || "";
+      el.hidden = false; el.classList.remove("closing");
+      setTimeout(() => document.getElementById("pinInput").focus(), 50);
+    });
+  }
+  function endPin(v) { document.getElementById("pinScrim").hidden = true; const r = pinResolve; pinResolve = null; if (r) r(v); }
+  document.getElementById("pinForm").addEventListener("submit", e => { e.preventDefault(); endPin(document.getElementById("pinInput").value.trim()); });
+  document.getElementById("pinCancel").addEventListener("click", () => endPin(""));
+
+  async function write(fn, ...args) {
+    let msg = "";
+    for (let tries = 0; tries < 4; tries++) {
+      if (pinRequired && !pin) {
+        pin = await askPin(msg);
+        if (!pin) throw new Error("PIN needed");
+      }
+      try {
+        const out = await call(fn, pin, ...args);
+        try { if (pin) sessionStorage.setItem("pin", pin); } catch (e) {}
+        // v3.0.00: show the change at once and read the Sheet again in the background, instead of
+        // making Save wait for a second full read (that wait was most of the time Save took)
+        // the change is shown at once; the Sheet is only read again if someone else also saved in the meantime
+        // (each save moves REV on by one), so Save doesn't trigger a full re-read and redraw
+        applyLocal(fn, args);
+        call("getRev").then(r => { if (r === rev + 1) { rev = r; keep(); } else return refresh(); }).catch(() => {});
+        return out;
+      } catch (e) {
+        if (/PIN/.test(e.message)) { pinRequired = true; pin = ""; try { sessionStorage.removeItem("pin"); } catch (x) {} msg = "Wrong PIN, try again"; continue; }
+        throw e;
+      }
+    }
+    throw new Error("Wrong PIN");
+  }
+
+  // What a successful write changes, applied to this page's copy straight away
+  function applyLocal(fn, args) {
+    if (fn === "saveJob") {
+      const job = {}; for (const k in args[0]) if (k !== "archived" && k !== "deleted" && args[0][k] != null && args[0][k] !== "") job[k] = args[0][k];
+      const i = rows.findIndex(r => r.id === job.id);
+      if (i >= 0) rows[i] = job; else rows.push(job);
+      emitJobs();
+    } else if (fn === "deleteJob") {
+      rows = rows.filter(r => r.id !== args[0]); emitJobs();
+    } else if (fn === "setTeam") {
+      team = (args[0] || []).length ? args[0] : null; if (args[1]) birthdays = args[1]; emitTeam();
+    } else if (fn === "setSetting") {
+      if (args[1] == null) delete settings[args[0]]; else settings[args[0]] = args[1];
+      emitSettings();
+    }
+  }
+
+  // ---- The db surface the page uses ----
+  const newId = () => "g" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const isJob = col => col === "archive" || col === "events";
+  function doc(col, id) {
+    const key = col + "/" + id;
+    // v3.0.00: Feedback goes to its own "Feedback" tab; no PIN, and the job list doesn't need to be read again
+    if (col === "feedback") return {
+      id,
+      async get() { return { exists: false, data: () => undefined }; },
+      async set(data) { return call("addFeedback", Object.assign({}, data, { id })); },
+      async update(data) { return call("addFeedback", Object.assign({}, data, { id })); },
+      async delete() { return true; },
+      onSnapshot(cb) { setTimeout(() => cb({ exists: false, data: () => undefined }), 0); return () => {}; },
+    };
+    // Each person's sort order saves quietly, without asking for the PIN
+    const saveSetting = key.startsWith("prefs/")
+      ? async data => { await call("setSetting", pin, key, data); settings[key] = data; }
+      : data => write("setSetting", key, data);
+    if (!isJob(col) && key !== "settings/team") return {
+      id,
+      async get() { return setSnap(key); },
+      async set(data) { return saveSetting(data); },
+      async update(data) { return saveSetting(Object.assign({}, settings[key] || {}, data)); },
+      async delete() { return write("setSetting", key, null); },
+      onSnapshot(cb, err) { (setCbs[key] = setCbs[key] || []).push(cb); if (loaded) cb(setSnap(key)); if (err) errCbs.push(err); return () => {}; },
+    };
+    return {
+      id,
+      // v3.1.01: a job is read fresh from the Sheet (the offline sync uses this to skip a change someone else made later);
+      // if the Sheet can't be reached, this device's copy is used
+      async get() {
+        if (col === "settings" && id === "team") return { exists: !!team, data: () => ({ members: team || [], birthdays: birthdays || {} }) };
+        let fresh;
+        try { fresh = await call("getJob", id); } catch (e) { const l = rows.find(r => r.id === id); return { exists: !!l, data: () => l }; }
+        return fresh ? { exists: true, data: () => fromSheet(fresh) } : { exists: false, data: () => undefined };
+      },
+      async set(data) {
+        if (col === "settings" && id === "team") return write("setTeam", data.members || [], data.birthdays || {});
+        if (data && data.deleted) return write("deleteJob", id);
+        return write("saveJob", Object.assign({}, data, { id }));
+      },
+      async update(data) { return write("saveJob", Object.assign({}, rows.find(r => r.id === id) || {}, data, { id })); },
+      async delete() { return write("deleteJob", id); },
+      onSnapshot(cb, err) {
+        if (col === "settings" && id === "team") { teamCbs.push(cb); if (loaded) emitTeam(); }
+        if (err) errCbs.push(err);
+        return () => {};
+      },
+    };
+  }
+  function collection(col) {
+    return {
+      onSnapshot(cb, err) {
+        // Every job comes through "archive"; "events" (page-only edits on Claude) and "feedback" are always empty here
+        if (col === "archive") { jobsCbs.push(cb); if (loaded) emitJobs(); }
+        else setTimeout(() => cb({ docs: [] }), 0);
+        if (err) { errCbs.push(err); if (loadErr) setTimeout(() => err(loadErr), 0); }
+        return () => {};
+      },
+      doc: id => doc(col, id || newId()),
+      async add(data) { const id = newId(); await write("saveJob", Object.assign({}, data, { id })); return doc(col, id); },
+    };
+  }
+  const db = { collection, doc: path => { const p = path.split("/"); return doc(p.slice(0, -1).join("/"), p[p.length - 1]); } };
+  const user = { can: async () => true, id: async () => null, isOwner: () => false, canEdit: () => true };
+  const downloads = {
+    async save({ filename, data }) {
+      const url = URL.createObjectURL(data instanceof Blob ? data : new Blob([data]));
+      const a = document.createElement("a");
+      a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      return { status: "saved" };
+    },
+  };
+  window.claude = { use: async name => ({ db, user, downloads })[name] || null };
+})();
+</script>

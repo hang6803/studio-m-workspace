@@ -1,0 +1,24 @@
+name: Build Mac app
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+jobs:
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: "aarch64-apple-darwin,x86_64-apple-darwin" }
+      - run: npm ci || npm install
+      - run: npm run build:web
+        env:
+          M_API_URL: ${{ secrets.M_API_URL }}
+          M_API_KEY: ${{ secrets.M_API_KEY }}
+      - run: npx tauri build --target universal-apple-darwin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: M-app-mac
+          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg

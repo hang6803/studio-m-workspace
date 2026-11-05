@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Studio M Workspace</title>
+<meta name="theme-color" content="#0e0e0e">
+<script>(function () { var t = "dark"; try { t = localStorage.getItem("theme") === "light" ? "light" : "dark"; } catch (e) {} document.documentElement.setAttribute("data-theme", t); if (t === "light") document.querySelector('meta[name="theme-color"]').content = "#ffffff"; })();</script>
+<link rel="stylesheet" href="app.css">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Studio M">
+<!--M_CONFIG-->
+</head>
+<body>
+
+<!-- 1) Studio M loading (same as the Backup page); also comes back if signing in is slow -->
+<section class="boot" id="boot" role="status" aria-label="Loading">
+  <div class="boot-logo"><div class="boot-base"><img class="logo logo-d" src="assets/logo-d.png" alt="Studio M Production"><img class="logo logo-l" src="assets/logo-l.png" alt="Studio M Production"></div>
+    <div class="boot-beam" aria-hidden="true"><div class="boot-lit"><img class="logo logo-d" src="assets/logo-d.png" alt=""><img class="logo logo-l" src="assets/logo-l.png" alt=""></div></div></div>
+</section>
+
+<!-- 2) PIN lock -->
+<section class="lock" id="lock" hidden>
+  <div class="lock-in">
+    <div class="lock-m" id="lockM" aria-hidden="true"></div>
+    <h1 class="lock-title" id="lockTitle">Enter your PIN</h1>
+    <div class="dots" id="dots" aria-live="polite"><i></i><i></i><i></i><i></i></div>
+    <p class="lock-msg" id="lockMsg"></p>
+    <div class="pad" id="pad">
+      <button type="button" data-k="1">1</button><button type="button" data-k="2">2</button><button type="button" data-k="3">3</button>
+      <button type="button" data-k="4">4</button><button type="button" data-k="5">5</button><button type="button" data-k="6">6</button>
+      <button type="button" data-k="7">7</button><button type="button" data-k="8">8</button><button type="button" data-k="9">9</button>
+      <span></span><button type="button" data-k="0">0</button><button type="button" data-k="del" aria-label="Delete">⌫</button>
+    </div>
+    <button type="button" class="link" id="setupBtn">First time? Set up your PIN</button>
+  </div>
+</section>
+
+<!-- First-time PIN setup -->
+<section class="lock" id="setup" hidden>
+  <form class="card setup-card" id="setupForm">
+    <h2>Set up your PIN</h2>
+    <label>Who are you?<select id="suName" required></select></label>
+    <label id="suStudioRow">Studio PIN<input id="suStudio" type="password" inputmode="numeric" autocomplete="off"></label>
+    <label>New PIN (4 digits)<input id="suPin" type="password" inputmode="numeric" maxlength="4" pattern="\d{4}" required autocomplete="off"></label>
+    <label>New PIN again<input id="suPin2" type="password" inputmode="numeric" maxlength="4" pattern="\d{4}" required autocomplete="off"></label>
+    <p class="msg" id="suMsg"></p>
+    <div class="actions"><button type="button" class="btn ghost" id="suCancel">Back</button><button class="btn">Save</button></div>
+  </form>
+</section>
+
+<!-- 3) The workspace: sidebar on a wide window, tabs on a phone -->
+<div class="shell" id="shell" hidden>
+  <aside class="side" id="side" aria-label="Sidebar">
+    <a class="side-logo" href="#/home" aria-label="Home"><img class="logo logo-d" src="assets/logo-d.png" alt="Studio M Production"><img class="logo logo-l" src="assets/logo-l.png" alt="Studio M Production"></a>
+    <nav class="nav" id="nav">
+      <span class="nav-ind" id="navInd" aria-hidden="true"></span>
+      <a class="nav-i" href="#/home" data-r="home"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="7" r="2.5"/><circle cx="18" cy="6" r="2"/><circle cx="14" cy="18" r="3"/><path d="M8 8l4.5 8M8.4 6.8l7.6-.6M17.3 8l-2.3 7.2"/></svg><span>Home</span></a>
+      <a class="nav-i" href="#/calendar" data-r="calendar"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><span>Calendar</span></a>
+      <a class="nav-i" href="#/backup" data-r="backup"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5"/></svg><span>Backup</span></a>
+      <a class="nav-i" href="#/team" data-r="team"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6M16 4.5a3.5 3.5 0 0 1 0 7M18 14c2.2.6 3.5 2.6 3.5 6"/></svg><span>Team</span></a>
+      <a class="nav-i" href="#/unbacked" data-r="unbacked"><span class="nav-dot" aria-hidden="true"></span><span>Not backed up</span><b class="pill" id="nUn"></b></a>
+      <p class="side-h">Drives</p>
+      <div id="sideDrives"></div>
+      <p class="side-h">Editors</p>
+      <div id="sideEds"></div>
+    </nav>
+    <div class="side-me">
+      <button type="button" class="avatar" id="meBtn" aria-haspopup="menu" aria-label="Me"></button>
+      <span class="side-name" id="sideName"></span>
+      <span class="badge" id="demoBadge" hidden>Demo</span>
+      <a class="ibtn plain" href="#/settings" aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg></a>
+    </div>
+    <div class="menu" id="meMenu" role="menu" hidden>
+      <p class="menu-name" id="menuName"></p>
+      <button type="button" role="menuitem" data-href="#/settings">Settings</button>
+      <button type="button" role="menuitem" id="lockBtn">Lock</button>
+    </div>
+  </aside>
+
+  <main class="main" id="main">
+    <header class="top" id="top">
+      <button type="button" class="ibtn plain back" id="backBtn" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <a class="top-logo" href="#/home" aria-label="Home"><img class="logo logo-d" src="assets/logo-d.png" alt="Studio M Production"><img class="logo logo-l" src="assets/logo-l.png" alt="Studio M Production"></a>
+      <span class="top-title" id="topTitle"></span>
+      <span class="spacer"></span>
+      <button type="button" class="avatar top-me" id="meBtn2" aria-label="Me"></button>
+    </header>
+
+    <div class="views" id="views">
+      <!-- Home: one sentence + the graph -->
+      <section class="view home" id="v-home">
+        <div class="hello-row">
+          <h1 class="hello" id="hello"></h1>
+          <p class="sum" id="sum"></p>
+        </div>
+        <div class="monitor" id="monitor">
+          <canvas id="graph" aria-label="Graph of drives, editors and jobs. Use the sidebar or search for the same links."></canvas>
+          <i class="third v1" aria-hidden="true"></i><i class="third v2" aria-hidden="true"></i><i class="third h1" aria-hidden="true"></i><i class="third h2" aria-hidden="true"></i>
+          <i class="corner tl" aria-hidden="true"></i><i class="corner tr" aria-hidden="true"></i><i class="corner bl" aria-hidden="true"></i><i class="corner br" aria-hidden="true"></i>
+          <div class="year-wrap">
+            <span class="year-big" id="yearBig" aria-live="polite"></span>
+            <span class="year-nav"><button type="button" class="ibtn" id="yPrev" aria-label="Previous year"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><button type="button" class="ibtn" id="yNext" aria-label="Next year"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button></span>
+          </div>
+          <button type="button" class="chip" id="onlyUn" aria-pressed="false"><span class="dot red"></span>Only not backed up</button>
+          <div class="pin-card" id="pinCard" hidden></div>
+          <div class="legend" aria-hidden="true"><span><i class="dot green"></i>Backed up</span><span><i class="dot red"></i>Not backed up</span><span><i class="dot hollow"></i>Not shot yet</span></div>
+          <p class="g-hint" id="gHint">Drag to turn · click a dot to pin it · click again to open</p>
+        </div>
+      </section>
+
+      <!-- Drive / editor / not-backed-up / drives / team pages share this one -->
+      <section class="view page" id="v-list" hidden>
+        <div class="page-head"><span class="page-ico" id="listIco"></span><div><h1 id="listTitle"></h1><p class="muted" id="listSub"></p></div></div>
+        <div class="bar" id="listBar" hidden><i class="ok"></i><i class="no"></i></div>
+        <div class="rows" id="listRows"></div>
+      </section>
+
+      <section class="view page" id="v-job" hidden></section>
+
+      <section class="view page cal-page" id="v-calendar" hidden>
+        <div class="month-nav"><button type="button" class="ibtn" id="calPrev" aria-label="Previous month"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><h1 id="calTitle"></h1><button type="button" class="ibtn" id="calNext" aria-label="Next month"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button><button type="button" class="btn ghost sm" id="calToday">Today</button><span class="spacer"></span><button type="button" class="btn" id="newShoot">+ Shoot</button></div>
+        <div class="cal-wrap">
+          <div class="cal-box"><div class="cal" id="cal"></div><p class="cal-hint muted small" id="calHint">Drag a shoot to another day to move it.</p></div>
+          <aside class="day" id="day" aria-live="polite"></aside>
+        </div>
+      </section>
+
+      <section class="view page team-page" id="v-team" hidden>
+        <div class="team-grid" id="teamGrid"></div>
+        <div class="team-lower">
+          <div class="card" id="teamEdit"><h3>Members and birthdays</h3><p class="muted small">Only the day and month are shown. Age is never shown.</p>
+            <div class="mem-list" id="memList"></div>
+            <form class="mem-add" id="memAdd"><input id="memNew" maxlength="40" placeholder="New member's name" aria-label="New member's name" autocomplete="off"><button class="btn ghost">Add</button></form>
+            <p class="msg" id="memMsg"></p></div>
+        <form class="card" id="pinForm"><h3>Change my PIN</h3>
+          <label>Current PIN<input id="pfOld" type="password" inputmode="numeric" maxlength="4" required autocomplete="off"></label>
+          <label>New PIN<input id="pfNew" type="password" inputmode="numeric" maxlength="4" pattern="\d{4}" required autocomplete="off"></label>
+          <label>New PIN again<input id="pfNew2" type="password" inputmode="numeric" maxlength="4" pattern="\d{4}" required autocomplete="off"></label>
+          <p class="msg" id="pfMsg"></p><div class="actions"><button class="btn">Change PIN</button></div></form>
+        </div>
+      </section>
+
+      <section class="view page bk-page" id="v-backup" hidden>
+        <div class="bk-top">
+          <div class="bk-years" id="bkYears" role="tablist" aria-label="Year"></div>
+          <span class="spacer"></span>
+          <button type="button" class="btn ghost sm" id="bkCheck">Check data</button>
+          <button type="button" class="btn ghost sm" id="bkExport">Export</button>
+          <button type="button" class="btn sm" id="bkNew">+ New job</button>
+        </div>
+        <div class="bk-hero" id="bkHero">
+          <div class="bk-year" id="bkYear" aria-hidden="true"></div>
+          <div class="bk-stats">
+            <div><b id="bkJobs">0</b><span>jobs</span></div>
+            <div><b id="bkDrives">0</b><span>drives</span></div>
+            <button type="button" id="bkUn" aria-pressed="false"><b id="bkUnN">0</b><span>not backed up</span></button>
+          </div>
+        </div>
+        <div class="bk-find">
+          <label class="bk-q"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input id="bkQ" type="search" placeholder="Search every year: name, date, drive, editor, notes" aria-label="Search jobs" autocomplete="off"></label>
+          <div class="seg bk-scope" id="bkScope" hidden><button type="button" data-v="all">All years</button><button type="button" data-v="year"></button></div>
+        </div>
+        <div class="bk-cats" id="bkCats" role="tablist" aria-label="Category"></div>
+        <div class="bk-filters" id="bkFilters"></div>
+        <div id="bkList"></div>
+      </section>
+      <section class="view view-frame" id="v-classic" hidden><iframe id="backupFrame" title="Classic Backup"></iframe></section>
+
+      <section class="view page" id="v-settings" hidden>
+        <div class="card"><h3>Theme</h3><div class="seg" id="themeSeg"><button type="button" data-t="dark">Dark</button><button type="button" data-t="light">Light</button></div></div>
+        <div class="card"><h3>Voice</h3><p class="muted small">Language M listens for when you tap the mic.</p><div class="seg" id="voiceSeg"><button type="button" data-l="zh-CN">中文</button><button type="button" data-l="en-MY">English</button><button type="button" data-l="ms-MY">Melayu</button></div></div>
+        <form class="card" id="aiSet"><h3>AI model</h3>
+          <label>Provider<select id="aiProv"></select></label>
+          <p class="muted small" id="aiHint"></p>
+          <label>Server address<input id="aiUrl" required></label>
+          <label>Model<input id="aiName" required placeholder="hermes-agent"></label>
+          <label>API key<input id="aiKey" type="password" autocomplete="off"></label>
+          <p class="msg" id="aiMsg"></p><div class="actions"><button type="button" class="btn ghost" id="aiTest">Test</button><button class="btn">Save</button></div></form>
+
+
+        <div class="card"><h3>Classic Backup</h3><p class="muted small">The old Backup page. Adding, editing and backing up jobs still happens there until the new Backup page can write.</p>
+          <div class="actions" style="justify-content:flex-start"><a class="btn ghost" href="#/classic">Open Classic Backup</a></div></div>
+        <div class="card" id="demoCard" hidden><h3>Demo</h3><p class="muted small">See the birthday scene: makes today your birthday in the demo data.</p>
+          <div class="actions"><button type="button" class="btn ghost" id="demoBday">Try a birthday</button></div></div>
+        <p class="ver" id="ver"></p>
+      </section>
+    </div>
+  </main>
+
+  <nav class="tabs" id="tabs" aria-label="Tabs">
+    <a href="#/home" data-r="home"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="7" r="2.5"/><circle cx="18" cy="6" r="2"/><circle cx="14" cy="18" r="3"/><path d="M8 8l4.5 8M8.4 6.8l7.6-.6M17.3 8l-2.3 7.2"/></svg>Home</a>
+    <a href="#/calendar" data-r="calendar"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>Calendar</a>
+    <a href="#/backup" data-r="backup"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5"/></svg>Backup</a>
+    <a href="#/team" data-r="team"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6M16 4.5a3.5 3.5 0 0 1 0 7M18 14c2.2.6 3.5 2.6 3.5 6"/></svg>Team</a>
+    <a href="#/drives" data-r="drives"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="17" cy="12" r="1.3"/><path d="M6.5 12h6"/></svg>Drives</a>
+  </nav>
+</div>
+
+<!-- 小M: always in the corner. Tap it and it becomes the chat. -->
+<button type="button" class="mbtn" id="mBtn" aria-label="Talk to M (⌘K)" aria-expanded="false" aria-controls="mPanel" hidden>
+  <span class="pet-say" id="mStatus" hidden></span>
+  <span class="pet-jump"><span class="pet-face"><span class="rings" aria-hidden="true"><i></i><i></i></span><span id="mSvg"></span></span></span>
+</button>
+<section class="mpanel" id="mPanel" role="dialog" aria-modal="false" aria-label="M" hidden>
+  <header class="mp-head">
+    <span class="mp-av" id="mpAv" aria-hidden="true"></span>
+    <b class="mp-title">M</b>
+    <button type="button" class="model-chip" id="modelChip" data-href="#/settings"></button>
+    <span class="spacer"></span>
+    <button type="button" class="ibtn plain" id="histBtn" aria-label="Past chats" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg></button>
+    <button type="button" class="ibtn plain" id="newChat" aria-label="New chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h8M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+    <button type="button" class="ibtn plain" id="mClose" aria-label="Close">✕</button>
+  </header>
+  <div class="mp-hist" id="mpHist" hidden><div class="chat-list" id="chatList"></div></div>
+  <div class="thread" id="thread">
+    <div class="empty" id="empty">
+      <p class="muted">Ask me where something is, or tell me about a shoot and I'll put it on the calendar.</p>
+      <div class="sugg" id="sugg">
+        <button type="button" data-q="Add a shoot: ">Add a shoot</button>
+        <button type="button" data-q="Which jobs are not backed up yet?">What isn't backed up?</button>
+        <button type="button" data-q="What are my shoots this week?">My week</button>
+      </div>
+    </div>
+    <div class="msgs" id="chat" aria-live="polite"></div>
+  </div>
+  <div class="hits" id="hits" hidden></div>
+  <form class="composer" id="aiForm">
+    <textarea id="aiIn" rows="1" placeholder="Ask, search or add a shoot" autocomplete="off" aria-label="Message M"></textarea>
+    <button type="button" class="ibtn plain mic" id="micBtn" aria-label="Speak"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></button>
+    <button class="btn send" id="sendBtn" aria-label="Send"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg></button>
+  </form>
+</section>
+
+<!-- Shoot form (add / edit; also the AI confirm card opens it prefilled) -->
+<div class="scrim" id="shootScrim" hidden>
+  <form class="card sheet" id="shootForm" role="dialog" aria-modal="true" aria-labelledby="sfTitle">
+    <h2 id="sfTitle">New shoot</h2>
+    <label>Name<input id="sfName" required maxlength="200" placeholder="Wedding · Tan & Lim"></label>
+    <div class="row2"><label>From<input id="sfFrom" type="date" required></label><label>To<input id="sfTo" type="date"></label></div>
+    <label>Location<input id="sfLoc" maxlength="200"></label>
+    <div class="seg" id="sfType"><button type="button" data-v="video">Video</button><button type="button" data-v="photo">Photo</button><button type="button" data-v="both">Video + Photo</button></div>
+    <div><span class="lbl">Crew</span><div class="chips" id="sfCrew"></div></div>
+    <label>Notes<textarea id="sfNotes" rows="2" maxlength="2000"></textarea></label>
+    <p class="msg" id="sfMsg"></p>
+    <div class="actions"><button type="button" class="btn danger ghost" id="sfDel" hidden>Delete</button><span class="spacer"></span><button type="button" class="btn ghost" id="sfCancel">Cancel</button><button class="btn" id="sfSave">Save</button></div>
+  </form>
+</div>
+
+<!-- Job form (Backup): add, edit, mark backed up, delete. Saving goes through Classic Backup's own code -->
+<div class="scrim" id="jobScrim" hidden>
+  <form class="card sheet job-sheet" id="jobForm" role="dialog" aria-modal="true" aria-labelledby="jfTitle" novalidate>
+    <div class="jf-top"><h2 id="jfTitle">New job</h2><span class="jf-conn" id="jfConn" hidden>Connecting to Backup</span></div>
+    <div class="jf-grid"><label>Category<select id="jfCat"></select></label><label>No.<input id="jfNo" type="number" min="1" inputmode="numeric"></label></div>
+    <label>Name<input id="jfName" maxlength="300" placeholder="CNY Performance" autocomplete="off"></label>
+    <div class="jf-f"><span class="lbl">Days</span><div class="jf-parts" id="jfParts"></div><button type="button" class="btn ghost sm jf-add" id="jfAddPart">+ Add a day</button></div>
+    <div class="jf-f"><span class="lbl" id="jfTypeLbl">What does this job have?</span><div class="seg" id="jfType"><button type="button" data-v="video">Video</button><button type="button" data-v="photo">Photo</button><button type="button" data-v="both">Video + Photo</button></div><p class="jf-note" id="jfTypeNote" hidden></p></div>
+    <div class="jf-f" id="jfMarkBox" hidden><span class="lbl">Mark backed up today</span><div class="jf-marks" id="jfMarks"></div></div>
+    <div class="jf-f"><span class="lbl" id="jfDrvLbl">Drives</span><div class="chips" id="jfDrives"></div><div class="jf-new"><input id="jfDriveNew" placeholder="New drive, e.g. SSD 7" autocomplete="off" aria-label="New drive"><button type="button" class="btn ghost sm" id="jfDriveAdd">Add</button></div></div>
+    <label data-jf-edit>Editor<input id="jfEditor" list="jfTeam" autocomplete="off"></label><datalist id="jfTeam"></datalist>
+    <div class="jf-f" data-jf-edit><label>Notes<input id="jfNotes" maxlength="2000" autocomplete="off"></label><div class="chips sm" id="jfNoteChips"></div></div>
+    <label data-jf-edit>Links<textarea id="jfLinks" rows="2" placeholder="One link per line"></textarea></label>
+    <details class="jf-hist" id="jfHist" hidden></details>
+    <div class="jf-cfm" id="jfCfm" hidden><b id="jfCfmT"></b><ul id="jfCfmList"></ul><div class="actions"><span class="spacer"></span><button type="button" class="btn ghost" id="jfCfmNo">Keep</button><button type="button" class="btn danger-solid" id="jfCfmYes">Delete</button></div></div>
+    <div class="jf-foot"><p class="msg" id="jfMsg"></p>
+    <div class="actions" id="jfActs"><button type="button" class="btn danger ghost" id="jfDel" hidden>Delete</button><span class="spacer"></span><button type="button" class="btn ghost" id="jfCancel">Cancel</button><button class="btn" id="jfSave">Save</button></div></div>
+  </form>
+</div>
+
+<div class="scrim" id="chkScrim" hidden>
+  <div class="card sheet chk-sheet" role="dialog" aria-modal="true" aria-labelledby="chkTitle">
+    <div class="chk-top"><h2 id="chkTitle">Check data</h2><div class="seg" id="chkScope"><button type="button" data-v="year" id="chkYear"></button><button type="button" data-v="all">All years</button></div></div>
+    <p class="muted small" id="chkSum"></p>
+    <div class="chk-list" id="chkList"></div>
+    <div class="actions"><button type="button" class="btn" id="chkClose">Done</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" hidden></div>
+<script src="xiaom.js"></script>
+<script src="graph.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

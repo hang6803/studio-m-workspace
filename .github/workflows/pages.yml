@@ -1,0 +1,33 @@
+name: Phone app (GitHub Pages)
+# Builds the web app and publishes it on GitHub Pages, so phones can open it and "Add to Home Screen".
+# Needs: Settings → Pages → Source "GitHub Actions"; the secrets M_API_URL and M_API_KEY (without them it publishes the demo).
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node tools/build.mjs
+        env:
+          M_API_URL: ${{ secrets.M_API_URL }}
+          M_API_KEY: ${{ secrets.M_API_KEY }}
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: dist }
+      - id: deploy
+        uses: actions/deploy-pages@v4
