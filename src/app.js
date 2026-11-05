@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.8.9";
+const APP_VER = "0.8.10";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
@@ -333,7 +333,7 @@ function render(first) {
   const b = MBTN, from = b.hidden ? null : b.getBoundingClientRect();
   // with a page transition, 小M is his own layer in it: he isn't cross-faded with the page (that was the flash), he hops to his new spot
   const vt = !first && !STILL && document.startViewTransition;
-  const apply = () => { route = next; paint(); perch.st = 0; perch(from); };
+  const apply = () => { route = next; paint(); perch.st = 0; perch.dock = false; perch(from); };
   if (vt) document.startViewTransition(apply); else apply();
   if (window.innerWidth < 900 && !$("mPanel").hidden) closeM();
 }
@@ -1749,6 +1749,7 @@ const seat = document.createElement("div"); seat.className = "m-seat";
 // to the next card, and back to the first when you go back to the top
 // stations: as you scroll, he blinks from panel to panel so he is always in view. Team and Drives are all cards (the first
 // card is his first spot); on the other pages his first spot is the page's own (PERCH), then the panels and rows below it.
+const PHONE = matchMedia("(max-width: 899px)");
 const STATIONS = { team: "#teamGrid > .tm", drives: "#listRows .drive-card" };
 const SCROLL = { calendar: "#day", backup: "#bkList .bk-row", settings: "#v-settings .card", job: "#v-job .facts ~ *, #v-job .bk-row",
   list: "#listRows .bk-row, #listRows .drive-card, #listRows .row" };
@@ -1780,6 +1781,12 @@ function perch(from, how) {
   if (mon && mon.offsetParent) { seat.remove(); b.classList.remove("perched"); b.style.right = ""; space.on(b, mon);
     const to = b.getBoundingClientRect(); if (from && from.width && !STILL) (how === "hop" ? hop : blink)(b, from, to); return; }
   space.off(b);
+  b.classList.remove("docked"); b.style.bottom = "";
+  // phone, scrolled down: he sits on the top edge of the tab bar at the bottom until you are back at the top
+  if (perch.dock && PHONE.matches && $("tabs").offsetParent) { seat.remove(); if (b.parentElement !== document.body) document.body.appendChild(b);
+    b.classList.remove("perched"); b.classList.add("docked"); b.style.right = "";
+    b.style.bottom = Math.round(innerHeight - $("tabs").getBoundingClientRect().top - 4) + "px";
+    const to = b.getBoundingClientRect(); if (from && from.width && !STILL && (Math.abs(from.left - to.left) > 2 || Math.abs(from.top - to.top) > 2)) (how === "hop" ? hop : blink)(b, from, to); return; }
   const want = perchWant(), t = want && want[0];
   const ok = t && t.offsetParent && t.getBoundingClientRect().height > 30;
   if (ok && want[2]) t.classList.add("m-host");
@@ -1861,9 +1868,15 @@ function sitOn(b, sh) {
   if (window.visualViewport && !sitOn.vv) { sitOn.vv = true; visualViewport.addEventListener("resize", () => { const s = document.querySelector(".scrim:not([hidden]) > .sheet"); if (s && b.classList.contains("on-sheet")) sitOn(b, s); }); }
 }
 // on Team / Drives: when his card is almost out of sight he blinks to the next card in view; quickly back at the top, to the first
-let stT = 0;
+let stT = 0, lastY = 0;
 $("views").addEventListener("scroll", () => { if (stT || shownView === "home") return; stT = requestAnimationFrame(() => { stT = 0;
-  const b = MBTN; if (b.hidden || mOpen || !b.classList.contains("perched") || b.getAnimations().some(a => a.playState === "running")) return;
+  const b = MBTN; if (b.hidden || mOpen || b.getAnimations().some(a => a.playState === "running")) return;
+  if (PHONE.matches) {   // phone: scroll down and he blinks onto the tab bar; back at the top, onto the page again
+    const y = $("views").scrollTop, dn = y > lastY; lastY = y;
+    if (y < 40 && perch.dock) { perch.dock = false; perch.st = 0; perch(b.getBoundingClientRect()); }
+    else if (y > 80 && dn && !perch.dock && b.classList.contains("perched")) { perch.dock = true; perch(b.getBoundingClientRect()); }
+    return; }
+  if (!b.classList.contains("perched")) return;
   const els = stationEls(); if (els.length < 2) return;
   const vr = $("views").getBoundingClientRect(), br = b.getBoundingClientRect(), cur = Math.min(perch.st || 0, els.length - 1);
   let next = cur;
