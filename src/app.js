@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.8.0";
+const APP_VER = "0.8.1";
 const $ = id => document.getElementById(id);
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
 const DEMO = !CFG.apiUrl;
@@ -1644,10 +1644,15 @@ function loadBackup() {
 }
 // Birthdays, festivals and their effects come from the Backup page, run a second time as a see-through layer over the whole
 // app (backup.html?scenes). It only takes taps while a birthday / festival scene is open (tap to close).
+let scenesWait = 0;
 function scenes(on) {
   let f = $("scenes");
+  clearTimeout(scenesWait); scenesWait = 0;
   if (!on) { if (f) f.remove(); return; }
   if (f) return;
+  // a whole second copy of the Backup page: start it once Home has drawn and the phone is idle, so it never competes with the first screen
+  if (!scenes.later) { scenes.later = true; const go = () => { if (session) scenes(true); };
+    scenesWait = setTimeout(() => (window.requestIdleCallback || (g => g()))(go, { timeout: 2500 }), 1800); return; }
   try { localStorage.setItem("me", session.name); localStorage.setItem("meAt", String(Date.now())); } catch (e) {}
   f = document.createElement("iframe"); f.id = "scenes"; f.title = "Birthdays and festivals"; f.setAttribute("allowtransparency", "true"); f.tabIndex = -1; f.setAttribute("aria-hidden", "true");
   f.src = "backup.html?scenes"; document.body.appendChild(f);
