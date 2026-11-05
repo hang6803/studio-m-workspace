@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.8.10";
+const APP_VER = "0.8.11";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
@@ -1806,47 +1806,52 @@ function perch(from, how) {
 // leaning into each stroke. Let go and he drifts back to his spot. Moves only through translate / rotate / scale, so the
 // jump-in and blink animations (which use transform) still play on top.
 const space = (() => {
-  let b = null, mon = null, raf = 0, last = 0, W = 0, H = 0, rest = { x: 0, y: 0 };
-  const p = { x: 0, y: 0 }, v = { x: 0, y: 0 }; let sc = 1, rot = 0, face = 1, pull = 0, ptr = null, relAt = -1e9, sw = false;
+  let b = null, mon = null, raf = 0, last = 0, W = 0, H = 0, front = { x: 0, y: 0 };
+  // z is depth: 0 = right in front of you (big), 1 = far back in the graph (small, behind its dots)
+  const p = { x: 0, y: 0 }, v = { x: 0, y: 0 }; let z = .6, vz = 0, rot = 0, vr = 0, face = 1, ptr = null, sw = false, zi = "";
+  const NEAR = 1.12, FAR = .38, scOf = z => NEAR + (FAR - NEAR) * z;
   const size = () => { const r = mon.getBoundingClientRect(); W = r.width; H = r.height; const w = b.offsetWidth;
-    rest = { x: W - w - (W < 600 ? 18 : 42), y: H * (W < 600 ? .5 : .56) - w / 2 }; };
-  const down = e => { if (e.target.closest(".mbtn, button, a")) return; ptr = { id: e.pointerId, x: e.clientX, y: e.clientY }; pull = 1; };
-  const move = e => { if (!ptr || e.pointerId !== ptr.id) return; const dx = e.clientX - ptr.x, dy = e.clientY - ptr.y; ptr.x = e.clientX; ptr.y = e.clientY;
-    v.x += dx * .9; v.y += dy * .55; };   // the graph turns with the finger and carries him with it
-  const up = e => { if (ptr && e.pointerId === ptr.id) { ptr = null; relAt = performance.now(); } };
+    front = { x: W * (W < 600 ? .66 : .7) - w / 2, y: H * .58 - w / 2 }; };
+  const down = e => { if (e.target.closest(".mbtn, button, a")) return; ptr = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() }; };
+  // turning the graph throws him: along the turn and back into the scene, harder the faster you swipe; he tumbles as he goes
+  const move = e => { if (!ptr || e.pointerId !== ptr.id) return; const now = performance.now(), dx = e.clientX - ptr.x, dy = e.clientY - ptr.y, dt = Math.max(8, now - ptr.t) / 1000;
+    ptr.x = e.clientX; ptr.y = e.clientY; ptr.t = now; const sp = Math.hypot(dx, dy) / dt;
+    v.x += dx * 1.1; v.y += dy * .7; vz += Math.min(3, sp / 900) * .5; vr += dx * .9; };
+  const up = e => { if (ptr && e.pointerId === ptr.id) ptr = null; };
   const ro = window.ResizeObserver ? new ResizeObserver(() => b && size()) : null;
   function tick(now) {
     raf = requestAnimationFrame(tick); const dt = Math.min(.05, (now - (last || now)) / 1000); last = now; if (!dt) return;
     if (b.getAnimations().some(a => a.playState === "running")) return;   // let a blink finish first
-    const t = now / 1000, w = b.offsetWidth, chase = ptr || now - relAt < 1400;
-    // where he wants to be: in front of you while you turn the graph, his own spot otherwise, with a slow drift around it
-    const tx = chase ? W / 2 - w / 2 : rest.x + Math.sin(t * .31) * 10 + Math.sin(t * .17 + 1) * 6,
-          ty = chase ? H * .52 - w / 2 : rest.y + Math.sin(t * .23 + 2) * 12;
-    const ax = tx - p.x, ay = ty - p.y, d = Math.hypot(ax, ay) || 1;
-    // swimming = a steady push towards the target in strokes; drifting = a soft spring with almost no friction
-    if (chase) { const stroke = .55 + .45 * Math.max(0, Math.sin(t * 9)); const f = Math.min(1, d / 40) * 900 * stroke; v.x += ax / d * f * dt; v.y += ay / d * f * dt; }
-    else { v.x += ax * 1.1 * dt; v.y += ay * 1.1 * dt; }
-    const damp = Math.pow(chase ? .12 : .35, dt); v.x *= damp; v.y *= damp;
-    p.x += v.x * dt; p.y += v.y * dt;
+    const t = now / 1000, w = b.offsetWidth;
+    // left alone he works his way to the front, in strokes; once there he just drifts, weightless
+    const tx = front.x + Math.sin(t * .31) * 10 + Math.sin(t * .17 + 1) * 6, ty = front.y + Math.sin(t * .23 + 2) * 12;
+    const ax = tx - p.x, ay = ty - p.y, d = Math.hypot(ax, ay) || 1, far = z > .12 || d > 30;
+    const stroke = .45 + .55 * Math.max(0, Math.sin(t * 8));
+    if (!ptr && far) { const f = Math.min(1, d / 50) * 520 * stroke; v.x += ax / d * f * dt; v.y += ay / d * f * dt; vz -= (z > .02 ? .9 * stroke : 0) * dt; }
+    else if (!ptr) { v.x += ax * 1.1 * dt; v.y += ay * 1.1 * dt; vz += (0 - z) * 1.5 * dt; }
+    const damp = Math.pow(.3, dt); v.x *= damp; v.y *= damp; vz *= Math.pow(.25, dt); vr *= Math.pow(.2, dt);
+    p.x += v.x * dt; p.y += v.y * dt; z = Math.max(0, Math.min(1, z + vz * dt)); if (z === 1 || z === 0) vz *= -.3;
     // soft walls: he bumps off the edges of the screen instead of leaving it
-    const mx = W - w * .7, my = H - w * .8;
-    if (p.x < -w * .3) { p.x = -w * .3; v.x = Math.abs(v.x) * .5; } if (p.x > mx) { p.x = mx; v.x = -Math.abs(v.x) * .5; }
-    if (p.y < -w * .1) { p.y = -w * .1; v.y = Math.abs(v.y) * .5; } if (p.y > my) { p.y = my; v.y = -Math.abs(v.y) * .5; }
-    const speed = Math.hypot(v.x, v.y), swim = chase && (speed > 30 || d > 24);
+    const sc = scOf(z), half = w * sc / 2, cx = w / 2, mx = W - cx - half * .6, my = H - cx - half * .6, nx = half * .6 - cx, ny = half * .6 - cx;
+    if (p.x < nx) { p.x = nx; v.x = Math.abs(v.x) * .5; } if (p.x > mx) { p.x = mx; v.x = -Math.abs(v.x) * .5; }
+    if (p.y < ny) { p.y = ny; v.y = Math.abs(v.y) * .5; } if (p.y > my) { p.y = my; v.y = -Math.abs(v.y) * .5; }
+    const speed = Math.hypot(v.x, v.y), swim = !ptr && far && (speed > 25 || vz < -.05);
     if (swim !== sw) { sw = swim; b.classList.toggle("swim", swim); }
     if (Math.abs(v.x) > 40) face = v.x < 0 ? -1 : 1;
-    const wantRot = swim ? Math.max(-55, Math.min(55, (v.x / (speed || 1)) * 50 + (v.y / (speed || 1)) * 12 * face)) : Math.sin(t * .4) * 9 + v.x * .02;
-    rot += (wantRot - rot) * Math.min(1, dt * (swim ? 6 : 1.6));
-    sc += ((chase ? 1.32 : 1) - sc) * Math.min(1, dt * 1.8);
+    const lean = swim ? Math.max(-50, Math.min(50, (v.x / (speed || 1)) * 45)) : Math.sin(t * .4) * 9;
+    rot += vr * dt;   // a hard swipe sets him spinning
+    const settle = ((rot % 360) + 540) % 360 - 180; rot -= (settle - lean) * Math.min(1, dt * (Math.abs(vr) > 60 ? .4 : 2.2));
+    // far back he slips behind the graph's dots
+    const nz = z > .55 ? "0" : ""; if (nz !== zi) { zi = nz; b.style.zIndex = nz; }
     b.style.translate = p.x.toFixed(1) + "px " + p.y.toFixed(1) + "px"; b.style.rotate = rot.toFixed(2) + "deg";
-    b.style.scale = (swim ? face : 1) * sc + " " + sc;
+    b.style.scale = (swim ? face : 1) * sc + " " + sc; b.style.opacity = (1 - z * .35).toFixed(3);
   }
   return {
     on(el, m) {
       if (b === el && mon === m && el.classList.contains("space")) return;
       b = el; mon = m; if (b.parentElement !== mon) mon.appendChild(b); b.classList.add("space"); size();
-      p.x = rest.x; p.y = rest.y; v.x = v.y = 0; sc = 1; rot = 0; ptr = null;
-      b.style.translate = p.x + "px " + p.y + "px"; b.style.rotate = "0deg"; b.style.scale = "1";
+      p.x = front.x; p.y = front.y; v.x = v.y = 0; z = .25; vz = 0; rot = 0; vr = 0; ptr = null; zi = "";
+      b.style.translate = p.x + "px " + p.y + "px"; b.style.rotate = "0deg"; b.style.scale = String(scOf(z));
       mon.addEventListener("pointerdown", down); addEventListener("pointermove", move, { passive: true }); addEventListener("pointerup", up); addEventListener("pointercancel", up);
       if (ro) ro.observe(mon);
       if (!STILL && !raf) { last = 0; raf = requestAnimationFrame(tick); }
@@ -1854,7 +1859,7 @@ const space = (() => {
     off(el) {
       if (!b) return; cancelAnimationFrame(raf); raf = 0; if (ro) ro.disconnect();
       mon.removeEventListener("pointerdown", down); removeEventListener("pointermove", move); removeEventListener("pointerup", up); removeEventListener("pointercancel", up);
-      el.classList.remove("space", "swim"); el.style.translate = el.style.rotate = el.style.scale = ""; sw = false; b = null;
+      el.classList.remove("space", "swim"); el.style.translate = el.style.rotate = el.style.scale = el.style.zIndex = el.style.opacity = ""; sw = false; b = null;
     }
   };
 })();
@@ -2353,7 +2358,10 @@ if ("serviceWorker" in navigator && !window.__TAURI__ && (location.protocol === 
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       if (!had) { had = true; return; }
       const busy = !$("jobScrim").hidden || !$("shootScrim").hidden || (mOpen && $("aiIn").value.trim());
-      if (busy) toast("A new version is ready. It opens next time."); else location.reload();
+      // reloading in front of you is a white flash: right at start (still on the loading screen) it's fine; later it waits
+      // until the app goes to the background, and the next time you open it it is the new version
+      if (busy || performance.now() > 4000) { addEventListener("visibilitychange", () => { if (document.hidden) location.reload(); }); if (busy) toast("A new version is ready. It opens next time."); }
+      else location.reload();
     });
     document.addEventListener("visibilitychange", () => { if (!document.hidden) reg.update().catch(() => {}); });   // back from the background: look for one
   }).catch(() => {}));
