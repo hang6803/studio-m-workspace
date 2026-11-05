@@ -898,3 +898,93 @@ html { touch-action: pan-x pan-y }
 .dt-meta { display: flex; flex-wrap: wrap; gap: 4px 14px } .dt-meta span { color: var(--muted) }
 .bk-drv a, .dt-drv { color: var(--fg) }
 .dt-n { color: var(--muted) }
+/* the year arrows sit above the graph's canvas (their wrapper is display: contents, so they need their own layer) */
+.year-wrap { z-index: 3 } .year-wrap .ibtn { position: relative; z-index: 3 }
+
+/* ---- 0.8.9: pop-ups are drawers that push up from the bottom edge (every screen size) ---- */
+@keyframes drawerUp { from { transform: translateY(100%) } }
+.scrim, .scrim[class] { place-items: end center; padding: 0 }
+.scrim > .sheet { width: min(640px, 100%); max-height: min(88vh, calc(var(--vvh, 100dvh) - 20px)); border-radius: var(--r-sheet) var(--r-sheet) 0 0; border-bottom: 0;
+  padding-top: 26px; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); animation: drawerUp .5s cubic-bezier(.22, 1.18, .36, 1) both; position: relative; overscroll-behavior: contain }
+.scrim > .sheet::before { content: ""; position: absolute; left: 50%; top: 9px; width: 40px; height: 4px; margin-left: -20px; border-radius: 2px; background: var(--line); cursor: grab }
+@media (prefers-reduced-motion: reduce) { .scrim > .sheet { animation: fade .2s ease both } }
+/* the press: a drop of light lands where the finger did, wobbles round and spreads out with a ring, like water */
+.fx-ripple { animation: fxdrop .74s cubic-bezier(.2, .75, .25, 1) forwards; border-radius: 50% }
+.fx-ripple::after { content: ""; position: absolute; inset: 18%; border-radius: 50%; border: 1.5px solid var(--ripple); opacity: 0; animation: fxring .74s cubic-bezier(.2, .7, .2, 1) .06s forwards }
+:is(.btn:not(.ghost), .seg button.on, .fchip.on, .bk-fix) > .fx-ripple::after { border-color: rgba(255, 255, 255, .6) }
+@keyframes fxdrop { 0% { transform: scale(.06); opacity: 1; border-radius: 46% 54% 50% 50% / 58% 58% 42% 42% } 22% { transform: scale(.26); border-radius: 54% 46% 48% 52% / 44% 50% 50% 56% }
+  45% { transform: scale(.5); opacity: .8; border-radius: 50% } 100% { transform: scale(1); opacity: 0; border-radius: 50% } }
+@keyframes fxring { 0% { transform: scale(.3); opacity: .9 } 100% { transform: scale(1.25); opacity: 0 } }
+
+/* 0.8.9: 小M's blink (闪现) and the paper letters it bursts into */
+.m-ghost .m-fan, .m-ghost .pet-say { display: none }
+.paper-burst { position: fixed; z-index: 41; width: 0; height: 0; pointer-events: none }
+.paper-burst .pb { position: absolute; left: -4px; top: -5px; width: 8px; height: 10px; border-radius: 1.5px; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .25) }
+.paper-burst .pb.o { background: var(--accent) }
+.paper-burst .pb.l { width: auto; height: auto; padding: 1px 3px; left: -6px; top: -8px; font: 700 10px/1 var(--font); color: #141414; background: #fff }
+.paper-burst .pb.l.o { color: #141414; background: #ffb070 }
+/* sitting on a pop-up's top edge */
+.mbtn.on-sheet { position: fixed; right: auto; bottom: auto; z-index: 32; width: 60px; height: 60px }
+/* the card he stands on lets him stand above its edge */
+.m-host { overflow: visible !important }
+.m-host > .m-seat { position: absolute; left: 0; right: 0; top: 0; height: 0 }
+.m-host > .m-seat .mbtn.perched { bottom: -3px }
+/* 小M in space (Home): floating in the graph, swimming when you turn it */
+.mbtn.space { position: absolute; left: 0; top: 0; right: auto; bottom: auto; z-index: 2; pointer-events: auto; will-change: translate, rotate, scale }
+.mbtn.space .pet-face { animation: mFloat 5.2s ease-in-out infinite }
+@keyframes mFloat { 0%, 100% { transform: translateY(0) rotate(0) } 30% { transform: translateY(-5px) rotate(-4deg) } 65% { transform: translateY(3px) rotate(3deg) } }
+.mbtn.space.swim .pet-face { animation: mSwim .7s cubic-bezier(.4, 0, .3, 1) infinite; transform-origin: 50% 55% }
+@keyframes mSwim { 0% { transform: scale(1.06, .92) rotate(-6deg) } 45% { transform: scale(.94, 1.08) translateX(4px) rotate(5deg) } 100% { transform: scale(1.06, .92) rotate(-6deg) } }
+.mbtn.space .rings { display: none }
+
+/* ---- Backup, laid out again (0.8.9): one ledger. A header that says where you are and what's missing, sections as
+   tabs, then the jobs as a table: number, job, date, what's backed up, drive. Red only where something isn't backed up. ---- */
+.bk-page { gap: 14px }
+.bk-hero, .bk-hero[class] { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 18px; padding: 16px 18px 16px 26px }
+.bk-yr { display: flex; align-items: center; gap: 2px }
+.bk-yr .ibtn { width: 32px; height: 32px; position: relative; box-shadow: none; background: none; border-color: transparent } .bk-yr .ibtn svg { width: 16px; height: 16px }
+.bk-yr .ibtn:disabled { opacity: .3 } .bk-yr .ibtn .dot { position: absolute; top: 4px; right: 4px; width: 6px; height: 6px }
+.bk-year { font-size: 32px; line-height: 1; padding: 0 2px; min-width: 3.1ch; text-align: center; font-variant-numeric: tabular-nums }
+.bk-sum { margin: 0; display: flex; gap: 8px; color: var(--muted); font-size: 14px; white-space: nowrap }
+.bk-sum b { color: var(--fg); font-size: 18px; font-variant-numeric: tabular-nums; margin-right: 2px }
+.bk-un { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; padding: 6px 10px; margin-left: -10px; border-radius: 8px; font: inherit; font-size: 14px; color: var(--danger); white-space: nowrap; cursor: pointer }
+.bk-un b { font-size: 18px; font-variant-numeric: tabular-nums }
+.bk-un:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 10%, transparent) }
+.bk-un[aria-pressed="true"] { background: var(--danger); color: #141414 } .bk-un[aria-pressed="true"] .dot { background: #141414 }
+.bk-un:disabled { color: var(--ok); cursor: default } .bk-un:disabled .dot { background: var(--ok) }
+.bk-tools { margin-left: auto; display: flex; gap: 6px }
+/* sections: a tab strip, not a row of buttons */
+.bk-cats { gap: 2px; border-bottom: 1px solid var(--line); padding: 0; margin-top: 2px }
+.bk-cats button, .bk-cats button[aria-selected] { background: none !important; border: 0; border-radius: 0; box-shadow: none; color: var(--muted); padding: 10px 12px 11px; position: relative; font-weight: 600 }
+.bk-cats button::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--accent); transform: scaleX(0); transition: transform .3s var(--spring) }
+.bk-cats button[aria-selected="true"] { color: var(--fg) } .bk-cats button[aria-selected="true"]::after { transform: none }
+.bk-cats button span, .bk-cats button[aria-selected="true"] span { background: none; padding: 0; color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums }
+.bk-cats .sec-sep { margin: 0 3px; color: var(--muted) }
+.bk-filters { min-height: 30px }
+/* the table */
+.bk-row, .bk-th { grid-template-columns: 34px minmax(0, 1fr) 84px 118px 168px 28px; grid-template-areas: none; column-gap: 14px }
+.bk-th { display: grid; align-items: center; padding: 9px 12px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--rim, var(--line)); background: color-mix(in srgb, var(--fg) 3%, transparent) }
+.bk-th span:first-child { text-align: right } .bk-th span:nth-child(5) { text-align: right }
+.bk-row.un .bk-main > b { color: var(--fg) }
+.mr:has(> .bk-when-m) { display: none } .mr:has(> .bk-when-m) + .mr { margin-left: 0 }
+.bk-when { color: var(--muted); font-variant-numeric: tabular-nums }
+.bk-media { justify-content: flex-start }
+.md.ok { color: var(--ok); background: none; border-color: color-mix(in srgb, var(--ok) 40%, transparent) }
+.md.no { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: color-mix(in srgb, var(--danger) 55%, transparent) }
+.bk-drv { align-items: center; flex-wrap: nowrap }
+.bk-drv a:not(.bk-link) { border: 0; padding: 2px 0 2px 6px; color: var(--fg); font-weight: 600; font-size: 13px }
+.bk-drv a:not(.bk-link):hover { color: var(--accent-text); text-decoration: underline }
+.bk-drv .muted { white-space: nowrap }
+@media (max-width: 899px) {
+  .bk-hero, .bk-hero[class] { padding: 14px 12px 12px 22px; gap: 4px 14px }
+  .bk-year { font-size: 26px }
+  .bk-sum { order: 4; width: 100%; padding-left: 4px; font-size: 13px } .bk-sum b { font-size: 16px }
+  .bk-un { order: 5; margin-left: 0; padding: 4px 10px; font-size: 13px } .bk-un b { font-size: 16px }
+  .bk-sum { width: auto } .bk-hero > .bk-sum + .bk-un { margin-left: auto }
+  .bk-tools .btn span { display: none } .bk-tools .btn { width: 36px; height: 36px; padding: 0 !important; justify-content: center } .bk-tools .bi { margin: 0 }
+  .bk-th { display: none }
+  .bk-row { grid-template-columns: 24px minmax(0, 1fr) auto 24px; grid-template-areas: "no main main more" "no media drv drv"; row-gap: 8px; column-gap: 10px; padding: 12px 10px 12px 8px }
+  .bk-when { display: none } .mr:has(> .bk-when-m) { display: inline-block } .mr:has(> .bk-when-m) + .mr { margin-left: 14px } .bk-when-m { color: var(--fg) }
+  .bk-media { grid-area: media; align-self: center } .bk-drv { grid-area: drv; justify-content: flex-end }
+  .bk-cats button { padding: 10px 10px 11px }
+}

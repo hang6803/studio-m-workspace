@@ -4,8 +4,9 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.8.8";
-const $ = id => document.getElementById(id);
+const APP_VER = "0.8.9";
+const MBTN = document.getElementById("mBtn");   
+const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
 const DEMO = !CFG.apiUrl;
 const M = window.M = {};
@@ -256,7 +257,7 @@ function lock(msg) {
   $("shell").hidden = true; $("setup").hidden = true; $("lock").hidden = false;
   $("lockMsg").textContent = msg || ""; drawDots();
   $("backupFrame").removeAttribute("src"); backupLoaded = false; scenes(false);
-  closeM(true); $("mBtn").hidden = true; if (graph) graph.stop();
+  closeM(true); MBTN.hidden = true; if (graph) graph.stop();
   closeShoot(); if (streaming) streaming.abort(); gKey = ""; teamOk = false; closeJob(true);
 }
 function drawDots() { [...$("dots").children].forEach((d, i) => d.classList.toggle("on", i < entered.length)); lockTurn(entered.length > 0); }
@@ -329,10 +330,10 @@ addEventListener("hashchange", () => { if (session) { fx("nav"); render(false); 
 // Page changes cross-fade and slide (View Transitions where the system has them); the sidebar marker glides to the new place
 function render(first) {
   const next = parse(location.hash);
-  const b = $("mBtn"), from = b.hidden ? null : b.getBoundingClientRect();
+  const b = MBTN, from = b.hidden ? null : b.getBoundingClientRect();
   // with a page transition, 小M is his own layer in it: he isn't cross-faded with the page (that was the flash), he hops to his new spot
   const vt = !first && !STILL && document.startViewTransition;
-  const apply = () => { route = next; paint(); perch(from); };
+  const apply = () => { route = next; paint(); perch.st = 0; perch(from); };
   if (vt) document.startViewTransition(apply); else apply();
   if (window.innerWidth < 900 && !$("mPanel").hidden) closeM();
 }
@@ -882,7 +883,7 @@ function jobCard(j, i, o) {
   const r = j.main, w = whenOf(r), t = splitJob(r).title, no = num.get(r.id);
     const st = k => j[k] ? `<span class="md ${selfUnbacked(j[k]) ? "no" : "ok"}" title="${k === "video" ? "Video" : "Photo"}: ${!j[k].backupDate && !j[k].backedUp ? "not backed up" : "backed up" + (j[k].backupDate ? " " + esc(fmtDates([j[k].backupDate])) : "")}">${k === "video" ? "Video" : "Photo"}</span>` : "";
     const drives = [...new Set(j.rows.flatMap(drivesOf))];
-    const meta = [w.place && hl(w.place, ts), o.hide !== "editor" && r.editor && `<a href="#/editor/${encodeURIComponent(r.editor)}">${hl(r.editor, ts)}</a>`, r.notes && `<span class="bk-notes">${hl(r.notes, ts)}</span>`].filter(Boolean).map(x => `<span class="mr">${x}</span>`).join("");
+    const meta = [w.when && `<span class="bk-when-m">${hl(w.when, ts)}</span>`, w.place && hl(w.place, ts), o.hide !== "editor" && r.editor && `<a href="#/editor/${encodeURIComponent(r.editor)}">${hl(r.editor, ts)}</a>`, r.notes && `<span class="bk-notes">${hl(r.notes, ts)}</span>`].filter(Boolean).map(x => `<span class="mr">${x}</span>`).join("");
     const open = bkOpen.has(r.id);
     return `<div class="bk-row${j.un ? " un" : ""}${open ? " open" : ""}" data-job="${esc(r.id)}" tabindex="0" aria-expanded="${open}" style="--i:${Math.min(i, 14)}">
       <span class="bk-no">${no ? String(no).padStart(2, "0") : ""}</span>
@@ -940,6 +941,43 @@ function bkToggle(row) {
 }
 // facts side by side, spaced, never strung together with dots
 const metaRow = (...xs) => xs.filter(Boolean).map(x => `<span class="mr">${x}</span>`).join("");
+// pop-ups are drawers: they push up from the bottom edge and slide back down; drag the top of one down to put it away
+function sheetShow(sc) {
+  sc._closing = false; (sc._anims || []).forEach(a => a.cancel()); sc._anims = null; sc.hidden = false;
+  clearTimeout(sc._sit); sc._sit = setTimeout(() => { const b = MBTN; if (!sc.hidden && !b.hidden && typeof perch === "function") perch(b.getBoundingClientRect(), "hop"); }, 380);   // he hops onto the drawer once it is up
+}
+function sheetHide(sc) {
+  if (sc.hidden || sc._closing) return;
+  const sh = sc.querySelector(".sheet"); if (STILL || !sh) { sc.hidden = true; afterSheet(); return; }
+  sc._closing = true;
+  const cur = getComputedStyle(sh).transform, from = cur && cur !== "none" ? cur : "none";
+  sc._anims = [sh.animate([{ transform: from }, { transform: "translateY(110%)" }], { duration: 280, easing: "cubic-bezier(.5,0,.75,.4)", fill: "forwards" }),
+    sc.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 280, fill: "forwards" })];
+  sc._anims[0].onfinish = () => { if (!sc._closing) return; sc._closing = false; sc._anims.forEach(a => a.cancel()); sc._anims = null; sc.hidden = true; afterSheet(); };
+}
+const afterSheet = () => { if (typeof perch === "function" && !document.querySelector(".scrim:not([hidden])")) perch(MBTN.getBoundingClientRect()); };
+const SHEET_CLOSE = { jobScrim: () => closeJob(), chkScrim: () => closeChk(), shootScrim: () => closeShoot() };
+document.querySelectorAll(".scrim > .sheet").forEach(sh => {
+  // push it down and it goes; pull it up and it stretches like rubber and springs back. A finger drags it when the drawer
+  // is scrolled to its top (down) or can't scroll further (up); otherwise the finger scrolls its content as usual.
+  let y0 = null, dy = 0, t0 = 0, on = false;
+  const pull = d => d >= 0 ? `translateY(${d}px)` : `translateY(${-Math.sqrt(-d) * 3.2}px) scaleY(${1 + Math.min(.06, Math.sqrt(-d) / 260)})`;
+  const skip = t => t.closest("input, select, textarea, button, a, label, [contenteditable]");
+  const start = (y, t) => { if (skip(t)) return; y0 = y; dy = 0; on = false; t0 = performance.now(); sh.style.transformOrigin = "50% 100%"; };
+  const move = (y, e) => { if (y0 == null) return; const d = y - y0;
+    if (!on) { const atTop = sh.scrollTop <= 0, atEnd = sh.scrollTop + sh.clientHeight >= sh.scrollHeight - 1;
+      if ((d > 6 && atTop) || (d < -6 && atEnd)) { on = true; y0 = y; } else if (Math.abs(d) > 6) { y0 = null; return; } else return; }
+    if (e.cancelable) e.preventDefault(); dy = y - y0; sh.style.transform = dy ? pull(dy) : ""; };
+  const end = () => { if (y0 == null) return; y0 = null; if (!on) return; on = false; const sc = sh.parentElement, fast = dy > 30 && dy / Math.max(1, performance.now() - t0) > .6;
+    if (dy > 90 || fast) { SHEET_CLOSE[sc.id] && SHEET_CLOSE[sc.id](); requestAnimationFrame(() => { sh.style.transform = ""; }); return; }
+    if (dy) { const from = pull(dy); sh.style.transform = ""; sh.animate([{ transform: from }, { transform: "none" }], { duration: dy < 0 ? 520 : 420, easing: "cubic-bezier(.34,1.56,.64,1)" }); } };
+  sh.addEventListener("touchstart", e => start(e.touches[0].clientY, e.target), { passive: true });
+  sh.addEventListener("touchmove", e => move(e.touches[0].clientY, e), { passive: false });
+  sh.addEventListener("touchend", end); sh.addEventListener("touchcancel", end);
+  sh.addEventListener("pointerdown", e => { if (e.pointerType !== "touch" && !e.button) { start(e.clientY, e.target); if (y0 != null) sh.setPointerCapture(e.pointerId); } });
+  sh.addEventListener("pointermove", e => { if (e.pointerType !== "touch") move(e.clientY, e); });
+  sh.addEventListener("pointerup", e => { if (e.pointerType !== "touch") end(); }); sh.addEventListener("pointercancel", e => { if (e.pointerType !== "touch") end(); });
+});
 // a page drawn again with nothing changed keeps its rows as they are: no rebuild, no restyle of hundreds of rows
 function setHTML(el, html) { if (el._html === html && el.isConnected) return false; el.innerHTML = html; el._html = html; return true; }
 function drawBackup(first) {
@@ -950,6 +988,10 @@ function drawBackup(first) {
   if (!unRows.length) bk.un = false;
   // years: a red dot where something isn't backed up
   setHTML($("bkYears"), ys.map(y => `<button type="button" role="tab" data-y="${esc(y)}" aria-selected="${y === bk.year}">${esc(y)}${rows.some(r => String(r.year) === y && unbacked(r)) ? '<i class="dot red"></i>' : ""}</button>`).join(""));
+  { const i = ys.indexOf(bk.year), un = y => rows.some(r => String(r.year) === y && unbacked(r));   // ys is newest first: ‹ goes back in time
+    $("bkPrev").disabled = i >= ys.length - 1; $("bkNext").disabled = i <= 0;
+    $("bkPrev").querySelector(".dot").hidden = !ys.slice(i + 1).some(un); $("bkNext").querySelector(".dot").hidden = !ys.slice(0, Math.max(0, i)).some(un);
+    $("bkPrev").title = ys[i + 1] || ""; $("bkNext").title = ys[i - 1] || ""; }
   const yEl = $("bkYear"); if (yEl.textContent !== bk.year) { yEl.innerHTML = `${esc(bk.year.slice(0, 2))}<em>${esc(bk.year.slice(2))}</em>`; if (!first && !STILL) yEl.animate([{ opacity: 0, transform: "translateY(16px)" }, { opacity: 1, transform: "none" }], { duration: 360, easing: "cubic-bezier(.2,.8,.2,1)" }); }
   $("bkJobs").textContent = inYear.length; $("bkDrives").textContent = new Set(inYear.flatMap(drivesOf)).size; $("bkUnN").textContent = unRows.length;
   $("bkUn").classList.toggle("red", unRows.length > 0); $("bkUn").setAttribute("aria-pressed", bk.un); $("bkUn").disabled = !unRows.length;
@@ -961,6 +1003,7 @@ function drawBackup(first) {
   $("bkCats").hidden = searching || bk.un;
   setHTML($("bkCats"), cats.map(c => { const js = secJobs(inYear.filter(r => sectionOf(r) === c)); return `<button type="button" role="tab" data-c="${esc(c)}" aria-selected="${c === bk.cat}"><em class="sec-n">${esc(baseOf(c))}${isPhotoSec(c) ? `<i class="sec-sep">·</i>Photo` : ""}</em><span>${js.length}</span>${js.some(j => j.un) ? '<i class="dot red"></i>' : ""}</button>`; }).join(""));
   const row = (j, i) => jobCard(j, i, { num, ts });
+  const TH = '<div class="bk-th" aria-hidden="true"><span>No.</span><span>Job</span><span>Date</span><span>Backed up</span><span>Drive</span></div>';
   const sortJ = js => bk.desc ? js.slice().reverse() : js;
   const head = (title, n, jump) => `<h3 class="bk-gh">${jump ? `<button type="button" class="bk-jump" data-y="${esc(title)}">${esc(title)}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>` : esc(title)}<span>${n} ${n === 1 ? "job" : "jobs"}</span></h3>`;
   const sortBtn = `<button type="button" class="btn ghost sm bk-sort" id="bkSort" aria-label="Sort">${bk.desc ? "Newest first" : "Oldest first"}</button>`;
@@ -969,20 +1012,20 @@ function drawBackup(first) {
     const pool = bk.scope === "year" ? inYear : rows, hits = jobsOf(pool).filter(j => j.rows.some(r => bkMatch(r, ts)));
     const shown = bk.all ? hits : hits.slice(0, 60);
     filt = `<span class="muted">${hits.length ? `${hits.length} found` : ""}</span>${hits.length > 1 ? sortBtn : ""}`;
-    html = hits.length ? ys.map(y => [y, shown.filter(j => String(j.main.year) === y)]).filter(([, l]) => l.length).map(([y, l]) => `<section class="bk-group">${head(y, l.length, bk.scope === "all")}<div class="bk-rows">${sortJ(l).map(row).join("")}</div></section>`).join("")
+    html = hits.length ? ys.map(y => [y, shown.filter(j => String(j.main.year) === y)]).filter(([, l]) => l.length).map(([y, l]) => `<section class="bk-group">${head(y, l.length, bk.scope === "all")}<div class="bk-rows">${TH}${sortJ(l).map(row).join("")}</div></section>`).join("")
       + (shown.length < hits.length ? `<button type="button" class="btn ghost" id="bkAll">Show all ${hits.length}</button>` : "")
       : `<div class="bk-empty">Nothing matches “${esc($("bkQ").value.trim())}”${bk.scope === "year" ? ` in ${esc(bk.year)}` : ""}.</div>`;
   } else if (bk.un) {
     const js = secJobs(inYear.filter(unbacked));
     filt = `<button type="button" class="fchip on" id="bkUnOff">Not backed up in ${esc(bk.year)} ✕</button>${js.length > 1 ? sortBtn : ""}`;
-    html = cats.map(c => [c, js.filter(j => sectionOf(j.main) === c)]).filter(([, l]) => l.length).map(([c, l]) => `<section class="bk-group">${head(c, l.length)}<div class="bk-rows">${sortJ(l).map(row).join("")}</div></section>`).join("");
+    html = cats.map(c => [c, js.filter(j => sectionOf(j.main) === c)]).filter(([, l]) => l.length).map(([c, l]) => `<section class="bk-group">${head(c, l.length)}<div class="bk-rows">${TH}${sortJ(l).map(row).join("")}</div></section>`).join("");
   } else {
     const inCat = inYear.filter(r => sectionOf(r) === bk.cat);
     const drives = [...new Set(inCat.flatMap(drivesOf))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     if (bk.drive && !drives.includes(bk.drive)) bk.drive = null;
     const js = secJobs(inCat).filter(j => !bk.drive || drivesOf(j.main).includes(bk.drive));
     filt = (drives.length > 1 ? `<span class="muted small">Drives</span>${drives.map(d => `<button type="button" class="fchip${bk.drive === d ? " on" : ""}" data-drive="${esc(d)}" aria-pressed="${bk.drive === d}">${esc(d === "未知" ? "Unknown" : d)}</button>`).join("")}` : "") + (js.length > 1 ? sortBtn : "");
-    html = js.length ? `<div class="bk-rows">${sortJ(js).map(row).join("")}</div>` : `<div class="bk-empty">No jobs in ${esc(bk.year)} yet. <button type="button" class="btn sm" id="bkNew2">+ New job</button></div>`;
+    html = js.length ? `<div class="bk-rows">${TH}${sortJ(js).map(row).join("")}</div>` : `<div class="bk-empty">No jobs in ${esc(bk.year)} yet.</div>`;
   }
   setHTML($("bkFilters"), filt);
   const list = $("bkList"), key = [bk.year, bk.cat, bk.drive, bk.un, bk.scope, ts.join(" "), bk.desc].join("|");
@@ -991,6 +1034,8 @@ function drawBackup(first) {
     if (on && !cs.hidden) { const l = on.offsetLeft - cs.offsetLeft, r = l + on.offsetWidth; if (l < cs.scrollLeft || r > cs.scrollLeft + cs.clientWidth - 24) cs.scrollTo({ left: Math.max(0, l - 16), behavior: first || STILL ? "auto" : "smooth" }); } }
   if (list.dataset.key !== key) { list.dataset.key = key; list.classList.remove("anim"); void list.offsetWidth; list.classList.add("anim"); }
 }
+const bkStep = d => { const ys = bkYears(), y = ys[ys.indexOf(bk.year) + d]; if (!y) return; bk.year = y; bk.drive = null; buzz(); drawBackup(); };
+$("bkPrev").addEventListener("click", () => bkStep(1)); $("bkNext").addEventListener("click", () => bkStep(-1));
 $("bkYears").addEventListener("click", e => { const b = e.target.closest("[data-y]"); if (!b || b.dataset.y === bk.year) return; bk.year = b.dataset.y; bk.drive = null; buzz(); drawBackup(); });
 $("bkCats").addEventListener("click", e => { const b = e.target.closest("[data-c]"); if (!b) return; bk.cat = b.dataset.c; bk.drive = null; buzz(); drawBackup(); });
 $("bkUn").addEventListener("click", () => { bk.un = !bk.un; buzz(); drawBackup(); });
@@ -1140,7 +1185,7 @@ function openJob(r, pre) {
   const live = r && classicState().ready ? classicJob(r.id) : null;
   if (live) jfFill(live.r, live.tw, live.no, null, live.sig);
   else jfFill(r, r ? twinOf(r) : null, r ? numbers().get(r.id) || "" : "", pre, "");
-  $("jobScrim").hidden = false; fx("open");
+  sheetShow($("jobScrim")); fx("open");
   jfConn(); jfNoHint();
   if (!r) wizOn($("jobForm"), { titles: ["What's the job?", "Which days?", "Video or photo?", "Which No.?"],
     check: i => { const p = jfPayload(); return i === 0 && !p.name ? ["Fill in the name.", "jfName"] : i === 1 && !p.parts.some(x => x.date) ? ["Pick the day.", "jfParts"] : i === 2 && !p.type ? ["Choose Video, Photo or Video + Photo.", "jfType"] : null; },
@@ -1169,7 +1214,7 @@ function jfFill(r, tw, no, pre, sig) {
   $("jfTypeLbl").textContent = r ? "Job type" : "What does this job have?";
   jfType(); jfDrives();
 }
-function closeJob(force) { if (jf && jf.busy && !force) return; if (!$("jobScrim").hidden) fx("close"); $("jobScrim").hidden = true; if (jf) clearTimeout(jf.t); jf = null; }
+function closeJob(force) { if (jf && jf.busy && !force) return; if (!$("jobScrim").hidden) fx("close"); sheetHide($("jobScrim")); if (jf) clearTimeout(jf.t); jf = null; }
 function normLink(v) {
   v = String(v || "").trim(); if (!v) return "";
   if (!/^https?:\/\//i.test(v)) v = "https://" + v.replace(/^\/+/, "");
@@ -1304,9 +1349,9 @@ function drawCheck() {
     ${l.length > 60 ? `<p class="muted small">And ${l.length - 60} more. Pick one year to see them all.</p>` : ""}</section>`).join("")
     : `<div class="chk-ok"><b>All good</b><small>No repeated names, and every backed-up job has a drive and an editor${chkScope === "year" ? " in " + esc(bk.year) : ""}.</small></div>`;
 }
-$("bkCheck").addEventListener("click", () => { chkScope = "year"; drawCheck(); $("chkScrim").hidden = false; buzz(); });
+$("bkCheck").addEventListener("click", () => { chkScope = "year"; drawCheck(); sheetShow($("chkScrim")); buzz(); });
 $("chkScope").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (b) { chkScope = b.dataset.v; drawCheck(); } });
-const closeChk = () => { $("chkScrim").hidden = true; };
+const closeChk = () => { sheetHide($("chkScrim")); };
 $("chkClose").addEventListener("click", closeChk);
 $("chkScrim").addEventListener("click", e => { if (e.target === $("chkScrim") || e.target.closest(".chk-item")) closeChk(); });
 
@@ -1401,7 +1446,7 @@ function openShoot(s, onSaved) {
   $("sfName").value = s.name || ""; $("sfFrom").value = ds[0] || ""; $("sfTo").value = ds.length > 1 ? ds[ds.length - 1] : "";
   $("sfLoc").value = s.location || ""; $("sfNotes").value = s.notes || ""; $("sfMsg").textContent = "";
   sfType = s.type || "both"; sfCrew = new Set(crewOf(s));
-  drawSeg(); drawCrew(); $("sfDel").hidden = !s.id; $("shootScrim").hidden = false;
+  drawSeg(); drawCrew(); $("sfDel").hidden = !s.id; sheetShow($("shootScrim"));
   if (!s.id) wizOn($("shootForm"), { titles: ["What's the shoot?", "When and where?", "Video or photo?", "Who's going?"],
     check: i => i === 0 && !$("sfName").value.trim() ? ["Fill in the name.", "sfName"] : i === 1 && !$("sfFrom").value ? ["Pick the day.", "sfFrom"] : null,
     need: b => { $("sfMsg").textContent = b[0]; $(b[1]).focus(); } });
@@ -1411,7 +1456,7 @@ function drawSeg() { document.querySelectorAll("#sfType button").forEach(b => b.
 function drawCrew() { $("sfCrew").innerHTML = team.map(n => `<button type="button" class="${sfCrew.has(n) ? "on" : ""}" data-n="${esc(n)}">${esc(n)}</button>`).join(""); }
 $("sfType").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { sfType = b.dataset.v; drawSeg(); if ($("shootForm").dataset.step === "3") setTimeout(() => wizNext($("shootForm")), 260); } });
 $("sfCrew").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; const n = b.dataset.n; sfCrew.has(n) ? sfCrew.delete(n) : sfCrew.add(n); drawCrew(); });
-const closeShoot = () => { $("shootScrim").hidden = true; editing = null; };
+const closeShoot = () => { sheetHide($("shootScrim")); editing = null; };
 $("sfCancel").addEventListener("click", closeShoot);
 $("shootScrim").addEventListener("click", e => { if (e.target === $("shootScrim")) closeShoot(); });
 $("shootForm").addEventListener("submit", async e => {
@@ -1605,7 +1650,7 @@ function status(t, live) {
 // Close: the chat shrinks back into that spot and 小M lands there again. ⌘K / Ctrl+K does the same; Esc closes.
 let mOpen = false, mAnim = null;
 function showM() {
-  const b = $("mBtn"); if (!b.hidden) return; b.hidden = false; perch();
+  const b = MBTN; if (!b.hidden) return; b.hidden = false; perch();
   if (!STILL) b.animate([{ transform: "translateY(40px) scale(.6)", opacity: 0 }, { transform: "none", opacity: 1 }], { duration: 520, easing: "cubic-bezier(.34,1.4,.64,1)" });
 }
 function centerOf(el) { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height }; }
@@ -1613,7 +1658,7 @@ function openM(text) {
   if (mOpen) { if (text != null) setInput(text); $("aiIn").focus(); return; }
   mOpen = true; fx("open"); status(""); fanHide(true);
   if (mAnim) { mAnim.forEach(a => a.cancel()); mAnim = null; }
-  const b = $("mBtn"), p = $("mPanel"), from = centerOf(b);
+  const b = MBTN, p = $("mPanel"), from = centerOf(b);
   anchorPanel(); p.hidden = false; b.setAttribute("aria-expanded", "true"); document.body.classList.add("m-open");
   drawChat(); if (text != null) setInput(text);
   const pr = p.getBoundingClientRect(), av = centerOf($("mpAv")), cx = from.x - pr.left, cy = from.y - pr.top;
@@ -1637,7 +1682,7 @@ function openM(text) {
 function closeM(now) {
   if (!mOpen) return;
   mOpen = false; fx("close"); $("mpHist").hidden = true; $("histBtn").setAttribute("aria-expanded", "false");
-  const b = $("mBtn"), p = $("mPanel");
+  const b = MBTN, p = $("mPanel");
   b.setAttribute("aria-expanded", "false"); document.body.classList.remove("m-open");
   if (mAnim) mAnim.forEach(a => a.cancel());
   if (now || STILL || p.hidden) { p.hidden = true; b.style.visibility = ""; return; }
@@ -1661,7 +1706,7 @@ function trick() {
   let i; do { i = Math.floor(Math.random() * TRICKS.length); } while (i === lastTrick && TRICKS.length > 1); lastTrick = i;
   const [name, sound, ms] = TRICKS[i]; act($("mSvg"), name, ms); fx(sound);
 }
-$("mBtn").addEventListener("click", e => {
+MBTN.addEventListener("click", e => {
   if (e.detail === 0) { openM(); return; }   // keyboard: Enter / Space opens the chat as before
   trick(); if (!matchMedia("(hover: hover)").matches) fanShow(); });
 const fan = document.createElement("div"); fan.className = "m-fan"; fan.id = "mFan"; fan.hidden = true; fan.setAttribute("role", "menu");
@@ -1673,7 +1718,7 @@ document.body.appendChild(fan);
 let fanT = 0;
 // the three buttons open in a ring round 小M, on the side that has room (towards the middle of the screen)
 function fanShow() {
-  clearTimeout(fanT); const b = $("mBtn"); if (mOpen || b.hidden) return;
+  clearTimeout(fanT); const b = MBTN; if (mOpen || b.hidden) return;
   const r = b.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2, R = r.width / 2 + (phoneW() ? 28 : 30);
   const a0 = Math.atan2(innerHeight * .45 - cy, innerWidth / 2 - cx), step = phoneW() ? .78 : .74;
   fan.style.left = cx + "px"; fan.style.top = cy + "px"; fan.sy = $("views").scrollTop;
@@ -1683,8 +1728,8 @@ function fanShow() {
 }
 function fanHide(now) { clearTimeout(fanT); if (fan.hidden) return; if (now || STILL) { fan.hidden = true; return; } fan.classList.add("out"); fanT = setTimeout(() => { fan.hidden = true; fan.classList.remove("out"); }, 200); }
 const fanLater = () => { clearTimeout(fanT); fanT = setTimeout(fanHide, 280); };
-$("mBtn").addEventListener("pointerenter", e => { if (e.pointerType === "mouse") fanShow(); });
-$("mBtn").addEventListener("pointerleave", e => { if (e.pointerType === "mouse") fanLater(); });
+MBTN.addEventListener("pointerenter", e => { if (e.pointerType === "mouse") fanShow(); });
+MBTN.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") fanLater(); });
 fan.addEventListener("pointerenter", () => clearTimeout(fanT));
 fan.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") fanLater(); });
 fan.addEventListener("click", e => {
@@ -1694,34 +1739,137 @@ fan.addEventListener("click", e => {
   else openShoot({ dates: route.name === "calendar" && selDay ? selDay : ymd(new Date()) });
 });
 $("views").addEventListener("scroll", () => { if (Math.abs($("views").scrollTop - (fan.sy || 0)) > 8) fanHide(true); }, { passive: true });   // the circle stays put on 小M; a real scroll closes it
-document.addEventListener("pointerdown", e => { if (!fan.hidden && !fan.contains(e.target) && !$("mBtn").contains(e.target)) fanHide(); }, true);
+document.addEventListener("pointerdown", e => { if (!fan.hidden && !fan.contains(e.target) && !MBTN.contains(e.target)) fanHide(); }, true);
 // 小M stands on the page, as on the Backup page: on the top edge of its main panel (the graph, the calendar, the Backup
 // strip, the team cards, the list, the job). When you go to another page he hops over and lands on its panel.
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const phoneW = () => window.innerWidth < 900;
 const PERCH = { home: ["#monitor"], calendar: [".cal-box", true], backup: ["#bkHero"], team: ["#teamGrid"], list: ["#listRows"], job: ["#v-job .facts"], settings: ["#v-settings .card"] };
 const seat = document.createElement("div"); seat.className = "m-seat";
-function perch(from) {
-  const b = $("mBtn"); if (!b.isConnected) document.body.appendChild(b);
+// on a page of cards (Team, Drives) he has a card to stand on at a time: the one in view; scrolled out of sight, he blinks
+// to the next card, and back to the first when you go back to the top
+const STATIONS = { team: "#teamGrid > .tm", drives: "#listRows .drive-card" };
+const stationSel = () => STATIONS[shownView === "list" ? route.name : shownView];
+function perchWant() {
+  const sel = stationSel();
+  if (sel) { const els = [...document.querySelectorAll(sel)].filter(e => e.offsetParent); if (els.length) { perch.st = clamp(perch.st || 0, 0, els.length - 1); return [els[perch.st], true, true]; } }
+  const w = PERCH[shownView]; return w && [document.querySelector(w[0]), w[1]];
+}
+function perch(from, how) {
+  const b = MBTN; if (!b.isConnected) document.body.appendChild(b);
   if (b.hidden || mOpen) return;
-  if (b.getAnimations().some(a => a.playState === "running") && !from) return;   // mid-hop: a redraw doesn't move him
-  const want = PERCH[shownView], t = want && document.querySelector(want[0]);
+  if (b.getAnimations().some(a => a.playState === "running") && !from) return;   // mid-jump: a redraw doesn't move him
+  // a pop-up is open: he sits on its top edge
+  const sc = document.querySelector(".scrim:not([hidden])");
+  if (sc && !sc._closing) { const sh = sc.querySelector(".sheet"); seat.remove(); if (b.parentElement !== document.body) document.body.appendChild(b);
+    b.classList.remove("perched"); b.classList.add("on-sheet"); b.style.right = ""; sitOn(b, sh);
+    const to = b.getBoundingClientRect(); if (from && from.width && !STILL) hop(b, from, to, true); return; }
+  b.classList.remove("on-sheet"); b.style.left = b.style.top = "";
+  document.querySelectorAll(".m-host").forEach(e => e.classList.remove("m-host"));
+  // Home: no panel to stand on; he floats inside the graph, weightless
+  const mon = shownView === "home" && $("monitor");
+  if (mon && mon.offsetParent) { seat.remove(); b.classList.remove("perched"); b.style.right = ""; space.on(b, mon);
+    const to = b.getBoundingClientRect(); if (from && from.width && !STILL) (how === "hop" ? hop : blink)(b, from, to); return; }
+  space.off(b);
+  const want = perchWant(), t = want && want[0];
   const ok = t && t.offsetParent && t.getBoundingClientRect().height > 30;
+  if (ok && want[2]) t.classList.add("m-host");
   if (ok) {
     if (want[1]) { if (seat.parentElement !== t || t.firstChild !== seat) t.prepend(seat); seat.style.marginBottom = ""; }
     else if (t.previousElementSibling !== seat) { t.before(seat); }
     if (!want[1]) { const g = parseFloat(getComputedStyle(t.parentElement).rowGap) || 0; seat.style.marginBottom = -g + "px"; }
     if (b.parentElement !== seat) seat.appendChild(b);
-    b.classList.add("perched"); fitPerch(b, !!want[1]);
+    b.classList.add("perched"); fitPerch(b, !!want[1], !!want[2]);
   } else { if (b.parentElement !== document.body) document.body.appendChild(b); b.classList.remove("perched"); b.style.right = ""; seat.remove(); }
   // the hop: up off the old spot, an arc through the air with a motion blur that follows his speed, a squash on landing
   const to = b.getBoundingClientRect();
-  if (from && from.width && !STILL && (Math.abs(from.left - to.left) > 2 || Math.abs(from.top - to.top) > 2)) hop(b, from, to);
+  if (from && from.width && !STILL && (Math.abs(from.left - to.left) > 2 || Math.abs(from.top - to.top) > 2)) (how === "hop" ? hop : blink)(b, from, to);
 }
+// 小M in space (Home). He drifts where he rests, slowly turning, as if there were no up or down. Turn the graph and the
+// turning sweeps him along; he swims back against it to the front of the screen, coming closer (bigger) as he does,
+// leaning into each stroke. Let go and he drifts back to his spot. Moves only through translate / rotate / scale, so the
+// jump-in and blink animations (which use transform) still play on top.
+const space = (() => {
+  let b = null, mon = null, raf = 0, last = 0, W = 0, H = 0, rest = { x: 0, y: 0 };
+  const p = { x: 0, y: 0 }, v = { x: 0, y: 0 }; let sc = 1, rot = 0, face = 1, pull = 0, ptr = null, relAt = -1e9, sw = false;
+  const size = () => { const r = mon.getBoundingClientRect(); W = r.width; H = r.height; const w = b.offsetWidth;
+    rest = { x: W - w - (W < 600 ? 18 : 42), y: H * (W < 600 ? .5 : .56) - w / 2 }; };
+  const down = e => { if (e.target.closest(".mbtn, button, a")) return; ptr = { id: e.pointerId, x: e.clientX, y: e.clientY }; pull = 1; };
+  const move = e => { if (!ptr || e.pointerId !== ptr.id) return; const dx = e.clientX - ptr.x, dy = e.clientY - ptr.y; ptr.x = e.clientX; ptr.y = e.clientY;
+    v.x += dx * .9; v.y += dy * .55; };   // the graph turns with the finger and carries him with it
+  const up = e => { if (ptr && e.pointerId === ptr.id) { ptr = null; relAt = performance.now(); } };
+  const ro = window.ResizeObserver ? new ResizeObserver(() => b && size()) : null;
+  function tick(now) {
+    raf = requestAnimationFrame(tick); const dt = Math.min(.05, (now - (last || now)) / 1000); last = now; if (!dt) return;
+    if (b.getAnimations().some(a => a.playState === "running")) return;   // let a blink finish first
+    const t = now / 1000, w = b.offsetWidth, chase = ptr || now - relAt < 1400;
+    // where he wants to be: in front of you while you turn the graph, his own spot otherwise, with a slow drift around it
+    const tx = chase ? W / 2 - w / 2 : rest.x + Math.sin(t * .31) * 10 + Math.sin(t * .17 + 1) * 6,
+          ty = chase ? H * .52 - w / 2 : rest.y + Math.sin(t * .23 + 2) * 12;
+    const ax = tx - p.x, ay = ty - p.y, d = Math.hypot(ax, ay) || 1;
+    // swimming = a steady push towards the target in strokes; drifting = a soft spring with almost no friction
+    if (chase) { const stroke = .55 + .45 * Math.max(0, Math.sin(t * 9)); const f = Math.min(1, d / 40) * 900 * stroke; v.x += ax / d * f * dt; v.y += ay / d * f * dt; }
+    else { v.x += ax * 1.1 * dt; v.y += ay * 1.1 * dt; }
+    const damp = Math.pow(chase ? .12 : .35, dt); v.x *= damp; v.y *= damp;
+    p.x += v.x * dt; p.y += v.y * dt;
+    // soft walls: he bumps off the edges of the screen instead of leaving it
+    const mx = W - w * .7, my = H - w * .8;
+    if (p.x < -w * .3) { p.x = -w * .3; v.x = Math.abs(v.x) * .5; } if (p.x > mx) { p.x = mx; v.x = -Math.abs(v.x) * .5; }
+    if (p.y < -w * .1) { p.y = -w * .1; v.y = Math.abs(v.y) * .5; } if (p.y > my) { p.y = my; v.y = -Math.abs(v.y) * .5; }
+    const speed = Math.hypot(v.x, v.y), swim = chase && (speed > 30 || d > 24);
+    if (swim !== sw) { sw = swim; b.classList.toggle("swim", swim); }
+    if (Math.abs(v.x) > 40) face = v.x < 0 ? -1 : 1;
+    const wantRot = swim ? Math.max(-55, Math.min(55, (v.x / (speed || 1)) * 50 + (v.y / (speed || 1)) * 12 * face)) : Math.sin(t * .4) * 9 + v.x * .02;
+    rot += (wantRot - rot) * Math.min(1, dt * (swim ? 6 : 1.6));
+    sc += ((chase ? 1.32 : 1) - sc) * Math.min(1, dt * 1.8);
+    b.style.translate = p.x.toFixed(1) + "px " + p.y.toFixed(1) + "px"; b.style.rotate = rot.toFixed(2) + "deg";
+    b.style.scale = (swim ? face : 1) * sc + " " + sc;
+  }
+  return {
+    on(el, m) {
+      if (b === el && mon === m && el.classList.contains("space")) return;
+      b = el; mon = m; if (b.parentElement !== mon) mon.appendChild(b); b.classList.add("space"); size();
+      p.x = rest.x; p.y = rest.y; v.x = v.y = 0; sc = 1; rot = 0; ptr = null;
+      b.style.translate = p.x + "px " + p.y + "px"; b.style.rotate = "0deg"; b.style.scale = "1";
+      mon.addEventListener("pointerdown", down); addEventListener("pointermove", move, { passive: true }); addEventListener("pointerup", up); addEventListener("pointercancel", up);
+      if (ro) ro.observe(mon);
+      if (!STILL && !raf) { last = 0; raf = requestAnimationFrame(tick); }
+    },
+    off(el) {
+      if (!b) return; cancelAnimationFrame(raf); raf = 0; if (ro) ro.disconnect();
+      mon.removeEventListener("pointerdown", down); removeEventListener("pointermove", move); removeEventListener("pointerup", up); removeEventListener("pointercancel", up);
+      el.classList.remove("space", "swim"); el.style.translate = el.style.rotate = el.style.scale = ""; sw = false; b = null;
+    }
+  };
+})();
+document.addEventListener("visibilitychange", () => { const b = MBTN; if (b.classList.contains("space")) { if (document.hidden) space.off(b); else perch(); } });
+// sitting on a pop-up's top edge, at its right; he follows the edge as the pop-up grows or the keyboard moves it
+let sitRO = null;
+function sitOn(b, sh) {
+  const put = () => { if (!b.classList.contains("on-sheet")) return; const r = sh.getBoundingClientRect(), w = b.offsetWidth;
+    b.style.left = Math.round(Math.min(innerWidth - w - 8, r.right - w - 22)) + "px"; b.style.top = Math.round(r.top - w * .72) + "px"; };
+  put(); if (sitRO) sitRO.disconnect(); if (window.ResizeObserver) { sitRO = new ResizeObserver(put); sitRO.observe(sh); }
+  if (window.visualViewport && !sitOn.vv) { sitOn.vv = true; visualViewport.addEventListener("resize", () => { const s = document.querySelector(".scrim:not([hidden]) > .sheet"); if (s && b.classList.contains("on-sheet")) sitOn(b, s); }); }
+}
+// on Team / Drives: when his card is almost out of sight he blinks to the next card in view; quickly back at the top, to the first
+let stT = 0;
+$("views").addEventListener("scroll", () => { if (stT || !stationSel()) return; stT = requestAnimationFrame(() => { stT = 0;
+  const b = MBTN; if (b.hidden || mOpen || !b.classList.contains("perched") || b.getAnimations().some(a => a.playState === "running")) return;
+  const els = [...document.querySelectorAll(stationSel())].filter(e => e.offsetParent); if (els.length < 2) return;
+  const vr = $("views").getBoundingClientRect(), br = b.getBoundingClientRect(), cur = perch.st || 0;
+  let next = cur;
+  if ($("views").scrollTop < 40) next = 0;
+  else if (br.bottom < vr.top + 26 || br.top > vr.bottom - 20) { const i = els.findIndex(e => e.getBoundingClientRect().top > vr.top + 70); next = i < 0 ? els.length - 1 : i; }
+  if (next !== cur && Math.abs(els[next].getBoundingClientRect().top - els[cur].getBoundingClientRect().top) > 4) { perch.st = next; perch(br); }
+}); }, { passive: true });
 // where on the panel's edge he stands: clear of buttons and tabs right above it (tries spots from the right towards the left),
 // and with room above him inside the scrolling page so his head is never cut off
-function fitPerch(b, inside) {
-  seat.style.height = ""; b.style.right = ""; if (fitPerch.pushed) { fitPerch.pushed.style.marginTop = ""; fitPerch.pushed = null; }
+function fitPerch(b, inside, station) {
+  seat.style.height = ""; b.style.right = ""; if (fitPerch.pushed) { fitPerch.pushed.style.marginTop = fitPerch.pushed.style.paddingTop = ""; fitPerch.pushed = null; }
+  if (station) {   // a card of his own: he stands at its right end; the first card gets room above it so his head isn't cut off
+    const views = $("views"), top = b.getBoundingClientRect().top - views.getBoundingClientRect().top + views.scrollTop;
+    if (top < 6) { const g = seat.parentElement.parentElement; g.style.paddingTop = (6 - top) + "px"; fitPerch.pushed = g; }
+    return; }
   const views = $("views"), vr = views.getBoundingClientRect(), host = seat.parentElement, hr = host.getBoundingClientRect();
   // stand over the panel's own content: on a wide grid (team cards) that is the right end of its first row, not the empty space
   let edge = hr.right;
@@ -1746,6 +1894,53 @@ function fitPerch(b, inside) {
   if (push > 0) { if (inside) { host.style.marginTop = push + "px"; fitPerch.pushed = host; } else seat.style.height = push + "px"; }
 }
 const want1Row = el => el && /grid|flex/.test(getComputedStyle(el).display) && el.children.length > 1;
+// 闪现, the blink: at the old spot he jumps, spins and bursts into paper letters and is gone; at the new spot paper letters
+// burst, he springs out of them and lands with a bounce. The old spot is played by a copy of him, so the page never waits.
+function blink(b, from, to) {
+  const ghost = b.cloneNode(true); ghost.removeAttribute("id"); ghost.querySelectorAll("[id]").forEach(e => e.removeAttribute("id"));
+  ghost.className = "mbtn m-ghost"; ghost.setAttribute("aria-hidden", "true"); ghost.tabIndex = -1;
+  Object.assign(ghost.style, { position: "fixed", left: from.left + "px", top: from.top + "px", width: from.width + "px", height: from.height + "px", right: "auto", bottom: "auto", margin: 0, zIndex: 40, pointerEvents: "none", viewTransitionName: "none" });
+  document.body.appendChild(ghost);
+  ghost.animate([
+    { transform: "none" },
+    { transform: "translateY(4px) scale(1.12, .86)", offset: .14 },
+    { transform: "translateY(-34px) scale(.92, 1.1) rotate(0)", offset: .42 },
+    { transform: "translateY(-40px) scale(.6) rotate(320deg)", opacity: 1, offset: .74 },
+    { transform: "translateY(-42px) scale(0) rotate(540deg)", opacity: 0 }
+  ], { duration: 520, easing: "cubic-bezier(.3,.6,.4,1)", fill: "forwards" }).onfinish = () => ghost.remove();
+  setTimeout(() => paperBurst(from.left + from.width / 2, from.top + from.height / 2 - 38), 360);
+  // the new spot: a burst, then he springs out and lands
+  const IN = 470;
+  b.animate([{ opacity: 0 }, { opacity: 0 }], { duration: IN, fill: "backwards" });
+  setTimeout(() => { const r = b.getBoundingClientRect(); paperBurst(r.left + r.width / 2, r.top + r.height / 2 - 10, true); }, IN - 120);
+  b.animate([
+    { transform: "translateY(-46px) scale(0) rotate(-200deg)", opacity: 0 },
+    { transform: "translateY(-58px) scale(1.08, 1.12) rotate(0)", opacity: 1, offset: .38 },
+    { transform: "translateY(0) scale(1.24, .76)", offset: .66 },
+    { transform: "translateY(-12px) scale(.94, 1.08)", offset: .8 },
+    { transform: "translateY(0) scale(1.06, .95)", offset: .92 },
+    { transform: "none", opacity: 1 }
+  ], { duration: 640, delay: IN, easing: "cubic-bezier(.3,.7,.3,1)", fill: "backwards" }).onfinish = () => { act($("mSvg"), "land", 450); fx("drag"); };
+  fx("pin");
+}
+// paper letters: S T U D I O M and plain paper bits, thrown out and drifting down as they turn
+function paperBurst(x, y, inward) {
+  const L = "STUDIOM", wrap = document.createElement("div"); wrap.className = "paper-burst"; wrap.style.left = x + "px"; wrap.style.top = y + "px"; document.body.appendChild(wrap);
+  const n = 16;
+  for (let i = 0; i < n; i++) {
+    const p = document.createElement("i"), a = (i / n) * Math.PI * 2 + Math.random() * .4, d = 34 + Math.random() * 46, letter = i % 2 === 0;
+    p.className = "pb" + (letter ? " l" : "") + (i % 3 === 0 ? " o" : ""); if (letter) p.textContent = L[(i / 2) % L.length | 0];
+    wrap.appendChild(p);
+    const dx = Math.cos(a) * d, dy = Math.sin(a) * d * .8 - 14, r1 = (Math.random() - .5) * 360, r2 = r1 + (Math.random() - .5) * 540;
+    const k = inward ? [[dx * 1.2, dy * 1.2], [0, 0]] : [[0, 0], [dx, dy]];
+    p.animate([
+      { transform: `translate(${k[0][0]}px, ${k[0][1]}px) rotate(${r1}deg) scale(${inward ? .6 : .3})`, opacity: inward ? 0 : 1 },
+      { transform: `translate(${k[1][0]}px, ${k[1][1]}px) rotate(${(r1 + r2) / 2}deg) scale(1)`, opacity: 1, offset: .45 },
+      { transform: `translate(${k[1][0] + dx * .15}px, ${k[1][1] + 30}px) rotateX(70deg) rotate(${r2}deg) scale(.9)`, opacity: 0 }
+    ], { duration: 760 + Math.random() * 260, easing: "cubic-bezier(.2,.75,.3,1)", fill: "forwards" });
+  }
+  setTimeout(() => wrap.remove(), 1100);
+}
 function hop(b, from, to) {
   const dx = from.left - to.left, dy = from.top - to.top, up = Math.min(-70, Math.min(dy, 0) - 60), tilt = dx > 0 ? -10 : 10;
   const k = Math.min(1.6, Math.hypot(dx, dy) / 260 + .5);   // longer jumps blur and stretch a little more
@@ -1767,7 +1962,7 @@ function anchorPanel() {
   p.style.left = p.style.right = p.style.top = p.style.bottom = "";
 }
 addEventListener("resize", () => { if (mOpen) anchorPanel(); });
-$("mBtn").addEventListener("dblclick", e => e.preventDefault());
+MBTN.addEventListener("dblclick", e => e.preventDefault());
 $("mClose").addEventListener("click", () => closeM());
 (() => {
   const p = $("mPanel"), h = p.querySelector(".mp-head"); let st = null;
@@ -1791,7 +1986,7 @@ document.addEventListener("keydown", e => {
     if (!$("jobScrim").hidden) { if (!$("jfCfm").hidden) $("jfCfmNo").click(); else closeJob(); return; }
     if (!$("chkScrim").hidden) { closeChk(); return; }
     if (!$("shootScrim").hidden) { closeShoot(); return; }
-    if (mOpen) { closeM(); $("mBtn").focus(); return; }
+    if (mOpen) { closeM(); MBTN.focus(); return; }
     if (graph && graph.pinned) graph.pin(null);
   }
 });
@@ -2045,7 +2240,7 @@ const Pet = {
     m._mir = list.filter(c => MIR.includes(c)); m._mir.forEach(c => m.classList.add(c));
   },
   wear(html) { const m = $("mSvg").querySelector(".m25"), keep = m && m._mir; $("mSvg").innerHTML = html; if (keep) this.mirror(keep); },
-  show(on) { if (on) showM(); else $("mBtn").hidden = true; },
+  show(on) { if (on) showM(); else MBTN.hidden = true; },
   typeAt() {}, stopTyping() {}, down() {}, perchOn() {}
 };
 window.Pet = Pet;
@@ -2065,7 +2260,7 @@ function halo() {
   const probe = mk(0, 0); document.body.appendChild(svg);
   const P = probe.getTotalLength();
   // where 小M is (its centre, pushed to the nearest edge); bottom right when it's hidden
-  const b = $("mBtn"), br = !b.hidden && b.getBoundingClientRect(), cx = br ? br.left + br.width / 2 : W - 60, cy = br ? br.top + br.height / 2 : H - 60;
+  const b = MBTN, br = !b.hidden && b.getBoundingClientRect(), cx = br ? br.left + br.width / 2 : W - 60, cy = br ? br.top + br.height / 2 : H - 60;
   let s0 = 0, best = Infinity;
   for (let i = 0; i < 240; i++) { const t = (i / 240) * P, q = probe.getPointAtLength(t), dd = (q.x - cx) ** 2 + (q.y - cy) ** 2; if (dd < best) { best = dd; s0 = t; } }
   const opp = probe.getPointAtLength((s0 + P / 2) % P); probe.remove();

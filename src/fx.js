@@ -98,7 +98,7 @@
   fx.haptics = on => { if (on === undefined) return get(HAP) !== "0"; set(HAP, on ? null : "0"); };
   fx.canFeel = !!navigator.vibrate || IOS;
 
-  // every press anywhere gets a tick and a press-in; buttons and rows spring back when let go
+  // every press anywhere gets a tick and a press-in; buttons spring back like a drop of water, with a drop and its ring where the finger landed
   const PRESS = "button, a[href], [role=button], .row, .bk-row, .drive-card, .fchip, label.jf-mark, summary";
   const RIP = ".btn, .ibtn, .row, .bk-row, .drive-card, .fchip, .seg button, .chips button, .tabs a, .nav-i, .jf-mark, .cal .c, .tm, .drive-card";
   addEventListener("pointerdown", e => {
@@ -110,14 +110,17 @@
   addEventListener("click", e => {
     const el = e.target.closest && e.target.closest(PRESS); if (!el || el.disabled) return;
     fx("tap");
-    const rip = !still() && el.closest(RIP);
+    const rip = !still() && !el.closest(".m-host") && el.closest(RIP);   // the card 小M stands on shows no drop (it would spill past its edge)
     if (rip) {   // a ripple of light from where the finger landed
       const el = rip, r = el.getBoundingClientRect(); if (r.width < 24 || r.width > 1400) return;
       const s = document.createElement("span"); s.className = "fx-ripple";
       const d = Math.max(r.width, r.height) * 2.2;
       s.style.cssText = `width:${d}px;height:${d}px;left:${(e.clientX || r.left + r.width / 2) - r.left - d / 2}px;top:${(e.clientY || r.top + r.height / 2) - r.top - d / 2}px`;
       if (getComputedStyle(el).position === "static") el.style.position = "relative";
-      el.appendChild(s); setTimeout(() => s.remove(), 650);
+      el.appendChild(s); setTimeout(() => s.remove(), 760);
+      // a water drop: the button gives like a drop of water when let go (buttons and chips only, not whole rows)
+      if (!el.matches(".row, .bk-row, .cal .c, .drive-card, .tm, .m-fan button, .mbtn")) el.animate([{ transform: "scale(.94)" }, { transform: "scale(1.06, .93)", offset: .35 }, { transform: "scale(.98, 1.03)", offset: .65 }, { transform: "none" }],
+        { duration: 460, easing: "cubic-bezier(.3,.7,.4,1)" });
     }
   }, true);
   window.UIFx = fx;
