@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.8.11";
+const APP_VER = "0.8.12";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
@@ -881,7 +881,7 @@ function hl(text, ts) {
 function jobCard(j, i, o) {
   o = o || {}; const ts = o.ts || [], num = o.num || numbers();
   const r = j.main, w = whenOf(r), t = splitJob(r).title, no = num.get(r.id);
-    const st = k => j[k] ? `<span class="md ${selfUnbacked(j[k]) ? "no" : "ok"}" title="${k === "video" ? "Video" : "Photo"}: ${!j[k].backupDate && !j[k].backedUp ? "not backed up" : "backed up" + (j[k].backupDate ? " " + esc(fmtDates([j[k].backupDate])) : "")}">${k === "video" ? "Video" : "Photo"}</span>` : "";
+    const st = k => j[k] ? `<span class="mt ${selfUnbacked(j[k]) ? "no" : "ok"}" title="${k === "video" ? "Video" : "Photo"}: ${!j[k].backupDate && !j[k].backedUp ? "not backed up" : "backed up" + (j[k].backupDate ? " " + esc(fmtDates([j[k].backupDate])) : "")}">${k === "video" ? "Video" : "Photo"}</span>` : "";
     const drives = [...new Set(j.rows.flatMap(drivesOf))];
     const meta = [w.when && `<span class="bk-when-m">${hl(w.when, ts)}</span>`, w.place && hl(w.place, ts), o.hide !== "editor" && r.editor && `<a href="#/editor/${encodeURIComponent(r.editor)}">${hl(r.editor, ts)}</a>`, r.notes && `<span class="bk-notes">${hl(r.notes, ts)}</span>`].filter(Boolean).map(x => `<span class="mr">${x}</span>`).join("");
     const open = bkOpen.has(r.id);
@@ -1484,8 +1484,9 @@ $("sfDel").addEventListener("click", async () => {
 // ---------------------------------------------------------------- Ask M (AI)
 // Any OpenAI-compatible chat server. Default: Hermes Agent on this Mac (its API server: `hermes gateway` with
 // API_SERVER_ENABLED=true, port 8642, Bearer API_SERVER_KEY). Others: Ollama / LM Studio, or a cloud API with a key.
-// (DeepSeek through MApp.gs comes in a later step.)
+// Default on the phone and the web: DeepSeek through the studio's own server (MApp.gs keeps the key; nothing to fill in).
 const AI_PROVIDERS = {
+  studio: { label: "DeepSeek (Studio M)", url: "", model: "deepseek-chat", hint: "Uses the studio's DeepSeek key, kept on the Studio M server. Nothing to fill in here." },
   hermes: { label: "Hermes Agent (this Mac)", url: "http://127.0.0.1:8642/v1", model: "hermes-agent",
     hint: "In ~/.hermes/.env set API_SERVER_ENABLED=true and API_SERVER_KEY, run `hermes gateway`, and paste that key below." },
   ollama: { label: "Ollama (this Mac)", url: "http://127.0.0.1:11434/v1", model: "hermes3", hint: "No key needed. Model = a name from `ollama list`." },
@@ -1495,7 +1496,12 @@ const AI_PROVIDERS = {
   openrouter: { label: "OpenRouter", url: "https://openrouter.ai/api/v1", model: "nousresearch/hermes-4-70b", hint: "Paste an OpenRouter API key." },
   custom: { label: "Other (OpenAI-compatible)", url: "", model: "", hint: "Any server with /v1/chat/completions." }
 };
-const aiCfg = () => store.get("mAI", { prov: "hermes", url: AI_PROVIDERS.hermes.url, model: AI_PROVIDERS.hermes.model, key: "" });
+const aiCfg = () => {
+  const c = store.get("mAI", null);
+  // nothing chosen yet, or the Mac-only Hermes default on a phone / the web: the studio's DeepSeek
+  if (!c || (!window.__TAURI__ && c.prov === "hermes" && !c.key)) return { prov: "studio", url: "", model: AI_PROVIDERS.studio.model, key: "" };
+  return c;
+};
 const jobLine = r => [r.name, r.date || r.year, sectionOf(r), "drive " + (r.drive || "-"), "editor " + (r.editor || "-"),
   unbacked(r) ? "NOT backed up" : `backed up${r.backedUp && r.backedUp !== true ? " (" + r.backedUp + ")" : ""}${r.backupDate ? " " + r.backupDate : ""}`,
   r.link ? "link " + r.link : ""].filter(Boolean).join(" | ");
@@ -1536,6 +1542,18 @@ async function callModel(messages, onText, signal) {
   if (!DEMO) return callServer(messages, onText, signal);
   try { return await callServer(messages, onText, signal); } catch (e) { if (signal && signal.aborted) throw e; return fakeModel(messages, onText, signal); }
 }
+// DeepSeek through MApp.gs: one reply, written out quickly so it still reads as M typing
+async function callStudio(messages, onText, signal) {
+  if (DEMO) throw new Error("demo");
+  const out = await M.api("ask", [messages]); const full = String(out && out.text || "");
+  if (signal && signal.aborted) throw new DOMException("Aborted", "AbortError");
+  const chars = Array.from(full), step = Math.max(2, Math.ceil(chars.length / 90));
+  for (let k = step; k < chars.length; k += step) {
+    if (signal && signal.aborted) throw new DOMException("Aborted", "AbortError");
+    onText(chars.slice(0, k).join("")); await new Promise(r => setTimeout(r, 16));
+  }
+  onText(full); return full;
+}
 // Demo only: when no model server is reachable, M answers from a few canned replies so the app can be tried anywhere
 async function fakeModel(messages, onText, signal) {
   const q = String(messages[messages.length - 1].content || ""), zh = /[一-鿿]/.test(q), d = new Date();
@@ -1565,7 +1583,9 @@ async function fakeModel(messages, onText, signal) {
   return text;
 }
 async function callServer(messages, onText, signal) {
-  const c = aiCfg(), url = c.url.replace(/\/+$/, "") + "/chat/completions";
+  const c = aiCfg();
+  if (c.prov === "studio") return callStudio(messages, onText, signal);
+  const url = c.url.replace(/\/+$/, "") + "/chat/completions";
   const headers = { "Content-Type": "application/json" }; if (c.key) headers.Authorization = "Bearer " + c.key;
   const res = await net(url, { method: "POST", headers, signal, body: JSON.stringify({ model: c.model, messages, temperature: 0.4, stream: true }) });
   if (!res.ok) throw new Error(`Model server said ${res.status}`);
@@ -1901,7 +1921,7 @@ function fitPerch(b, inside, station) {
     const host = seat.parentElement;
     if (host.matches(".bk-row, .row")) {
       const prev = host.previousElementSibling, hr = host.getBoundingClientRect();
-      const things = prev && !prev.classList.contains("bk-th") ? [...prev.querySelectorAll("b, .mr, .md, .bk-drv > *, .bk-more, .bk-when, .bk-no, .bk-parts li, span, a, button")].filter(x => x.offsetParent && !x.children.length || x.matches("button, a, .md"))
+      const things = prev && !prev.classList.contains("bk-th") ? [...prev.querySelectorAll("b, .mr, .mt, .bk-drv > *, .bk-more, .bk-when, .bk-no, .bk-parts li, span, a, button")].filter(x => x.offsetParent && !x.children.length || x.matches("button, a, .mt"))
         .map(x => x.getBoundingClientRect()).filter(q => q.width && q.bottom > hr.top - b.offsetHeight) : [];
       const cover = () => { const r = b.getBoundingClientRect(), L = r.left + 8, R = r.right - 8, T = r.top + 6, B = r.bottom - 4;
         return things.reduce((a, q) => a + Math.max(0, Math.min(R, q.right) - Math.max(L, q.left)) * Math.max(0, Math.min(B, q.bottom) - Math.max(T, q.top)), 0); };
@@ -2244,13 +2264,15 @@ $("pinForm").addEventListener("submit", async e => {
 $("aiProv").innerHTML = Object.entries(AI_PROVIDERS).map(([k, p]) => `<option value="${k}">${esc(p.label)}</option>`).join("");
 function drawAI() {
   const c = aiCfg(); $("aiProv").value = c.prov || "custom"; $("aiHint").textContent = (AI_PROVIDERS[c.prov] || AI_PROVIDERS.custom).hint;
-  $("aiUrl").value = c.url; $("aiName").value = c.model; $("aiKey").value = c.key;
+  $("aiUrl").value = c.url; $("aiName").value = c.model; $("aiKey").value = c.key; aiFields();
   $("modelChip").textContent = (AI_PROVIDERS[c.prov] || AI_PROVIDERS.custom).label.replace(/ \(.*\)$/, "") + (c.model ? " · " + c.model : "");
 }
 $("aiProv").addEventListener("change", () => {   // a preset fills address + model; the key field is cleared
   const p = AI_PROVIDERS[$("aiProv").value]; $("aiHint").textContent = p.hint;
-  if (p.url) $("aiUrl").value = p.url; $("aiName").value = p.model; $("aiKey").value = "";
+  if (p.url) $("aiUrl").value = p.url; $("aiName").value = p.model; $("aiKey").value = ""; aiFields();
 });
+// the studio's DeepSeek needs no address, model or key: those fields step aside
+function aiFields() { const st = $("aiProv").value === "studio"; ["aiUrl", "aiName", "aiKey"].forEach(id => { const l = $(id).closest("label"); if (l) l.hidden = st; $(id).required = !st && id !== "aiKey"; }); }
 const aiForm = () => ({ prov: $("aiProv").value, url: $("aiUrl").value.trim(), model: $("aiName").value.trim(), key: $("aiKey").value.trim() });
 $("aiSet").addEventListener("submit", e => {
   e.preventDefault(); store.set("mAI", aiForm());

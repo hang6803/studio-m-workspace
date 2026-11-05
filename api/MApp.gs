@@ -1,7 +1,8 @@
 // M app (Mac) — JSON API. Add this as a second file (MApp.gs) in the Studio M Backup Apps Script project, next to
 // Code.gs; it only adds, Code.gs and the web page are not changed.
 // The app sends POST {key, token, fn, args} as text/plain and gets {result} or {error} back.
-// Script properties: API_KEY (required, also built into the app), PIN (the studio PIN, as today).
+// Script properties: API_KEY (required, also built into the app), PIN (the studio PIN, as today),
+// DEEPSEEK_KEY (for Ask M; stays here on the server, the app never sees it).
 // Set by this file: PIN_SALT, UPIN_<name> (each person's hashed 4-digit PIN — never sent to the app).
 // Deploy: a web-app deployment with "Execute as: Me" and "Who has access: Anyone" (the app has no Google sign-in).
 const SHOOTS = "Shoots";
@@ -10,7 +11,7 @@ const SESSION_TTL = 21600;   // 6 hours, the longest CacheService keeps a value;
 
 // Reads need a signed-in person. Writes also need one; the studio PIN (first argument of each Code.gs write) is
 // filled in here, so people only ever type their own PIN.
-const API_READ = { getAll: getAll, getRev: getRev, getJob: getJob, getShoots: getShoots, addFeedback: addFeedback };
+const API_READ = { getAll: getAll, getRev: getRev, getJob: getJob, getShoots: getShoots, addFeedback: addFeedback, ask: ask_, aiStatus: aiStatus_ };
 const API_WRITE = { saveJob: saveJob, deleteJob: deleteJob, setTeam: setTeam, setSetting: setSetting,
   saveShoot: saveShoot, deleteShoot: deleteShoot };
 
@@ -135,4 +136,31 @@ function saveShoot(pin, s) {
 function deleteShoot(pin, id) {
   checkPin_(pin);
   return withLock_(() => { const sh = shootsSheet_(), at = rowOf_(sh, id); if (at > 0) sh.deleteRow(at); return true; });
+}
+
+
+// ---- Ask M: the chat goes to DeepSeek from here, so the key never leaves the server ----
+const DEEPSEEK_URL = "https://api.deepseek.com/chat/completions";
+const DEEPSEEK_MODEL = "deepseek-chat";
+function aiStatus_() { return { ready: !!props_().getProperty("DEEPSEEK_KEY"), model: DEEPSEEK_MODEL }; }
+function ask_(messages) {
+  const key = String(props_().getProperty("DEEPSEEK_KEY") || "");
+  if (!key) throw new Error("Ask M isn't set up yet: add DEEPSEEK_KEY in the script properties");
+  // only what a chat needs, and not too much of it: the system note, then the last turns
+  const ms = (Array.isArray(messages) ? messages : []).filter(m => m && /^(system|user|assistant)$/.test(m.role))
+    .map(m => ({ role: m.role, content: String(m.content || "").slice(0, 24000) }));
+  const sys = ms.filter(m => m.role === "system").slice(0, 1), turns = ms.filter(m => m.role !== "system").slice(-16);
+  if (!turns.length) throw new Error("Nothing to ask");
+  const res = UrlFetchApp.fetch(DEEPSEEK_URL, {
+    method: "post", contentType: "application/json", muteHttpExceptions: true,
+    headers: { Authorization: "Bearer " + key },
+    payload: JSON.stringify({ model: DEEPSEEK_MODEL, messages: sys.concat(turns), temperature: 0.4, max_tokens: 1200, stream: false })
+  });
+  const code = res.getResponseCode(), body = res.getContentText();
+  if (code !== 200) {
+    let msg = ""; try { msg = JSON.parse(body).error.message; } catch (e) {}
+    throw new Error(code === 401 ? "DeepSeek refused the key (DEEPSEEK_KEY)" : code === 402 ? "The DeepSeek account is out of credit" : code === 429 ? "DeepSeek is busy, try again in a moment" : "DeepSeek said " + code + (msg ? ": " + msg : ""));
+  }
+  const o = JSON.parse(body), c = o.choices && o.choices[0];
+  return { text: String(c && c.message && c.message.content || "") };
 }

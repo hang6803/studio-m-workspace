@@ -543,8 +543,8 @@ body.cal-dragging, body.cal-dragging * { cursor: grabbing !important; user-selec
 .bk-parts { margin: 4px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--muted) } .bk-parts span { display: inline-block; min-width: 26px; color: var(--accent-text) }
 .bk-when { font-size: 13px; white-space: nowrap; color: var(--fg) }
 .bk-media { display: flex; gap: 4px; justify-content: flex-end }
-.md { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 4px; border: 1px solid; white-space: nowrap }
-.md.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent) } .md.no { color: #141414; background: var(--danger); border-color: var(--danger) }
+.mt { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 4px; border: 1px solid; white-space: nowrap }
+.mt.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent) } .mt.no { color: #141414; background: var(--danger); border-color: var(--danger) }
 .bk-drv { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end }
 .bk-drv a { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 4px; border: 1px dashed var(--line); color: var(--accent-text); white-space: nowrap } .bk-drv a:hover { border-style: solid; border-color: var(--accent); text-decoration: none }
 mark { background: var(--accent-soft); color: inherit; border-radius: 2px; box-shadow: 0 0 0 1px var(--accent-soft) }
@@ -968,8 +968,8 @@ html { touch-action: pan-x pan-y }
 .mr:has(> .bk-when-m) { display: none } .mr:has(> .bk-when-m) + .mr { margin-left: 0 }
 .bk-when { color: var(--muted); font-variant-numeric: tabular-nums }
 .bk-media { justify-content: flex-start }
-.md.ok { color: var(--ok); background: none; border-color: color-mix(in srgb, var(--ok) 40%, transparent) }
-.md.no { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: color-mix(in srgb, var(--danger) 55%, transparent) }
+.mt.ok { color: var(--ok); background: none; border-color: color-mix(in srgb, var(--ok) 40%, transparent) }
+.mt.no { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: color-mix(in srgb, var(--danger) 55%, transparent) }
 .bk-drv { align-items: center; flex-wrap: nowrap }
 .bk-drv a:not(.bk-link) { border: 0; padding: 2px 0 2px 6px; color: var(--fg); font-weight: 600; font-size: 13px }
 .bk-drv a:not(.bk-link):hover { color: var(--accent-text); text-decoration: underline }
