@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.8.6";
+const APP_VER = "0.8.7";
 const $ = id => document.getElementById(id);
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
 const DEMO = !CFG.apiUrl;
@@ -555,7 +555,7 @@ function drawList() {
     sub = n ? [`${n} ${n === 1 ? "job" : "jobs"}`, un ? `<b class="red">${un} not backed up</b>` : `<span class="green">all backed up</span>`, spanOf(rs)].filter(Boolean).join(" · ") : "No jobs yet";
     const who = drive ? (eds.length ? `<span class="muted small">Edited by</span>${eds.map(e => `<a class="fchip" href="#/editor/${encodeURIComponent(e)}">${esc(e)}</a>`).join("")}` : "")
       : (drvs.length ? `<span class="muted small">On</span>${drvs.slice(0, 8).map(d => `<a class="fchip" href="#/drive/${encodeURIComponent(d)}">${esc(dName(d))}</a>`).join("")}` : "");
-    tools = `<div class="list-tools">${who}<span class="spacer"></span>${un ? `<button type="button" class="fchip${listUn ? " on" : ""}" id="listUn" aria-pressed="${listUn}"><i class="dot red"></i>Not backed up</button>` : ""}<button type="button" class="fchip" id="listCopy" data-title="${esc(title)}">Copy list</button></div>`;
+    tools = `<div class="list-tools">${who}<span class="spacer"></span>${un ? `<button type="button" class="fchip${listUn ? " on" : ""}" id="listUn" aria-pressed="${listUn}"><i class="dot red"></i>Not backed up</button>` : ""}<button type="button" class="fchip" id="listCopy" data-title="${esc(title)}"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>Copy list</button></div>`;
     // a drive: by month (one drive is about one year); a person: by year
     const keyOf = drive ? monthOf : (j => String(j.year || "No year"));
     const groups = []; js.forEach(j => { const g = keyOf(j.main), last = groups[groups.length - 1]; if (last && last[0] === g) last[1].push(j); else groups.push([g, [j]]); });
@@ -576,10 +576,10 @@ function drawList() {
     html = ys.map(y => {
       const ds = drivesIn(y); total += ds.length;
       const none = jobsOf(rowsOf(y).filter(r => !drivesOf(r).length)), nu = none.filter(j => j.un).length, un = jobsOf(rowsOf(y)).filter(j => j.un).length;
-      return `<section class="bk-group dv-year" id="dy-${y}"><h3 class="bk-gh">${y}<span>${ds.length} ${ds.length === 1 ? "drive" : "drives"}${un ? ` · <b class="red">${un} not backed up</b>` : ""}</span></h3>
+      return `<section class="bk-group dv-year" id="dy-${y}"><h3 class="bk-gh"><i class="yr">${y.slice(0, 2)}<em>${y.slice(2)}</em></i><span>${ds.length} ${ds.length === 1 ? "drive" : "drives"}${un ? ` · <b class="red">${un} not backed up</b>` : ""}</span></h3>
         <div class="hub-list">${ds.map((d, i) => driveCard(d, y, i)).join("")}${none.length ? `<a class="row hubrow" href="#/backup"><span class="hub drive none"></span><span class="r-name">No drive<small>${none.length} ${none.length === 1 ? "job" : "jobs"} without a drive yet</small></span><span class="r-links">${nu ? `<em class="red">${nu} not backed up</em>` : `<em>All backed up</em>`}</span></a>` : ""}</div></section>`;
     }).join("");
-    sub = `${total} drives from ${ys[ys.length - 1] || ""} to ${ys[0] || ""}. A drive is where a job's footage lives: open one to see what's on it.`;
+    sub = `${total} drives, ${ys[ys.length - 1] || ""}–${ys[0] || ""}. Open one to see its jobs.`;
     tools = ys.length > 1 ? `<div class="list-tools dv-years">${ys.map(y => `<button type="button" class="fchip" data-dy="${y}">${y}${jobsOf(rowsOf(y)).some(j => j.un) ? '<i class="dot red"></i>' : ""}</button>`).join("")}</div>` : "";
   } else {
     const es = editorsIn(gYear); title = "Team"; ico = ICON.team; sub = `${team.length} people. Jobs counted for ${gYear}.`;
@@ -957,7 +957,7 @@ function drawBackup(first) {
   const cats = secsIn(inYear);
   if (!cats.includes(bk.cat)) bk.cat = cats[0] || null;
   $("bkCats").hidden = searching || bk.un;
-  setHTML($("bkCats"), cats.map(c => { const js = secJobs(inYear.filter(r => sectionOf(r) === c)); return `<button type="button" role="tab" data-c="${esc(c)}" aria-selected="${c === bk.cat}">${esc(c)}<span>${js.length}</span>${js.some(j => j.un) ? '<i class="dot red"></i>' : ""}</button>`; }).join(""));
+  setHTML($("bkCats"), cats.map(c => { const js = secJobs(inYear.filter(r => sectionOf(r) === c)); return `<button type="button" role="tab" data-c="${esc(c)}" aria-selected="${c === bk.cat}"><em class="sec-n">${esc(baseOf(c))}${isPhotoSec(c) ? `<i class="sec-sep">·</i>Photo` : ""}</em><span>${js.length}</span>${js.some(j => j.un) ? '<i class="dot red"></i>' : ""}</button>`; }).join(""));
   const row = (j, i) => jobCard(j, i, { num, ts });
   const sortJ = js => bk.desc ? js.slice().reverse() : js;
   const head = (title, n, jump) => `<h3 class="bk-gh">${jump ? `<button type="button" class="bk-jump" data-y="${esc(title)}">${esc(title)}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>` : esc(title)}<span>${n} ${n === 1 ? "job" : "jobs"}</span></h3>`;
@@ -985,6 +985,8 @@ function drawBackup(first) {
   setHTML($("bkFilters"), filt);
   const list = $("bkList"), key = [bk.year, bk.cat, bk.drive, bk.un, bk.scope, ts.join(" "), bk.desc].join("|");
   setHTML(list, html);
+  { const cs = $("bkCats"), on = cs.querySelector('[aria-selected="true"]');   // the chosen section is always in view on the strip (sideways only)
+    if (on && !cs.hidden) { const l = on.offsetLeft - cs.offsetLeft, r = l + on.offsetWidth; if (l < cs.scrollLeft || r > cs.scrollLeft + cs.clientWidth - 24) cs.scrollTo({ left: Math.max(0, l - 16), behavior: first || STILL ? "auto" : "smooth" }); } }
   if (list.dataset.key !== key) { list.dataset.key = key; list.classList.remove("anim"); void list.offsetWidth; list.classList.add("anim"); }
 }
 $("bkYears").addEventListener("click", e => { const b = e.target.closest("[data-y]"); if (!b || b.dataset.y === bk.year) return; bk.year = b.dataset.y; bk.drive = null; buzz(); drawBackup(); });
@@ -1695,7 +1697,7 @@ document.addEventListener("pointerdown", e => { if (!fan.hidden && !fan.contains
 // strip, the team cards, the list, the job). When you go to another page he hops over and lands on its panel.
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const phoneW = () => window.innerWidth < 900;
-const PERCH = { home: ["#monitor"], calendar: [".cal-box", true], backup: ["#bkHero"], team: ["#teamGrid"], list: ["#listRows"], job: ["#v-job .facts"] };
+const PERCH = { home: ["#monitor"], calendar: [".cal-box", true], backup: ["#bkHero"], team: ["#teamGrid"], list: ["#listRows"], job: ["#v-job .facts"], settings: ["#v-settings .card"] };
 const seat = document.createElement("div"); seat.className = "m-seat";
 function perch(from) {
   const b = $("mBtn"); if (!b.isConnected) document.body.appendChild(b);
@@ -1727,7 +1729,9 @@ function fitPerch(b, inside) {
   // things he must not stand on: buttons, tabs, fields and headings of this page (by their boxes, so it works mid page-change too)
   const page = document.querySelector("#v-" + shownView) || document.body;
   const edgeTop = (inside ? host : seat.nextElementSibling || host).getBoundingClientRect().top;   // what he stands on is below his feet: only what is above the edge counts
-  const things = [...page.querySelectorAll("button, a[href], input, select, textarea, [role=tab], .btn, .fchip, h1, h2, h3")].filter(x => !b.contains(x) && x.offsetParent).map(x => x.getBoundingClientRect()).filter(q => q.top < edgeTop - 2);
+  const lines = el => { const r = document.createRange(); r.selectNodeContents(el); return [...r.getClientRects()]; };
+  const things = [...page.querySelectorAll("button, a[href], input, select, textarea, [role=tab], .btn, .fchip")].filter(x => !b.contains(x) && x.offsetParent).map(x => x.getBoundingClientRect())
+    .concat([...page.querySelectorAll("h1, h2, h3, p, .lead")].filter(x => !b.contains(x) && x.offsetParent).flatMap(lines)).filter(q => q.top < edgeTop - 2);
   const busy = () => { const r = b.getBoundingClientRect(), L = r.left + 6, R = r.right - 6, T = r.top, B = r.bottom - 4;
     return things.some(q => q.width && q.left < R && q.right > L && q.top < B && q.bottom > T); };
   let pick = null;
