@@ -118,6 +118,7 @@
       <section class="view page" id="v-list" hidden>
         <div class="page-head"><span class="page-ico" id="listIco"></span><div><h1 id="listTitle"></h1><p class="muted" id="listSub"></p></div></div>
         <div class="bar" id="listBar" hidden><i class="ok"></i><i class="no"></i></div>
+        <div id="listTools"></div>
         <div class="rows" id="listRows"></div>
       </section>
 
@@ -174,6 +175,7 @@
 
       <section class="view page" id="v-settings" hidden>
         <div class="card"><h3>Theme</h3><div class="seg" id="themeSeg"><button type="button" data-t="dark">Dark</button><button type="button" data-t="light">Light</button></div></div>
+        <div class="card"><h3>Sound &amp; touch</h3><p class="muted small">A soft sound and a tap you can feel on every press. Sound follows 小M's mute.</p><div class="fx-set"><span>Sound</span><div class="seg" id="sndSeg"><button type="button" data-v="1">On</button><button type="button" data-v="0">Off</button></div><span id="hapLbl">Haptics</span><div class="seg" id="hapSeg"><button type="button" data-v="1">On</button><button type="button" data-v="0">Off</button></div></div></div>
         <div class="card"><h3>Voice</h3><p class="muted small">Language M listens for when you tap the mic.</p><div class="seg" id="voiceSeg"><button type="button" data-l="zh-CN">中文</button><button type="button" data-l="en-MY">English</button><button type="button" data-l="ms-MY">Melayu</button></div></div>
         <form class="card" id="aiSet"><h3>AI model</h3>
           <label>Provider<select id="aiProv"></select></label>
@@ -282,6 +284,7 @@
 </div>
 
 <div class="toast" id="toast" role="status" hidden></div>
+<script src="fx.js"></script>
 <script src="xiaom.js"></script>
 <script src="graph.js"></script>
 <script src="app.js"></script>
