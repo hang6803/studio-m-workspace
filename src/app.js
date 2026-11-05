@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.8.4";
+const APP_VER = "0.8.5";
 const $ = id => document.getElementById(id);
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
 const DEMO = !CFG.apiUrl;
@@ -16,7 +16,11 @@ const store = {
 const STILL = matchMedia("(prefers-reduced-motion: reduce)").matches;
 // the phone keyboard: pop-ups size themselves to the part of the screen above it
 if (window.visualViewport) { const vv = visualViewport, fit = () => { const r = document.documentElement.style; r.setProperty("--vvh", vv.height + "px"); r.setProperty("--vvtop", vv.offsetTop + "px"); };
-  vv.addEventListener("resize", fit); vv.addEventListener("scroll", fit); fit(); }
+  vv.addEventListener("resize", fit); vv.addEventListener("scroll", fit); fit();
+  // the field being typed in, and the pop-up's Next / Save under it, stay above the keyboard
+  addEventListener("focusin", e => { const el = e.target; if (!el.matches || !el.matches("input, textarea, select") || !el.closest(".sheet")) return;
+    setTimeout(() => { el.scrollIntoView({ block: "center", behavior: "smooth" }); }, 320); });
+  document.addEventListener("gesturestart", e => e.preventDefault()); }
 let session = null;   // { name, token } — kept only in memory, so closing the app always asks for the PIN again
 
 // ---------------------------------------------------------------- API
@@ -175,6 +179,26 @@ function act(host, name, ms) {
   void m.offsetWidth; m.classList.add(name); host._actName = name;
   host._act = setTimeout(() => { m.classList.remove(name); host._actName = ""; }, ms || 1300);
 }
+// 小M is built from a few hundred stacked slices, 2 model px apart; at button size on a phone that is a fraction of a screen
+// pixel, and every slice is one more 3D layer the phone re-sorts on every frame of his breathing and blinking. So on a touch
+// screen, a small 小M keeps every second plain slice (front, back, outlined and other distinct slices always stay): the same
+// picture, half the layers. The big 小M of festival scenes is never touched.
+const THIN = matchMedia("(pointer: coarse)").matches;
+function thinM(root) {
+  if (!THIN) return;
+  root.querySelectorAll(".m25:not([data-thin])").forEach(m => {
+    const w = m.getBoundingClientRect().width; if (!w || w > 100) return;
+    m.dataset.thin = "1";
+    const groups = new Set(); m.querySelectorAll(".slice").forEach(sl => groups.add(sl.parentElement));
+    groups.forEach(g => {
+      const sl = [...g.children].filter(c => c.classList.contains("slice")); if (sl.length < 5) return;
+      const key = e => e.innerHTML + "|" + (e.style.background || e.style.backgroundColor) + "|" + e.style.borderRadius + "|" + e.style.width + "|" + e.style.height;
+      const ks = sl.map(key), last = sl.length - 1;
+      sl.forEach((e, k) => { if (k === 0 || k === last || k % 2 === 0) return; if (ks[k] !== ks[k - 1] || ks[k] !== ks[k + 1]) return; e.remove(); });
+    });
+  });
+}
+if (THIN) { let q = 0; new MutationObserver(() => { if (!q) q = requestAnimationFrame(() => { q = 0; thinM(document.body); }); }).observe(document.body, { childList: true, subtree: true }); }
 $("mSvg").innerHTML = face(false);
 $("mpAv").innerHTML = face(false);
 $("lockM").innerHTML = X ? face(false) : mSVG(true);
@@ -305,8 +329,11 @@ addEventListener("hashchange", () => { if (session) { fx("nav"); render(false); 
 // Page changes cross-fade and slide (View Transitions where the system has them); the sidebar marker glides to the new place
 function render(first) {
   const next = parse(location.hash);
-  const apply = () => { route = next; paint(); };
-  if (!first && !STILL && document.startViewTransition) document.startViewTransition(apply); else apply();
+  const b = $("mBtn"), from = b.hidden ? null : b.getBoundingClientRect();
+  // with a page transition, 小M is his own layer in it: he isn't cross-faded with the page (that was the flash), he glides to his new spot
+  const vt = !first && !STILL && document.startViewTransition;
+  const apply = () => { route = next; paint(); perch(vt ? null : from); };
+  if (vt) { const t = document.startViewTransition(apply); t.finished.then(() => { if (!b.hidden && from && from.width) act($("mSvg"), "land", 450); }, () => {}); } else apply();
   if (window.innerWidth < 900 && !$("mPanel").hidden) closeM();
 }
 let shownView = "";
@@ -365,6 +392,7 @@ function drawAll() {
   if (["drive", "editor", "unbacked", "drives"].includes(route.name)) drawList();
   if (route.name === "job") drawJob();
   if (route.name === "team") drawTeam();
+  if (typeof perch === "function" && session) requestAnimationFrame(() => perch());   // a redraw can take 小M's spot away
   if (route.name === "backup") drawBackup();
 }
 
@@ -559,8 +587,8 @@ function drawList() {
   }
   $("listTitle").textContent = title; $("listSub").innerHTML = sub; $("listIco").innerHTML = ico;
   setBar(n, un);
-  $("listTools").innerHTML = tools;
-  $("listRows").innerHTML = html || `<p class="muted">Nothing here yet.</p>`;
+  setHTML($("listTools"), tools);
+  setHTML($("listRows"), html || `<p class="muted">Nothing here yet.</p>`);
 }
 // a drive in the Drives list: its jobs, how far it's backed up, the months it covers, who edited
 function driveCard(d, y, i) {
@@ -644,7 +672,7 @@ function drawCal(dir) {
       return `<span class="ev t-${esc(s.type || "both")}${span}${jobOfShoot(s) ? " done" : ""}" data-sid="${esc(s.id)}" title="${esc(s.name)}">${esc(s.name)}</span>`; }).join("");
     html += `<div class="c ${cls}" role="button" tabindex="0" data-d="${k}" aria-label="${esc(fmtDay(k))}${list.length ? ", " + list.length + (list.length === 1 ? " shoot" : " shoots") : ""}"><span class="n">${d.getDate()}</span><span class="evs">${evs}${list.length > 3 ? `<span class="more">+${list.length - 3}</span>` : ""}</span></div>`;
   }
-  const el = $("cal"); el.innerHTML = html;
+  const el = $("cal"); setHTML(el, html);
   if (dir && !STILL) el.animate([{ opacity: 0, transform: `translateX(${dir * 28}px)` }, { opacity: 1, transform: "none" }], { duration: 320, easing: "cubic-bezier(.2,.8,.2,1)" });
   drawDay();
 }
@@ -861,7 +889,7 @@ function jobCard(j, i, o) {
       <span class="bk-main"><b>${hl(t, ts)}</b>${meta ? `<small>${meta}</small>` : ""}${w.list ? `<ol class="bk-parts">${w.parts.map((p, k) => `<li><span>${ROMAN(k + 1)}.</span>${hl([p.date ? fmtDates([p.date]) : "", p.label].filter(Boolean).join(" · "), ts)}</li>`).join("")}</ol>` : ""}</span>
       <span class="bk-when">${hl(w.when, ts)}</span>
       <span class="bk-media">${st("video")}${st("photo")}</span>
-      <span class="bk-drv">${j.un ? `<button type="button" class="btn sm bk-fix" data-job-edit="${esc(r.id)}">Back up</button>` : ""}${o.hide === "drive" ? "" : drives.map(d => `<a href="#/drive/${encodeURIComponent(d)}">${hl(dName(d), ts)}</a>`).join("") || '<span class="muted small">No drive</span>'}</span>
+      <span class="bk-drv">${jobLinks(j).map(l => linkA(l, "bk-link")).join("")}${j.un ? `<button type="button" class="btn sm bk-fix" data-job-edit="${esc(r.id)}">Back up</button>` : ""}${o.hide === "drive" ? "" : drives.map(d => `<a href="#/drive/${encodeURIComponent(d)}">${hl(dName(d), ts)}</a>`).join("") || '<span class="muted small">No drive</span>'}</span>
       <button type="button" class="bk-more" aria-label="Details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
       ${open ? `<div class="bk-det">${bkDetail(r.id)}</div>` : ""}
     </div>`;
@@ -873,20 +901,31 @@ function relAt(at) {
   const m = Math.round((Date.now() - d) / 6e4);
   return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : m < 10080 ? `${Math.round(m / 1440)} ${Math.round(m / 1440) === 1 ? "day" : "days"} ago` : fmtShort(String(at).slice(0, 10)) + (d.getFullYear() !== new Date().getFullYear() ? " " + d.getFullYear() : "");
 }
+const LINK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>';
+// a job's links: with several days, link 1 goes with day i., link 2 with ii. …; with one day, the link carries the job's name
+function jobLinks(j) {
+  const r = j.main, w = whenOf(r), t = splitJob(r).title, many = w.parts.length > 1;
+  const us = j.rows.flatMap(x => String(x.link || "").split(/\s*\n\s*/)).map(u => normLink(u) || "").filter(Boolean).filter((u, i, a) => a.indexOf(u) === i);
+  return us.map((u, k) => ({ u, tag: many && k < w.parts.length ? ROMAN(k + 1) + "." : us.length > 1 ? String(k + 1) : "", name: many && w.parts[k] ? [w.parts[k].date ? fmtDates([w.parts[k].date]) : "", w.parts[k].label].filter(Boolean).join(" · ") : t }));
+}
+const linkA = (l, cls) => `<a class="${cls}" href="${esc(l.u)}" target="_blank" rel="noopener" title="${esc(l.name)}: ${esc(l.u)}">${LINK_SVG}${l.tag ? `<span>${esc(l.tag)}</span>` : ""}</a>`;
 function bkDetail(id) {
   const r0 = (data.rows || []).find(x => x.id === id); if (!r0) return "";
-  const j = jobsOf([r0, twinOf(r0)].filter(Boolean))[0], r = j.main, w = whenOf(r), both = j.video && j.photo;
-  const half = (k, x) => !x ? "" : `<dt>${k}</dt><dd>${selfUnbacked(x) ? `<span class="red">Not backed up</span>` : `<span class="green">Backed up</span>${x.backupDate ? " " + esc(fmtDates([x.backupDate])) : ""}`}${drivesOf(x).length ? " · " + drivesOf(x).map(d => `<a href="#/drive/${encodeURIComponent(d)}">${esc(dName(d))}</a>`).join(", ") : ""}</dd>`;
-  const days = w.list ? `<ol class="bk-parts">${w.parts.map((p, k) => `<li><span>${ROMAN(k + 1)}.</span>${esc([p.date ? fmtDates([p.date]) : "", p.label].filter(Boolean).join(" · "))}</li>`).join("")}</ol>` : esc([w.when, w.place].filter(Boolean).join(" · ")) || "–";
-  const links = j.rows.flatMap(x => String(x.link || "").split(/\s*\n\s*/)).filter(Boolean).filter((u, i, a) => a.indexOf(u) === i);
+  const j = jobsOf([r0, twinOf(r0)].filter(Boolean))[0], r = r0, w = whenOf(r), links = jobLinks({ ...j, main: r });
+  const half = (k, x) => !x ? "" : `<div class="dt-half ${selfUnbacked(x) ? "no" : "ok"}"><i></i><b>${k}</b><span>${selfUnbacked(x) ? "Not backed up" : "Backed up" + (x.backupDate ? " " + esc(fmtDates([x.backupDate])) : "")}</span>${drivesOf(x).map(d => `<a class="dt-drv" href="#/drive/${encodeURIComponent(d)}">${esc(dName(d))}</a>`).join("")}</div>`;
+  const days = w.parts.length > 1 ? `<ol class="dt-days">${w.parts.map((p, k) => `<li><span class="dt-n">${ROMAN(k + 1)}.</span><span>${esc([p.date ? fmtDates([p.date]) : "", p.label].filter(Boolean).join(" · ")) || "–"}</span>${links[k] ? linkA(links[k], "dt-link") : ""}</li>`).join("")}</ol>`
+    : (w.when || w.place || links.length) ? `<div class="dt-days one"><span>${esc([w.when, w.place].filter(Boolean).join(" · ")) || esc(splitJob(r).title)}</span>${links.map(l => linkA(l, "dt-link")).join("")}</div>` : "";
+  const extra = links.slice(w.parts.length > 1 ? w.parts.length : 1).filter(() => w.parts.length > 1);
   const notes = [...new Set(j.rows.map(x => x.notes).filter(Boolean))];
+  const both = j.video && j.photo;
   const hist = j.rows.flatMap(x => (x.history || []).filter(h => h && h.at).map(h => ({ ...h, half: both ? (isPhotoSec(sectionOf(x)) ? "Photo" : "Video") : "" }))).sort((a, b) => String(b.at).localeCompare(String(a.at)));
   const made = j.rows.map(x => x.createdAt).filter(Boolean).sort()[0];
-  return `<dl class="bk-facts"><dt>Date</dt><dd>${days}</dd>${half("Video", j.video)}${half("Photo", j.photo)}
-    ${r.editor ? `<dt>Editor</dt><dd><a href="#/editor/${encodeURIComponent(r.editor)}">${esc(r.editor)}</a></dd>` : ""}
-    ${notes.length ? `<dt>Notes</dt><dd>${esc(notes.join(" · "))}</dd>` : ""}
-    ${links.length ? `<dt>Links</dt><dd class="bk-links">${links.map((u, i) => `<a href="${esc(normLink(u) || u)}" target="_blank" rel="noopener">${links.length > 1 ? "Link " + (i + 1) : "Open link"}</a>`).join("")}</dd>` : ""}</dl>
-    <div class="bk-hist"><b>History</b>${hist.length ? `<ol>${hist.map(h => `<li><i class="${/新增/.test(h.action) ? "add" : /备份/.test(h.action) ? "bk" : "ed"}"></i><span><b>${esc(h.by || "Someone")}</b> ${esc(ACT[h.action] || h.action || "")}${h.half ? ` <em>${h.half}</em>` : ""}</span><time title="${esc(String(h.at).slice(0, 16).replace("T", " "))}">${esc(relAt(h.at))}</time></li>`).join("")}</ol>` : `<p class="muted small">${made ? "Added " + esc(relAt(made)) + ". " : ""}No changes recorded yet.</p>`}</div>
+  return `<div class="dt-main">
+      <div class="dt-halves">${half("Video", j.video)}${half("Photo", j.photo)}</div>
+      ${days}${extra.length ? `<div class="dt-days one">${extra.map(l => linkA(l, "dt-link")).join("")}</div>` : ""}
+      ${r.editor || notes.length ? `<p class="dt-meta">${r.editor ? `<a href="#/editor/${encodeURIComponent(r.editor)}">${esc(r.editor)}</a>` : ""}${r.editor && notes.length ? " · " : ""}${esc(notes.join(" · "))}</p>` : ""}
+    </div>
+    <div class="dt-hist"><b>History</b>${hist.length ? `<ol>${hist.slice(0, 8).map(h => `<li class="${/新增/.test(h.action) ? "add" : /备份/.test(h.action) ? "bk" : "ed"}"><span><b>${esc(h.by || "Someone")}</b> ${esc((ACT[h.action] || h.action || "").toLowerCase())}${h.half ? ` <em>${h.half}</em>` : ""}</span><time title="${esc(String(h.at).slice(0, 16).replace("T", " "))}">${esc(relAt(h.at))}</time></li>`).join("")}</ol>` : `<p>${made ? "Added " + esc(relAt(made)) + ". " : ""}No edits yet.</p>`}</div>
     <div class="bk-acts"><button type="button" class="btn ghost sm" data-job-edit="${esc(r.id)}">Edit</button>${j.un ? `<button type="button" class="btn sm bk-fix" data-job-edit="${esc(r.id)}">Back up</button>` : ""}</div>`;
 }
 function bkToggle(row) {
@@ -899,6 +938,8 @@ function bkToggle(row) {
   else if (!open && d) d.remove();
   fx(open ? "open" : "close");
 }
+// a page drawn again with nothing changed keeps its rows as they are: no rebuild, no restyle of hundreds of rows
+function setHTML(el, html) { if (el._html === html && el.isConnected) return false; el.innerHTML = html; el._html = html; return true; }
 function drawBackup(first) {
   if (!session) return;
   const rows = bkRows(), ys = bkYears();
@@ -906,7 +947,7 @@ function drawBackup(first) {
   const inYear = rows.filter(r => String(r.year) === bk.year), unRows = inYear.filter(unbacked);
   if (!unRows.length) bk.un = false;
   // years: a red dot where something isn't backed up
-  $("bkYears").innerHTML = ys.map(y => `<button type="button" role="tab" data-y="${esc(y)}" aria-selected="${y === bk.year}">${esc(y)}${rows.some(r => String(r.year) === y && unbacked(r)) ? '<i class="dot red"></i>' : ""}</button>`).join("");
+  setHTML($("bkYears"), ys.map(y => `<button type="button" role="tab" data-y="${esc(y)}" aria-selected="${y === bk.year}">${esc(y)}${rows.some(r => String(r.year) === y && unbacked(r)) ? '<i class="dot red"></i>' : ""}</button>`).join(""));
   const yEl = $("bkYear"); if (yEl.textContent !== bk.year) { yEl.innerHTML = `${esc(bk.year.slice(0, 2))}<em>${esc(bk.year.slice(2))}</em>`; if (!first && !STILL) yEl.animate([{ opacity: 0, transform: "translateY(16px)" }, { opacity: 1, transform: "none" }], { duration: 360, easing: "cubic-bezier(.2,.8,.2,1)" }); }
   $("bkJobs").textContent = inYear.length; $("bkDrives").textContent = new Set(inYear.flatMap(drivesOf)).size; $("bkUnN").textContent = unRows.length;
   $("bkUn").classList.toggle("red", unRows.length > 0); $("bkUn").setAttribute("aria-pressed", bk.un); $("bkUn").disabled = !unRows.length;
@@ -916,7 +957,7 @@ function drawBackup(first) {
   const cats = secsIn(inYear);
   if (!cats.includes(bk.cat)) bk.cat = cats[0] || null;
   $("bkCats").hidden = searching || bk.un;
-  $("bkCats").innerHTML = cats.map(c => { const js = secJobs(inYear.filter(r => sectionOf(r) === c)); return `<button type="button" role="tab" data-c="${esc(c)}" aria-selected="${c === bk.cat}">${esc(c)}<span>${js.length}</span>${js.some(j => j.un) ? '<i class="dot red"></i>' : ""}</button>`; }).join("");
+  setHTML($("bkCats"), cats.map(c => { const js = secJobs(inYear.filter(r => sectionOf(r) === c)); return `<button type="button" role="tab" data-c="${esc(c)}" aria-selected="${c === bk.cat}">${esc(c)}<span>${js.length}</span>${js.some(j => j.un) ? '<i class="dot red"></i>' : ""}</button>`; }).join(""));
   const row = (j, i) => jobCard(j, i, { num, ts });
   const sortJ = js => bk.desc ? js.slice().reverse() : js;
   const head = (title, n, jump) => `<h3 class="bk-gh">${jump ? `<button type="button" class="bk-jump" data-y="${esc(title)}">${esc(title)}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>` : esc(title)}<span>${n} ${n === 1 ? "job" : "jobs"}</span></h3>`;
@@ -941,9 +982,9 @@ function drawBackup(first) {
     filt = (drives.length > 1 ? `<span class="muted small">Drives</span>${drives.map(d => `<button type="button" class="fchip${bk.drive === d ? " on" : ""}" data-drive="${esc(d)}" aria-pressed="${bk.drive === d}">${esc(d === "未知" ? "Unknown" : d)}</button>`).join("")}` : "") + (js.length > 1 ? sortBtn : "");
     html = js.length ? `<div class="bk-rows">${sortJ(js).map(row).join("")}</div>` : `<div class="bk-empty">No jobs in ${esc(bk.year)} yet. <button type="button" class="btn sm" id="bkNew2">+ New job</button></div>`;
   }
-  $("bkFilters").innerHTML = filt;
+  setHTML($("bkFilters"), filt);
   const list = $("bkList"), key = [bk.year, bk.cat, bk.drive, bk.un, bk.scope, ts.join(" "), bk.desc].join("|");
-  list.innerHTML = html;
+  setHTML(list, html);
   if (list.dataset.key !== key) { list.dataset.key = key; list.classList.remove("anim"); void list.offsetWidth; list.classList.add("anim"); }
 }
 $("bkYears").addEventListener("click", e => { const b = e.target.closest("[data-y]"); if (!b || b.dataset.y === bk.year) return; bk.year = b.dataset.y; bk.drive = null; buzz(); drawBackup(); });
@@ -1560,7 +1601,7 @@ function status(t, live) {
 // Close: the chat shrinks back into that spot and 小M lands there again. ⌘K / Ctrl+K does the same; Esc closes.
 let mOpen = false, mAnim = null;
 function showM() {
-  const b = $("mBtn"); if (!b.hidden) return; b.hidden = false;
+  const b = $("mBtn"); if (!b.hidden) return; b.hidden = false; perch();
   if (!STILL) b.animate([{ transform: "translateY(40px) scale(.6)", opacity: 0 }, { transform: "none", opacity: 1 }], { duration: 520, easing: "cubic-bezier(.34,1.4,.64,1)" });
 }
 function centerOf(el) { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height }; }
@@ -1606,7 +1647,7 @@ function closeM(now) {
       { transform: `translate(${(av.x - to.x) * .5}px, ${(av.y - to.y) * .5 - 30}px) scale(.8)`, offset: .5 }, { transform: "none" }], { duration: 420, easing: "cubic-bezier(.3,.7,.3,1)" })
   ];
   mAnim[0].onfinish = () => { p.hidden = true; $("mpAv").style.visibility = ""; };
-  mAnim[1].onfinish = () => act($("mSvg"), "land", 450);
+  mAnim[1].onfinish = () => { act($("mSvg"), "land", 450); perch(); };
 }
 // Tap 小M: he does one of five little things (never the same twice in a row). Point at him (or tap, on a phone) and three
 // choices fan out beside him: Ask M (the chat), Add backup (a new job, step by step), Add calendar (a new shoot).
@@ -1616,25 +1657,27 @@ function trick() {
   let i; do { i = Math.floor(Math.random() * TRICKS.length); } while (i === lastTrick && TRICKS.length > 1); lastTrick = i;
   const [name, sound, ms] = TRICKS[i]; act($("mSvg"), name, ms); fx(sound);
 }
-$("mBtn").addEventListener("click", e => { if (mDragged) { mDragged = false; e.preventDefault(); return; }
+$("mBtn").addEventListener("click", e => {
   if (e.detail === 0) { openM(); return; }   // keyboard: Enter / Space opens the chat as before
   trick(); if (!matchMedia("(hover: hover)").matches) fanShow(); });
 const fan = document.createElement("div"); fan.className = "m-fan"; fan.id = "mFan"; fan.hidden = true; fan.setAttribute("role", "menu");
-fan.innerHTML = `<button type="button" role="menuitem" data-f="ask"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>Ask M</button>
-  <button type="button" role="menuitem" data-f="job"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5"/></svg>Add backup</button>
-  <button type="button" role="menuitem" data-f="shoot"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>Add calendar</button>`;
+fan.innerHTML = [["ask", "Ask M", '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 10h8M8 13h5"/>'],
+  ["job", "Add backup", '<path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5"/>'],
+  ["shoot", "Add calendar", '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4M12 13v4M10 15h4"/>']]
+  .map(([f, t, d], i) => `<button type="button" role="menuitem" data-f="${f}" aria-label="${t}" style="--i:${i}"><svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg><span class="fan-tip">${t}</span></button>`).join("");
 document.body.appendChild(fan);
 let fanT = 0;
+// the three buttons open in a ring round 小M, on the side that has room (towards the middle of the screen)
 function fanShow() {
-  clearTimeout(fanT); if (mOpen || $("mBtn").hidden || $("mBtn").classList.contains("dragging")) return;
-  const r = $("mBtn").getBoundingClientRect(), left = r.left + r.width / 2 > innerWidth / 2, up = r.top > innerHeight / 2;
-  fan.classList.toggle("to-left", left); fan.classList.toggle("up", up);
-  fan.style.top = (up ? "auto" : r.top + 4 + "px"); fan.style.bottom = (up ? innerHeight - r.bottom + 4 + "px" : "auto");
-  fan.style.left = left ? "auto" : r.right + 8 + "px"; fan.style.right = left ? innerWidth - r.left + 8 + "px" : "auto";
-  if (fan.hidden) { fan.hidden = false; fan.classList.remove("in"); void fan.offsetWidth; fan.classList.add("in"); }
-  if (!matchMedia("(hover: hover)").matches) fanT = setTimeout(fanHide, 4000);
+  clearTimeout(fanT); const b = $("mBtn"); if (mOpen || b.hidden) return;
+  const r = b.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2, R = r.width / 2 + (phoneW() ? 40 : 44);
+  const a0 = Math.atan2(innerHeight * .45 - cy, innerWidth / 2 - cx), step = phoneW() ? .95 : .9;
+  fan.style.left = cx + "px"; fan.style.top = cy + "px"; fan.sy = $("views").scrollTop;
+  fan.querySelectorAll("button").forEach((x, i) => { const a = a0 + (i - 1) * step; x.style.setProperty("--x", Math.cos(a) * R + "px"); x.style.setProperty("--y", Math.sin(a) * R + "px"); x.classList.toggle("tip-l", Math.cos(a) < -.3); });
+  if (fan.hidden) { fan.hidden = false; fan.classList.remove("in", "out"); void fan.offsetWidth; fan.classList.add("in"); }
+  if (!matchMedia("(hover: hover)").matches) fanT = setTimeout(fanHide, 4500);
 }
-function fanHide(now) { clearTimeout(fanT); if (fan.hidden) return; if (now || STILL) { fan.hidden = true; return; } fan.classList.add("out"); fanT = setTimeout(() => { fan.hidden = true; fan.classList.remove("out"); }, 180); }
+function fanHide(now) { clearTimeout(fanT); if (fan.hidden) return; if (now || STILL) { fan.hidden = true; return; } fan.classList.add("out"); fanT = setTimeout(() => { fan.hidden = true; fan.classList.remove("out"); }, 200); }
 const fanLater = () => { clearTimeout(fanT); fanT = setTimeout(fanHide, 280); };
 $("mBtn").addEventListener("pointerenter", e => { if (e.pointerType === "mouse") fanShow(); });
 $("mBtn").addEventListener("pointerleave", e => { if (e.pointerType === "mouse") fanLater(); });
@@ -1646,63 +1689,44 @@ fan.addEventListener("click", e => {
   else if (b.dataset.f === "job") newJob();
   else openShoot({ dates: route.name === "calendar" && selDay ? selDay : ymd(new Date()) });
 });
+$("views").addEventListener("scroll", () => { if (Math.abs($("views").scrollTop - (fan.sy || 0)) > 8) fanHide(true); }, { passive: true });   // the circle stays put on 小M; a real scroll closes it
 document.addEventListener("pointerdown", e => { if (!fan.hidden && !fan.contains(e.target) && !$("mBtn").contains(e.target)) fanHide(); }, true);
-// 小M floats: drag him anywhere, he snaps to the nearest side and stays there next time
+// 小M stands on the page, as on the Backup page: on the top edge of its main panel (the graph, the calendar, the Backup
+// strip, the team cards, the list, the job). When you go to another page he hops over and lands on its panel.
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-let mDragged = false, mPos = store.get("mPos", null);
 const phoneW = () => window.innerWidth < 900;
-function mBounds() {
-  const b = $("mBtn"), w = b.offsetWidth || 76, m = phoneW() ? 12 : 24;
-  return { w, m, minY: 56, maxY: window.innerHeight - w - (phoneW() ? 76 : 22) };
-}
-function placeM() {
-  const b = $("mBtn");
-  if (!mPos) { b.style.left = b.style.top = b.style.right = b.style.bottom = ""; b.classList.remove("on-left"); return; }
-  const { w, m, minY, maxY } = mBounds();
-  b.style.right = b.style.bottom = "auto";
-  b.style.left = (mPos.side === "l" ? m : window.innerWidth - w - m) + "px";
-  b.style.top = clamp(mPos.y * window.innerHeight, minY, Math.max(minY, maxY)) + "px";
-  b.classList.toggle("on-left", mPos.side === "l");
+const PERCH = { home: ["#monitor"], calendar: [".cal-box", true], backup: ["#bkHero"], team: ["#teamGrid"], list: ["#listRows"], job: ["#v-job .facts"] };
+const seat = document.createElement("div"); seat.className = "m-seat";
+function perch(from) {
+  const b = $("mBtn"); if (!b.isConnected) document.body.appendChild(b);
+  if (b.hidden || mOpen) return;
+  const want = PERCH[shownView], t = want && document.querySelector(want[0]);
+  const ok = t && t.offsetParent && t.getBoundingClientRect().height > 30;
+  if (ok) {
+    if (want[1]) { if (seat.parentElement !== t || t.firstChild !== seat) t.prepend(seat); seat.style.marginBottom = ""; }
+    else if (t.previousElementSibling !== seat) { t.before(seat); }
+    if (!want[1]) { const g = parseFloat(getComputedStyle(t.parentElement).rowGap) || 0; seat.style.marginBottom = -g + "px"; }
+    if (b.parentElement !== seat) seat.appendChild(b);
+    b.classList.add("perched");
+  } else { if (b.parentElement !== document.body) document.body.appendChild(b); b.classList.remove("perched"); seat.remove(); }
+  // the hop: from where he stood to the new spot, in an arc, then a little landing squash
+  const to = b.getBoundingClientRect();
+  if (from && from.width && !STILL && (Math.abs(from.left - to.left) > 2 || Math.abs(from.top - to.top) > 2)) {
+    const dx = from.left - to.left, dy = from.top - to.top, up = Math.min(-60, Math.min(dy, 0) - 50);
+    b.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: `translate(${dx * .45}px, ${dy * .5 + up}px) rotate(${dx > 0 ? -8 : 8}deg)`, offset: .5 }, { transform: "none" }],
+      { duration: 560, easing: "cubic-bezier(.3,.7,.3,1)" }).onfinish = () => act($("mSvg"), "land", 450);
+  }
 }
 // on a wide screen the chat opens on 小M's side of the screen, or where you last dragged it (by its top bar)
 let mpPos = store.get("mpPos", null);
 function anchorPanel() {
-  const p = $("mPanel"), c = centerOf($("mBtn"));
+  const p = $("mPanel");
   if (!phoneW() && mpPos) { const w = p.offsetWidth || 420, h = p.offsetHeight || 600;
     p.style.right = p.style.bottom = "auto"; p.style.left = clamp(mpPos.x * innerWidth, 8, Math.max(8, innerWidth - w - 8)) + "px"; p.style.top = clamp(mpPos.y * innerHeight, 8, Math.max(8, innerHeight - h - 8)) + "px"; return; }
-  if (phoneW() || !mPos) { p.style.left = p.style.right = p.style.top = p.style.bottom = ""; return; }
-  const left = c.x < window.innerWidth / 2, top = c.y < window.innerHeight / 2;
-  p.style.left = left ? "24px" : "auto"; p.style.right = left ? "auto" : "";
-  p.style.top = top ? "24px" : "auto"; p.style.bottom = top ? "auto" : "";
+  p.style.left = p.style.right = p.style.top = p.style.bottom = "";
 }
-addEventListener("resize", () => { placeM(); if (mOpen) anchorPanel(); });
-(() => {
-  const b = $("mBtn"); let st = null;
-  b.addEventListener("pointerdown", e => { if (e.button || mOpen) return; const r = b.getBoundingClientRect(); st = { x: e.clientX, y: e.clientY, dx: e.clientX - r.left, dy: e.clientY - r.top, on: false, id: e.pointerId }; });
-  b.addEventListener("pointermove", e => {
-    if (!st || e.pointerId !== st.id) return;
-    if (!st.on) { if (Math.hypot(e.clientX - st.x, e.clientY - st.y) < 7) return; st.on = true; fanHide(true); b.setPointerCapture(e.pointerId); b.classList.add("dragging", "walk"); }
-    const { w } = mBounds();
-    b.style.right = b.style.bottom = "auto";
-    b.style.left = clamp(e.clientX - st.dx, 0, window.innerWidth - w) + "px";
-    b.style.top = clamp(e.clientY - st.dy, 0, window.innerHeight - w) + "px";
-  });
-  const end = e => {
-    if (!st || e.pointerId !== st.id) return;
-    const was = st.on; st = null; if (!was) return;
-    mDragged = true; setTimeout(() => { mDragged = false; }, 400);
-    b.classList.remove("dragging", "walk");
-    const r = b.getBoundingClientRect(), side = r.left + r.width / 2 < window.innerWidth / 2 ? "l" : "r";
-    mPos = { side, y: r.top / window.innerHeight }; store.set("mPos", mPos);
-    placeM(); buzz();
-    const t = b.getBoundingClientRect();
-    if (!STILL) b.animate([{ transform: `translate(${r.left - t.left}px, ${r.top - t.top}px)` }, { transform: "none" }], { duration: 480, easing: "cubic-bezier(.34,1.45,.64,1)" });
-    act($("mSvg"), "land", 450);
-  };
-  b.addEventListener("pointerup", end); b.addEventListener("pointercancel", end);
-  b.addEventListener("dblclick", e => e.preventDefault());
-  placeM();
-})();
+addEventListener("resize", () => { if (mOpen) anchorPanel(); });
+$("mBtn").addEventListener("dblclick", e => e.preventDefault());
 $("mClose").addEventListener("click", () => closeM());
 (() => {
   const p = $("mPanel"), h = p.querySelector(".mp-head"); let st = null;
@@ -2045,7 +2069,16 @@ addEventListener("resize", () => { if (session) markNav(); });
 function themeBar() { const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = document.documentElement.getAttribute("data-theme") === "light" ? "#ffffff" : "#0e0e0e"; }
 // the phone app's offline shell (not inside the Mac app, which has its files already)
 if ("serviceWorker" in navigator && !window.__TAURI__ && (location.protocol === "https:" || /^(localhost|127\.0\.0\.1)$/.test(location.hostname)))
-  addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+  addEventListener("load", () => navigator.serviceWorker.register("sw.js").then(reg => {
+    // a new version: it takes over as soon as it's downloaded, and the app reloads into it unless you're in the middle of something
+    let had = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (!had) { had = true; return; }
+      const busy = !$("jobScrim").hidden || !$("shootScrim").hidden || (mOpen && $("aiIn").value.trim());
+      if (busy) toast("A new version is ready. It opens next time."); else location.reload();
+    });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) reg.update().catch(() => {}); });   // back from the background: look for one
+  }).catch(() => {}));
 drawTheme(); themeBar(); drawAI(); drawVoice();
 // Studio M loading: the beam sweeps the logo, it breathes out, then the PIN screen
 lock();
