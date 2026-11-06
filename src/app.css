@@ -1294,3 +1294,53 @@ body.lamp-tap.lamp-off .light .lamp { opacity: 0; transition: opacity .7s ease-o
   .tabs a { max-height: 48px }
 }
 a, [role="tab"] { -webkit-tap-highlight-color: transparent }   /* no blue box on a tapped tab or link: the app draws its own press */
+
+/* 0.9.10: Downloads. A link, the qualities the service reports, then one row per job.
+   Orange stays on the main button and on the selected quality; a job that failed is the
+   only red in here. */
+.dl-engine { font-size: 12.5px; color: var(--muted); white-space: nowrap; align-self: flex-start; margin-top: 6px }
+.dl-bar { display: flex; gap: 10px; align-items: stretch }
+.dl-bar input { flex: 1; min-width: 0 }
+.dl-bar .btn { flex: none }
+.dl-result { display: flex; flex-direction: column; gap: 12px }
+.dl-head { display: flex; gap: 14px; align-items: flex-start }
+.dl-thumb { width: 148px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); flex: none; background: var(--surface-2) }
+.dl-meta { min-width: 0; display: flex; flex-direction: column; gap: 4px }
+.dl-title { font-size: 16px; line-height: 1.35; margin: 0; overflow-wrap: anywhere }
+.dl-match { margin: 0; font-size: 13px; line-height: 1.5; padding: 10px 12px; border-radius: 6px;
+  background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent); color: var(--fg) }
+.dl-match.warn { background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: color-mix(in srgb, var(--danger) 40%, transparent); color: var(--fg) }
+.dl-qlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(178px, 1fr)); gap: 10px }
+.dl-q { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 12px 14px; border-radius: 6px;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--fg); transition: border-color .2s var(--ease), background-color .2s var(--ease), transform .12s var(--ease) }
+.dl-q b { font-size: 14px; font-weight: 700 }
+.dl-q span { font-size: 12px; color: var(--muted); line-height: 1.4 }
+.dl-q:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)) }
+.dl-q:active { transform: scale(.985) }
+.dl-q.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent) }
+.dl-q.on b { color: var(--accent-text) }
+.dl-jobs { display: flex; flex-direction: column; gap: 12px }
+.dl-jobs:empty { display: none }
+.dl-job { gap: 10px }
+.dl-job.bad { border-color: color-mix(in srgb, var(--danger) 45%, var(--line)) }
+.dl-job-top { display: flex; gap: 12px; align-items: baseline }
+.dl-job-top b { font-size: 14px; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.dl-job-state { font-size: 12px; color: var(--muted); flex: none }
+.dl-prog { height: 8px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden }
+.dl-prog i { display: block; height: 100%; width: 0; border-radius: 99px; background: var(--accent); transition: width .35s linear }
+.dl-error { margin: 0; font-size: 13px; line-height: 1.5; color: var(--danger); overflow-wrap: anywhere }
+.dl-path { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left }
+.dl-acts { justify-content: flex-start; flex-wrap: wrap }
+.dl-media { width: 100%; max-height: 62vh; border-radius: 6px; background: #000; margin-top: 4px }
+.dl-media[src$=".mp3"], audio.dl-media { max-height: none; background: none }
+@media (max-width: 899px) {
+  .tabs { grid-template-columns: repeat(5, 1fr) }   /* Downloads is the fifth tab */
+  .tabs a { font-size: 11px }
+  .dl-bar { flex-wrap: wrap }
+  .dl-bar .btn { width: 100% }
+  .dl-qlist { grid-template-columns: 1fr 1fr }
+  .dl-thumb { width: 104px }
+  .dl-title { font-size: 15px }
+}
+@media (max-width: 360px) { .dl-qlist { grid-template-columns: 1fr } }

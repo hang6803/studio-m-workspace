@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.9";
+const APP_VER = "0.9.10";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
@@ -517,11 +517,11 @@ function unlock() {
 function parse(h) {
   const p = String(h || "").replace(/^#\/?/, "").split("/").map(s => { try { return decodeURIComponent(s); } catch (e) { return s; } });
   const name = p[0] || "home";
-  return ["home", "calendar", "team", "unbacked", "drives", "settings", "backup", "classic", "drive", "editor", "job"].includes(name) ? { name, key: p[1] || "" } : { name: "home", key: "" };
+  return ["home", "calendar", "team", "unbacked", "drives", "settings", "backup", "classic", "drive", "editor", "job", "downloads"].includes(name) ? { name, key: p[1] || "" } : { name: "home", key: "" };
 }
 const hrefOf = n => n.kind === "drive" ? "#/drive/" + encodeURIComponent(n.key) : n.kind === "editor" ? "#/editor/" + encodeURIComponent(n.key)
   : n.kind === "shoot" ? "#/calendar/" + encodeURIComponent(n.date || "") : "#/job/" + encodeURIComponent(n.key);
-const TITLES = { calendar: "Calendar", team: "Team", unbacked: "Not backed up", drives: "Drives", settings: "Settings", backup: "Backup", classic: "Classic Backup" };
+const TITLES = { calendar: "Calendar", team: "Team", unbacked: "Not backed up", drives: "Drives", settings: "Settings", backup: "Backup", classic: "Classic Backup", downloads: "Downloads" };
 addEventListener("hashchange", () => { if (session) { fx("nav"); render(false); } });
 // Page changes cross-fade and slide (View Transitions where the system has them); the sidebar marker glides to the new place
 function render(first) {
@@ -539,7 +539,7 @@ function render(first) {
 let shownView = "";
 function paint() {
   if (shownView === "classic" && route.name !== "classic") refresh();   // jobs added or changed in Backup show up right away
-  const v = { home: "home", calendar: "calendar", team: "team", settings: "settings", backup: "backup", classic: "classic", job: "job" }[route.name] || "list";
+  const v = { home: "home", calendar: "calendar", team: "team", settings: "settings", backup: "backup", classic: "classic", job: "job", downloads: "downloads" }[route.name] || "list";
   document.querySelectorAll(".view").forEach(s => { s.hidden = s.id !== "v-" + v; });
   $("main").scrollTop = 0; $("views").scrollTop = 0;
   $("meMenu").hidden = true;
@@ -549,6 +549,7 @@ function paint() {
   if (v === "home") { graph.start(); graph.theme(); if (!booting) graph.reset(); } else if (graph) graph.stop();
   if (v === "list") { const lk = route.name + ":" + route.key; if (lk !== drawList.key) { drawList.key = lk; listUn = false; } drawList(); }
   if (v === "job") drawJob();
+  if (v === "downloads") drawDownloads();
   if (v === "calendar") { if (route.key && parseYmd(route.key)) { selDay = route.key; const d = parseYmd(route.key); calY = d.getFullYear(); calM = d.getMonth(); } drawCal(); }
   if (v === "backup") drawBackup(true);
   if (v === "classic") loadBackup(); else if (v === "backup" && !backupLoaded) (window.requestIdleCallback || (g => setTimeout(g, 600)))(() => { if (session) loadBackup(); }, { timeout: 1500 });   // after the list has drawn   // Backup saves through Classic Backup, kept ready in the background
@@ -2939,3 +2940,331 @@ drawTheme(); themeBar(); drawAI(); drawVoice();
 // Studio M loading: the beam sweeps the logo, it breathes out, then the PIN screen
 lock();
 setTimeout(() => { $("boot").classList.add("breathe"); setTimeout(() => { $("boot").hidden = true; }, 1500); }, 1700);
+// ---------------------------------------------------------------- Downloads (0.9.10)
+// This page does not download anything itself: it asks the little service in the Mac app
+// (projects/media-downloader/app.py, 127.0.0.1:8899) to do it. On a phone, or with that
+// service stopped, there is nothing to talk to, so the page explains that instead of
+// offering buttons that cannot work.
+const DL_BASE = (store.get("smw-dl-base", "") || "http://127.0.0.1:8899").replace(/\/+$/, "");
+const DL_CHECKING = "Looking for the downloader service on this Mac…";
+const DL = { state: "new", why: "", health: null, probe: null, pick: null, audioOnly: false, jobs: [], timer: 0, probing: false };
+
+const dlUrlOf = p => DL_BASE + p;
+// orange is for the one main button and for what is selected: nothing else in here uses it
+const dlBadge = s => ({ youtube: "YouTube", instagram: "Instagram", spotify: "Spotify" }[s] || "Other");
+const dlHms = s => {
+  if (s == null || isNaN(s)) return "—";
+  s = Math.max(0, Math.round(s));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+  return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(x).padStart(2, "0");
+};
+const dlSize = n => {
+  if (n == null || isNaN(n)) return "—";
+  if (n < 1024) return n + " B";
+  const u = ["KB", "MB", "GB", "TB"]; let i = -1;
+  do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
+  return n.toFixed(n >= 100 ? 0 : 1) + " " + u[i];
+};
+// timeouts matter more than they look: fetch to a stopped localhost service can hang for a
+// long time, and the page must fall into the explain state instead of spinning forever
+function dlFetch(path, opts, ms) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms || 12000);
+  const o = Object.assign({ signal: ctrl.signal, headers: { "Content-Type": "application/json" } }, opts || {});
+  return fetch(dlUrlOf(path), o)
+    .then(r => r.text().then(body => {
+      let d = null;
+      try { d = JSON.parse(body); } catch (e) { throw new Error(r.status === 501 ? "The service answered " + r.status + ". Restart it on the Mac." : "The service answered " + r.status + "."); }
+      if (d && d.ok === false) throw new Error(d.error || "Request failed");
+      return d;
+    }))
+    .finally(() => clearTimeout(t));
+}
+
+function drawDownloads() {
+  const off = $("dlOff"), form = $("dlForm"), res = $("dlResult");
+  off.hidden = true; form.hidden = false; res.hidden = true;
+  if (DL.state === "new") { dlCheck(); off.hidden = true; form.hidden = true; return; }
+  if (DL.state === "checking") { form.hidden = true; $("dlMsg").textContent = DL_CHECKING; return; }
+  if (DL.state === "off") {
+    form.hidden = true;
+    off.hidden = false;
+    $("dlSub").textContent = "Paste a link. The Mac Studio app downloads it, not this page.";
+    $("dlOffWhy").textContent = DL.why ? "Why: " + DL.why : "";
+    return;
+  }
+  $("dlSub").textContent = "Paste a link, pick a quality, and the file lands in the Mac's downloads folder.";
+  if ($("dlMsg").textContent === DL_CHECKING) $("dlMsg").textContent = "";
+  if (DL.probe) drawDownloadResult();
+  drawDownloadJobs();
+}
+
+function dlCheck() {
+  if (DL.state === "checking") return;
+  DL.state = "checking";
+  $("dlEngine").hidden = true;
+  drawDownloads();
+  dlFetch("/api/health", {}, 5000).then(h => {
+    DL.health = h; DL.state = "on"; DL.why = "";
+    $("dlEngine").textContent = "yt-dlp " + (h.yt_dlp || "?") + (h.ffmpeg ? " · ffmpeg" : " · ffmpeg missing");
+    $("dlEngine").hidden = false;
+    if (h.default_outdir && !DL.outdir) DL.outdir = h.default_outdir;
+  }).catch(e => {
+    DL.state = "off";
+    if (e && e.name === "AbortError") DL.why = "the service at " + DL_BASE + " did not answer within 5 seconds";
+    else if (e && /failed to fetch|networkerror|load failed/i.test(e.message || "")) DL.why = "nothing answered at " + DL_BASE + " — the Mac app is not running, or this device cannot reach that address";
+    else DL.why = (e && e.message) || "nothing answered at " + DL_BASE;
+  }).then(() => { if (document.body.dataset.route === "downloads") drawDownloads(); });
+}
+
+function dlProbe() {
+  const url = ($("dlUrl").value || "").trim();
+  const msg = $("dlMsg");
+  if (!url) { $("dlUrl").focus(); msg.textContent = "Paste a link first."; return; }
+  if (!/^https?:\/\//i.test(url)) { msg.textContent = "A link starts with http:// or https://"; return; }
+  if (DL.probing) return;
+  DL.probing = true;
+  msg.textContent = "";
+  $("dlProbe").classList.add("busy");
+  $("dlProbe").textContent = "Fetching…";
+  dlFetch("/api/probe", { method: "POST", body: JSON.stringify({ url }) }, 60000).then(d => {
+    DL.probe = d; DL.audioOnly = !(d.formats || []).length;
+    DL.pick = (d.formats || []).length ? (d.formats || [])[0].height : null;
+    drawDownloadResult();
+  }).catch(e => {
+    DL.probe = null; $("dlResult").hidden = true;
+    msg.textContent = (e && e.name === "AbortError")
+      ? "No answer in 60 seconds. Instagram and Spotify can be slow; try again."
+      : (e && e.message) || "Could not read that link.";
+  }).finally(() => {
+    DL.probing = false;
+    $("dlProbe").classList.remove("busy");
+    $("dlProbe").textContent = "Fetch";
+  });
+}
+
+function drawDownloadResult() {
+  const d = DL.probe, box = $("dlResult");
+  if (!d) { box.hidden = true; return; }
+  box.hidden = false;
+  box.textContent = "";
+  const src = d.source || "other";
+  const head = document.createElement("div");
+  head.className = "dl-head";
+  if (d.thumbnail) {
+    const img = document.createElement("img");
+    img.className = "dl-thumb"; img.src = d.thumbnail; img.alt = ""; img.referrerPolicy = "no-referrer";
+    head.appendChild(img);
+  }
+  const meta = document.createElement("div");
+  meta.className = "dl-meta";
+  const title = document.createElement("h2");
+  title.className = "dl-title"; title.textContent = d.title || "Untitled";
+  meta.appendChild(title);
+  const bits = [dlBadge(src)];
+  if (d.uploader) bits.push(d.uploader);
+  if (d.duration_s) bits.push(dlHms(d.duration_s));
+  if (d.video_id) bits.push(d.video_id);
+  const sub = document.createElement("p");
+  sub.className = "muted small"; sub.textContent = bits.join("  ·  ");
+  meta.appendChild(sub);
+  head.appendChild(meta);
+  box.appendChild(head);
+
+  // Spotify is never the real stream: say where the audio actually comes from, and both lengths
+  if (src === "spotify" || d.matched_from) {
+    const m = document.createElement("p");
+    m.className = "dl-match" + (d.matched_duration_s && d.source_duration_s && Math.abs(d.matched_duration_s - d.source_duration_s) > 5 ? " warn" : "");
+    const from = d.matched_from || (d.match && d.match.matched_from) || "another source";
+    let text = "Matched from " + from + " — Spotify streams are DRM-locked, so this is the same track elsewhere.";
+    if (d.source_duration_s || d.matched_duration_s) text += " Spotify " + dlHms(d.source_duration_s) + ", matched " + dlHms(d.matched_duration_s) + ".";
+    if (d.match && d.match.matched_title) text += " Source title: " + d.match.matched_title + ".";
+    m.textContent = text;
+    box.appendChild(m);
+  }
+  if (d.note) {
+    const n = document.createElement("p");
+    n.className = "muted small"; n.textContent = d.note;
+    box.appendChild(n);
+  }
+
+  const formats = d.formats || [];
+  const list = document.createElement("div");
+  list.className = "dl-qlist";
+  formats.forEach(f => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "dl-q" + (!DL.audioOnly && DL.pick === f.height ? " on" : "");
+    b.setAttribute("aria-pressed", String(!DL.audioOnly && DL.pick === f.height));
+    b.innerHTML = '<b></b><span></span>';
+    b.querySelector("b").textContent = f.label || (f.height + "p");
+    b.querySelector("span").textContent = [f.fps ? f.fps + " fps" : null, (f.vcodec || "").toUpperCase(), f.ext ? f.ext.toUpperCase() : null,
+      f.size_bytes ? "≈ " + dlSize(f.size_bytes) : "size unknown"].filter(Boolean).join("  ·  ");
+    b.onclick = () => { DL.pick = f.height; DL.audioOnly = false; drawDownloadResult(); fx("tap"); };
+    list.appendChild(b);
+  });
+  if (d.audio) {
+    const a = document.createElement("button");
+    a.type = "button";
+    a.className = "dl-q" + (DL.audioOnly ? " on" : "");
+    a.setAttribute("aria-pressed", String(DL.audioOnly));
+    a.innerHTML = '<b></b><span></span>';
+    a.querySelector("b").textContent = "Audio only (mp3)";
+    a.querySelector("span").textContent = [d.audio.abr ? d.audio.abr + " kbps" : null,
+      d.audio.size_bytes ? "≈ " + dlSize(d.audio.size_bytes) : null].filter(Boolean).join("  ·  ") || "mp3";
+    a.onclick = () => { DL.audioOnly = true; drawDownloadResult(); fx("tap"); };
+    list.appendChild(a);
+  }
+  box.appendChild(list);
+
+  const act = document.createElement("div");
+  act.className = "actions";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "btn";
+  const label = DL.audioOnly ? "Download audio" : (DL.pick ? "Download " + DL.pick + "p" : "Download");
+  btn.textContent = label;
+  btn.onclick = () => dlStart(btn);
+  act.appendChild(btn);
+  box.appendChild(act);
+}
+
+function dlStart(btn) {
+  const d = DL.probe;
+  if (!d) return;
+  btn.classList.add("busy");
+  const body = {
+    url: d.webpage_url || ($("dlUrl").value || "").trim(),
+    kind: DL.audioOnly ? "audio" : "video",
+    height: DL.audioOnly ? null : DL.pick,
+    outdir: DL.outdir || null,
+    audio_format: "mp3",
+    cookies: "chrome",
+    title: d.title || null
+  };
+  dlFetch("/api/downloads", { method: "POST", body: JSON.stringify(body) }, 20000).then(r => {
+    DL.jobs.unshift({ job_id: r.job_id, status: "queued", percent: 0, title: d.title || "" });
+    fx("ok");
+    drawDownloadJobs();
+    dlPollStart();
+  }).catch(e => { toast("Could not start: " + (e.message || "?")); })
+    .finally(() => btn.classList.remove("busy"));
+}
+
+function dlPollStart() {
+  if (DL.timer) return;
+  DL.timer = setInterval(() => {
+    const live = DL.jobs.filter(j => j.status !== "done" && j.status !== "error");
+    if (!live.length) { clearInterval(DL.timer); DL.timer = 0; return; }
+    live.forEach(j => {
+      dlFetch("/api/downloads/" + j.job_id, {}, 8000).then(full => {
+        Object.assign(j, full);
+        drawDownloadJobs();
+        if (full.status === "done") fx("ok");
+        if (full.status === "error") fx("err");
+      }).catch(() => { /* a single missed poll is not an error */ });
+    });
+  }, 500);
+}
+
+const DL_STATE = { queued: "Queued", probing: "Reading the link", downloading: "Downloading", merging: "Finishing the file", done: "Done", error: "Failed" };
+
+function drawDownloadJobs() {
+  const box = $("dlJobs");
+  if (!box) return;
+  if (!DL.jobs.length) { box.textContent = ""; return; }
+  box.textContent = "";
+  DL.jobs.forEach(j => {
+    const row = document.createElement("article");
+    row.className = "card dl-job" + (j.status === "error" ? " bad" : "");
+    const top = document.createElement("div");
+    top.className = "dl-job-top";
+    const name = document.createElement("b");
+    name.textContent = j.filename || j.title || "Download";
+    const st = document.createElement("span");
+    st.className = "dl-job-state";
+    st.textContent = DL_STATE[j.status] || j.status || "";
+    top.appendChild(name); top.appendChild(st);
+    row.appendChild(top);
+
+    if (j.status !== "done") {
+      const bar = document.createElement("div");
+      bar.className = "dl-prog";
+      const fill = document.createElement("i");
+      fill.style.width = Math.max(0, Math.min(100, j.percent || 0)) + "%";
+      bar.appendChild(fill);
+      row.appendChild(bar);
+      const line = document.createElement("p");
+      line.className = "muted small";
+      const bits = [(j.percent || 0).toFixed(1) + "%"];
+      if (j.total_bytes) bits.push(dlSize(j.downloaded_bytes) + " of " + dlSize(j.total_bytes));
+      if (j.speed_bps) bits.push(dlSize(j.speed_bps) + "/s");
+      if (j.eta_s != null && j.status === "downloading") bits.push(dlHms(j.eta_s) + " left");
+      line.textContent = bits.join("  ·  ");
+      row.appendChild(line);
+    }
+    if (j.error) {
+      const e = document.createElement("p");
+      e.className = "dl-error"; e.textContent = j.error;
+      row.appendChild(e);
+    }
+    if (j.status === "done") {
+      const bits = [];
+      if (j.size_bytes) bits.push(dlSize(j.size_bytes));
+      if (j.duration_s) bits.push(dlHms(j.duration_s));
+      if (j.matched_from) bits.push("from " + j.matched_from);
+      const meta = document.createElement("p");
+      meta.className = "muted small"; meta.textContent = bits.join("  ·  ");
+      row.appendChild(meta);
+      const path = document.createElement("p");
+      path.className = "dl-path"; path.textContent = j.file_path || "";
+      row.appendChild(path);
+      const act = document.createElement("div");
+      act.className = "actions dl-acts";
+      const play = document.createElement("button");
+      play.type = "button"; play.className = "btn ghost sm"; play.textContent = "Play";
+      play.onclick = () => dlPlay(row, j);
+      const find = document.createElement("button");
+      find.type = "button"; find.className = "btn ghost sm"; find.textContent = "Show in Finder";
+      find.onclick = () => dlFetch("/api/downloads/" + j.job_id + "/reveal", { method: "POST", body: "{}" }, 15000)
+        .then(() => toast("Shown in Finder")).catch(e => toast("Finder: " + (e.message || "?")));
+      const copy = document.createElement("button");
+      copy.type = "button"; copy.className = "btn ghost sm"; copy.textContent = "Copy path";
+      copy.onclick = () => {
+        const p = j.file_path || "";
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(p).then(() => toast("Path copied")).catch(() => toast(p));
+        else toast(p);
+      };
+      act.appendChild(play); act.appendChild(find); act.appendChild(copy);
+      row.appendChild(act);
+    }
+    box.appendChild(row);
+  });
+}
+
+// Play: the service serves the file with Range support, so the player can seek.
+// An mp3 in a <video> element shows a black box, so audio gets <audio>.
+function dlPlay(row, j) {
+  const name = j.filename || j.file_path || "";
+  const tag = /\.(mp3|m4a|wav|flac|opus)$/i.test(name) ? "audio" : "video";
+  let v = row.querySelector(".dl-media");
+  if (!v) {
+    v = document.createElement(tag);
+    v.className = "dl-media";
+    v.controls = true;
+    if (tag === "video") { v.playsInline = true; }
+    v.preload = "metadata";
+    v.src = dlUrlOf("/api/file/" + j.job_id);
+    row.appendChild(v);
+  }
+  const playing = !v.paused;
+  if (playing) v.pause(); else v.play().catch(() => toast("The Mac's player would not start this file."));
+}
+
+document.addEventListener("click", e => {
+  if (e.target && e.target.id === "dlRetry") { DL.state = "new"; dlCheck(); }
+  if (e.target && e.target.id === "dlProbe") dlProbe();
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.target && e.target.id === "dlUrl") { e.preventDefault(); dlProbe(); }
+});

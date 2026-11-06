@@ -99,6 +99,7 @@
       <a class="nav-i" href="#/calendar" data-r="calendar"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><span>Calendar</span></a>
       <a class="nav-i" href="#/backup" data-r="backup"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5"/></svg><span>Backup</span></a>
       <a class="nav-i" href="#/unbacked" data-r="unbacked"><span class="nav-dot" aria-hidden="true"></span><span>Not backed up</span><b class="pill" id="nUn"></b></a>
+      <a class="nav-i" href="#/downloads" data-r="downloads"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10"/><path d="M7.5 9.5 12 14l4.5-4.5"/><rect x="4" y="17.2" width="16" height="3.4" rx="1.2"/></svg><span>Downloads</span></a>
       <p class="side-h">Drives</p>
       <div id="sideDrives"></div>
       <p class="side-h">Editors</p>
@@ -211,6 +212,36 @@
       </section>
       <section class="view view-frame" id="v-classic" hidden><iframe id="backupFrame" title="Classic Backup"></iframe></section>
 
+      <!-- Downloads: paste a link, the Mac's downloader service does the work -->
+      <section class="view page" id="v-downloads" hidden>
+        <div class="page-head">
+          <span class="page-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4v10"/><path d="M7.5 9.5 12 14l4.5-4.5"/><rect x="4" y="17.2" width="16" height="3.4" rx="1.2"/></svg></span>
+          <div><h1>Downloads</h1><p class="muted" id="dlSub">Paste a link. The Mac Studio app downloads it, not this page.</p></div>
+          <span class="spacer"></span>
+          <span class="dl-engine" id="dlEngine" hidden></span>
+        </div>
+
+        <div class="card" id="dlOff" hidden>
+          <h3>Downloads runs on the Mac Studio app</h3>
+          <p class="muted small">This page only sends the link to the small downloader service on your Mac at 127.0.0.1:8899. On a phone, or when that service is not running, there is nothing to talk to, so nothing here pretends to work.</p>
+          <p class="muted small" id="dlOffWhy"></p>
+          <div class="actions"><button type="button" class="btn ghost" id="dlRetry">Check again</button></div>
+        </div>
+
+        <div class="card" id="dlForm" hidden>
+          <h3>Link</h3>
+          <div class="dl-bar">
+            <input id="dlUrl" type="text" inputmode="url" autocomplete="off" spellcheck="false" aria-label="Media link" placeholder="Paste a YouTube, Instagram or Spotify link">
+            <button type="button" class="btn" id="dlProbe">Fetch</button>
+          </div>
+          <p class="muted small">YouTube and 1000+ other sites go through yt-dlp. Instagram is read from the player of a signed-in Chrome. Spotify streams are DRM-locked, so the same track is matched on another source and labelled as such.</p>
+          <p class="msg" id="dlMsg"></p>
+        </div>
+
+        <div class="card dl-result" id="dlResult" hidden></div>
+        <div class="dl-jobs" id="dlJobs"></div>
+      </section>
+
       <section class="view page" id="v-settings" hidden>
         <div class="card"><h3>Theme</h3><div class="seg" id="themeSeg"><button type="button" data-t="dark">Dark</button><button type="button" data-t="light">Light</button></div></div>
         <div class="card"><h3>Sound &amp; touch</h3><p class="muted small">A soft sound and a tap you can feel on every press. Sound follows M's mute.</p><div class="fx-set"><span>Sound</span><div class="seg" id="sndSeg"><button type="button" data-v="1">On</button><button type="button" data-v="0">Off</button></div><span id="hapLbl">Haptics</span><div class="seg" id="hapSeg"><button type="button" data-v="1">On</button><button type="button" data-v="0">Off</button></div></div></div>
@@ -243,6 +274,7 @@
     <a href="#/calendar" data-r="calendar"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>Calendar</a>
     <a href="#/backup" data-r="backup"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5"/></svg>Backup</a>
     <a href="#/drives" data-r="drives"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="17" cy="12" r="1.3"/><path d="M6.5 12h6"/></svg>Drives</a>
+    <a href="#/downloads" data-r="downloads"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10"/><path d="M7.5 9.5 12 14l4.5-4.5"/><rect x="4" y="17.2" width="16" height="3.4" rx="1.2"/></svg>Downloads</a>
   </nav>
 </div>
 
