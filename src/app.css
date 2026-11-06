@@ -1135,8 +1135,8 @@ body.on-team .avatar { background: var(--accent); color: var(--accent-ink); box-
 :root { --bg: #fbfbfa; --surface: #f4f4f2; --surface-2: #ebebe8; --line: #d9d9d4; --muted: #5f5f5b; --panel: #f4f4f2;
   --grain-o: .028; --vignette: radial-gradient(120% 90% at 50% 40%, transparent 60%, rgba(60, 40, 20, .05)) }
 :root[data-theme="dark"] { --bg: #0d0d0d; --surface: #161616; --surface-2: #1e1e1d; --line: #343432; --muted: #a0a09b; --panel: #121212;
-  --grain-o: .045; --vignette: radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(0, 0, 0, .38)) }
-body::after { content: ""; position: fixed; inset: 0; z-index: 70; pointer-events: none; opacity: var(--grain-o);
+  --grain-o: .045; --vignette: radial-gradient(120% 90% at 50% 40%, transparent 60%, rgba(0, 0, 0, .3)) }
+body::after { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: var(--grain-o);
   background-image: var(--vignette), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
   background-size: 100% 100%, 160px 160px }
 :root[data-theme="dark"] body::after { opacity: 1; background-image: var(--vignette), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .045 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E") }
@@ -1201,3 +1201,54 @@ h1, h2, h3, .tm-name b { text-wrap: balance }
 .composer:focus-within { border-color: color-mix(in srgb, var(--accent) 38%, var(--line)); background-color: color-mix(in srgb, var(--surface-2) 70%, var(--bg));
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, .14), 0 0 0 4px color-mix(in srgb, var(--accent) 7%, transparent), 0 10px 26px -14px rgba(0, 0, 0, .45) }
 :root[data-theme="dark"] .composer:focus-within { box-shadow: inset 0 1px 3px rgba(0, 0, 0, .55), 0 0 0 4px color-mix(in srgb, var(--accent) 9%, transparent), 0 12px 30px -14px rgba(0, 0, 0, .85) }
+
+/* ==== 0.9.2 real light: a warm key light from the top right, a lamp that follows the pointer (or flashes where a finger
+   lands), panels that catch it on their top edge, a lit active tab, light that blooms where you press, and 小M lit
+   from behind with light bouncing off the floor under him ==== */
+:root { --key: rgba(255, 196, 140, .5); --lamp: rgba(255, 214, 170, .55); --bloom: rgba(255, 150, 60, .55) }
+:root[data-theme="dark"] { --key: rgba(255, 170, 100, .55); --lamp: rgba(255, 200, 150, .5); --bloom: rgba(255, 140, 50, .7);
+  --hi: inset 0 1px 0 rgba(255, 236, 214, .14), inset 0 -1px 0 rgba(0, 0, 0, .45);
+  --sheen: linear-gradient(180deg, rgba(255, 240, 225, .085), rgba(255, 255, 255, 0) 48%) }
+/* the light layer sits over the whole app and only brightens (soft light): blacks stay black, lit things glow */
+.light { position: fixed; inset: 0; z-index: 27; pointer-events: none; mix-blend-mode: soft-light; overflow: hidden; contain: strict }
+.light .key { position: absolute; inset: 0; background: radial-gradient(75% 60% at 88% -6%, var(--key), transparent 70%), radial-gradient(60% 45% at 10% 108%, rgba(120, 150, 220, .22), transparent 70%) }
+.light .lamp { position: absolute; left: 0; top: 0; width: 760px; height: 760px; margin: -380px 0 0 -380px; border-radius: 50%;
+  background: radial-gradient(closest-side, var(--lamp), rgba(255, 200, 150, .18) 45%, transparent 100%); opacity: 0; transition: opacity .6s ease;
+  transform: translate3d(var(--mx, 50vw), var(--my, 40vh), 0); will-change: transform }
+body.lamp-on .light .lamp { opacity: 1 }
+body.lamp-tap .light .lamp { width: 420px; height: 420px; margin: -210px 0 0 -210px; opacity: 1; transition: opacity .08s }
+body.lamp-tap.lamp-off .light .lamp { opacity: 0; transition: opacity .7s ease-out }
+:root:not([data-theme="dark"]) .light { opacity: .7 }
+
+/* the bars catch light on their top edge */
+.tabs { box-shadow: inset 0 1px 0 color-mix(in srgb, var(--fg) 7%, transparent), 0 -10px 30px -18px rgba(0, 0, 0, .5) !important }
+.top { position: relative }
+/* the tab you're on is lit from above: a thin neon strip on the bar's edge and a cone of light falling on it */
+.tabs a::before { content: ""; position: absolute; inset: -6px 6px 0; pointer-events: none; opacity: 0; transform: scaleY(.4); transform-origin: 50% 0;
+  background: radial-gradient(70% 90% at 50% 0%, var(--bloom), transparent 72%); transition: opacity .35s ease, transform .55s var(--bounce, ease) }
+.tabs a::after { content: ""; position: absolute; top: -6px; left: 50%; width: 30px; height: 2px; margin-left: -15px; border-radius: 2px; pointer-events: none;
+  background: #ffd2a6; box-shadow: 0 0 6px 1px rgba(255, 150, 60, .9), 0 0 18px 2px rgba(244, 128, 32, .55); opacity: 0; transform: scaleX(.2); transition: opacity .3s, transform .5s var(--bounce, ease) }
+.tabs a.on::before { opacity: .55; transform: none } .tabs a.on::after { opacity: 1; transform: none }
+:root:not([data-theme="dark"]) .tabs a.on::before { opacity: .3 }
+.tabs a.on svg { filter: drop-shadow(0 0 6px rgba(244, 128, 32, .6)) }
+.tabs a > * { position: relative; z-index: 1 }
+/* the sidebar's current page is a lit pill: lighter where the key light hits it, glowing onto the bar around it */
+.nav-ind { background: linear-gradient(180deg, #ffa75a, var(--accent) 55%, #e2700f); border-radius: 10px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), inset 0 -1px 0 rgba(120, 50, 0, .35), 0 6px 18px -6px rgba(244, 128, 32, .8), 0 0 28px -4px rgba(244, 128, 32, .45) }
+.nav-i { border-radius: 10px }
+/* pressing a bar item: light blooms from your finger instead of a grey ripple */
+:is(.tabs a, .nav-i, .ibtn, .avatar) > .fx-ripple { background: radial-gradient(closest-side, var(--bloom), rgba(255, 170, 90, .15) 55%, transparent); mix-blend-mode: plus-lighter }
+:root:not([data-theme="dark"]) :is(.tabs a, .nav-i, .ibtn, .avatar) > .fx-ripple { mix-blend-mode: normal; background: radial-gradient(closest-side, rgba(244, 128, 32, .28), transparent) }
+
+/* 小M in the scene: a warm back light behind him and light bouncing off the floor, with a soft contact shadow */
+.mbtn::before { content: ""; position: absolute; inset: -38%; z-index: -1; pointer-events: none; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 150, 60, .34), rgba(255, 120, 40, .12) 50%, transparent 72%); animation: mGlow 4.6s ease-in-out infinite }
+.mbtn::after { content: ""; position: absolute; left: 6%; right: 6%; bottom: -9%; height: 22%; z-index: -1; pointer-events: none; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(0, 0, 0, .55), rgba(0, 0, 0, .18) 45%, transparent 70%), radial-gradient(closest-side, rgba(255, 150, 60, .45), transparent 80%);
+  background-size: 62% 62%, 100% 100%; background-position: center, center; background-repeat: no-repeat; filter: blur(1.5px) }
+:root:not([data-theme="dark"]) .mbtn::before { background: radial-gradient(closest-side, rgba(255, 160, 80, .26), transparent 70%) }
+:root:not([data-theme="dark"]) .mbtn::after { background: radial-gradient(closest-side, rgba(60, 30, 10, .32), transparent 70%); background-size: 70% 60%; background-position: center; background-repeat: no-repeat }
+.mbtn.space::after { opacity: .25; transform: translateY(40%) scale(.8) }
+.mbtn.space::before { inset: -55% }
+@keyframes mGlow { 50% { opacity: .7; transform: scale(.94) } }
+@media (prefers-reduced-motion: reduce) { .mbtn::before { animation: none } }

@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.1";
+const APP_VER = "0.9.2";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
@@ -18,6 +18,17 @@ const STILL = matchMedia("(prefers-reduced-motion: reduce)").matches;
 // a toggle you just turned on gives one jelly wobble (only the one you pressed, not on every redraw)
 document.addEventListener("click", e => { const b = e.target.closest(".seg button, .chips button, .fchip, .te-role button"); if (!b || STILL) return;
   requestAnimationFrame(() => { const el = b.isConnected ? b : null; if (!el || !el.classList.contains("on")) return; el.classList.remove("jel"); void el.offsetWidth; el.classList.add("jel"); el.addEventListener("animationend", () => el.classList.remove("jel"), { once: true }); }); });
+// The lamp: with a mouse it follows the pointer and lights whatever is under it; with a finger it flashes where you
+// touch and fades. Only the layer's position changes (a transform), so it costs nothing to repaint.
+(() => {
+  const R = document.documentElement.style; let q = 0, x = 0, y = 0, off = 0;
+  const put = () => { q = 0; R.setProperty("--mx", x + "px"); R.setProperty("--my", y + "px"); };
+  addEventListener("pointermove", e => { if (e.pointerType !== "mouse") return; x = e.clientX; y = e.clientY; document.body.classList.add("lamp-on"); if (!q) q = requestAnimationFrame(put); }, { passive: true });
+  document.addEventListener("mouseleave", () => document.body.classList.remove("lamp-on"));
+  addEventListener("pointerdown", e => { if (e.pointerType === "mouse" || STILL) return; x = e.clientX; y = e.clientY; put();
+    const b = document.body.classList; b.remove("lamp-off"); b.add("lamp-tap"); clearTimeout(off);
+    off = setTimeout(() => { b.add("lamp-off"); off = setTimeout(() => b.remove("lamp-tap", "lamp-off"), 700); }, 140); }, { passive: true });
+})();
 // a firm spring for things that snap into place: fast in, one small overshoot, settled
 const SNAP = "linear(0, .25 6%, .68 15%, 1.04 26%, 1.09 32%, 1.05 40%, .995 52%, .99 62%, 1)";
 // Grids that re-flow (a column more or less when the window changes, a card that opens) glide to their new places
