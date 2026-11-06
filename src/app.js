@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.8.11";
+const APP_VER = "0.9.0";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
@@ -246,7 +246,7 @@ async function pinHash(pin) {
 async function keepPin(pin, name) { if (DEMO) return; const h = await pinHash(pin); if (!h) return; const m = store.get("mPins", {}) || {}; for (const k in m) if (m[k] === name) delete m[k]; m[h] = name; store.set("mPins", m); }
 async function offlineName(pin) { if (DEMO) return ""; const h = await pinHash(pin), m = store.get("mPins", {}) || {}; return (h && m[h]) || ""; }
 const offlineCopy = () => { const c = store.get("mCache", null); return c && c.all && Array.isArray(c.all.rows) ? c : null; };
-function useCopy(c) { data = c.all; team = c.all.team || []; shoots = c.sh || []; teamOk = false;
+function useCopy(c) { data = c.all; team = c.all.team || []; shoots = c.sh || []; teamOk = false; birthdays = Object.assign({}, c.all.birthdays || {});
   const d = new Date(c.at); toast(`Offline. Showing what was saved ${fmtShort(ymd(d))} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}.`); }
 addEventListener("online", () => { if (session && session.offline) lock("Back online. Enter your PIN to sync."); });
 
@@ -256,7 +256,7 @@ function lock(msg) {
   session = null; entered = "";
   $("shell").hidden = true; $("setup").hidden = true; $("lock").hidden = false;
   $("lockMsg").textContent = msg || ""; drawDots();
-  $("backupFrame").removeAttribute("src"); backupLoaded = false; scenes(false);
+  $("backupFrame").removeAttribute("src"); backupLoaded = false; scenes(false); festKey = "";
   closeM(true); MBTN.hidden = true; if (graph) graph.stop();
   closeShoot(); if (streaming) streaming.abort(); gKey = ""; teamOk = false; closeJob(true);
 }
@@ -316,7 +316,7 @@ function unlock() {
   $("demoBadge").hidden = !DEMO;
   if (!graph) graph = Graph3D($("graph"), { onPin: drawPin, onOpen: n => { location.hash = hrefOf(n); } });
   if (!location.hash || location.hash === "#/") history.replaceState(null, "", "#/home");
-  showM(); drawAll(); render(true); refresh(); scenes(true);
+  showM(); drawAll(); render(true); refresh();   // festivals / birthdays start once the first refresh brings the birthdays (festAfterData)
 }
 function parse(h) {
   const p = String(h || "").replace(/^#\/?/, "").split("/").map(s => { try { return decodeURIComponent(s); } catch (e) { return s; } });
@@ -355,7 +355,7 @@ function paint() {
   if (v === "classic") loadBackup(); else if (v === "backup" && !backupLoaded) (window.requestIdleCallback || (g => setTimeout(g, 600)))(() => { if (session) loadBackup(); }, { timeout: 1500 });   // after the list has drawn   // Backup saves through Classic Backup, kept ready in the background
   if (v === "team") drawTeam();
   shownView = v;
-  if (v === "settings") { drawTheme(); drawAI(); drawVoice(); drawFx(); }
+  if (v === "settings") { drawTheme(); drawAI(); drawVoice(); drawFx(); drawFest(); }
 }
 function markNav() {
   const key = route.name === "drive" || route.name === "editor" ? route.name + ":" + route.key : route.name === "job" ? "" : route.name === "classic" ? "backup" : route.name;
@@ -375,14 +375,15 @@ const toggleMenu = () => { $("meMenu").hidden = !$("meMenu").hidden; };
 $("meBtn").addEventListener("click", toggleMenu); $("meBtn2").addEventListener("click", toggleMenu);
 
 async function refresh() {
-  if (session && session.offline) { const c = offlineCopy(); if (c) useCopy(c); drawAll(); return; }
+  if (session && session.offline) { const c = offlineCopy(); if (c) useCopy(c); drawAll(); festAfterData(); return; }
   try {
     const [all, sh] = await Promise.all([M.api("getAll"), M.api("getShoots")]);
     data = all; team = all.team || []; shoots = sh || [];
     teamOk = Array.isArray(all.team) && all.team.length > 0 && !!all.birthdays && typeof all.birthdays === "object";
+    birthdays = Object.assign({}, all.birthdays || {});
     if (!DEMO) store.set("mCache", { at: Date.now(), all, sh: shoots });
   } catch (e) { const c = !DEMO && isNetErr(e) && offlineCopy(); if (c && !(data.rows || []).length) useCopy(c); else toast(e.message); }
-  drawAll();
+  drawAll(); festAfterData();
 }
 setInterval(() => { if (session && !document.hidden) refresh(); }, 60000);
 
@@ -2194,22 +2195,68 @@ function loadBackup() {
   try { localStorage.setItem("me", session.name); localStorage.setItem("meAt", String(Date.now())); } catch (e) {}
   $("backupFrame").src = "backup.html";
 }
-// Birthdays, festivals and their effects come from the Backup page, run a second time as a see-through layer over the whole
-// app (backup.html?scenes). It only takes taps while a birthday / festival scene is open (tap to close).
-let scenesWait = 0;
-function scenes(on) {
-  let f = $("scenes");
-  clearTimeout(scenesWait); scenesWait = 0;
-  if (!on) { if (f) f.remove(); return; }
-  if (f) return;
-  // a whole second copy of the Backup page: start it once Home has drawn and the phone is idle, so it never competes with the first screen
-  if (!scenes.later) { scenes.later = true; const go = () => { if (session) scenes(true); };
-    scenesWait = setTimeout(() => (window.requestIdleCallback || (g => g()))(go, { timeout: 2500 }), 1800); return; }
-  try { localStorage.setItem("me", session.name); localStorage.setItem("meAt", String(Date.now())); } catch (e) {}
-  f = document.createElement("iframe"); f.id = "scenes"; f.title = "Birthdays and festivals"; f.setAttribute("allowtransparency", "true"); f.tabIndex = -1; f.setAttribute("aria-hidden", "true");
-  f.src = "backup.html?scenes"; document.body.appendChild(f);
+// ---------------------------------------------------------------- festivals and birthdays (hang6803/xiaom-module)
+// The 14 days before a festival: its particles drift for 8 s each time the app opens and 小M wears its outfit; on the day the
+// particles stay all day and 小M plays the festival's scene once. Birthdays: your own scene (Hang, Michael and Mun each have
+// their own), or one line when it's someone else's. Settings → Festivals & birthdays can pretend today is another day.
+const FX = { stop: () => {}, t: 0 };
+const simDate = () => { const v = store.get("mSimDate", ""); return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ""; };
+function festStatus() {
+  const F = window.XiaoMFestivals; if (!F || !session) return null;
+  const people = Object.entries(birthdays || {}).map(([name, birthday]) => ({ name, birthday }));
+  return F.status(simDate() || new Date(), { people, me: session.name });
 }
-window.scenesOpen = on => { const f = $("scenes"); if (f) f.classList.toggle("open", on); };
+function scenes(on, replay) {
+  clearTimeout(FX.wait); FX.stop(); FX.stop = () => {}; clearTimeout(FX.t);
+  const T = window.XiaoMFestTheme;
+  if (!on) { if (T) T.clear(); celeClose(true); if (window.XiaoMSfx && XiaoMSfx.stop) XiaoMSfx.stop(); if (X) Pet.wear(face(false)); return; }
+  const s = festStatus(); if (!s || !T) return;
+  T.apply(s);
+  FX.stop = T.particles(s, { z: 15 });   // above the page, below menus (20), 小M (26) and sheets
+  const [hat, hold] = T.outfit(s);
+  if (X) Pet.wear(hat || hold ? X.camSVG(hat, hold, "M") : face(false));
+  drawFest(s);
+  const C = window.XiaoMCelebrate, c = C && C.pick(s, { me: session.name });
+  if (c && (replay || C.shouldPlay(c))) { C.markPlayed(c); celebrate(c); }
+}
+function celebrate(c) {
+  clearTimeout(FX.out);
+  $("celeStage").innerHTML = c.html || ""; $("celeT").textContent = c.title; $("celeS").textContent = c.text || "";
+  const el = $("cele"); el.classList.remove("out"); el.hidden = false;
+  if (window.XiaoMSfx) XiaoMSfx.play(c.sfx);
+  if (!c.html) mood("happy");
+  FX.t = setTimeout(() => celeClose(), c.duration || (c.html ? 6500 : 4000));
+}
+function celeClose(now) {
+  const el = $("cele"); clearTimeout(FX.t);
+  if (now) clearTimeout(FX.out);
+  if (el.hidden) return;
+  if (window.XiaoMSfx && XiaoMSfx.stop) XiaoMSfx.stop();
+  if (now || STILL) { el.hidden = true; $("celeStage").innerHTML = ""; return; }
+  el.classList.add("out"); clearTimeout(FX.out); FX.out = setTimeout(() => { el.hidden = true; el.classList.remove("out"); $("celeStage").innerHTML = ""; }, 350);
+}
+$("cele").addEventListener("click", () => celeClose());
+addEventListener("keydown", e => { if (e.key === "Escape") celeClose(); });
+// birthdays arrive with the first refresh: run once more then (it only plays what hasn't played today)
+let festKey = "";
+const festKeyNow = () => JSON.stringify(birthdays || {}) + (simDate() || ymd(new Date()));   // real date in the key: a new day re-runs while unlocked
+function festAfterData() {
+  const k = festKeyNow();
+  if (!session || k === festKey) return;
+  const first = !festKey; festKey = k;
+  if (!first) { scenes(true); return; }
+  // the first run after sign-in waits until Home has drawn and the phone is idle, so it never competes with the first screen
+  clearTimeout(FX.wait);
+  FX.wait = setTimeout(() => (window.requestIdleCallback || (g => g()))(() => { if (session && festKey === k) scenes(true); }, { timeout: 2500 }), 1800);
+}
+function drawFest(s) {
+  s = s || festStatus(); const t = s && s.theme, el = $("festNow"); if (!el) return;
+  el.textContent = (simDate() ? "Pretending today is " + s.date + ". " : "") + (!t ? "No festival coming up in the next 14 days." : t.daysLeft ? t.en + " in " + t.daysLeft + " day" + (t.daysLeft > 1 ? "s" : "") + "." : "Today: " + t.en + "!");
+  $("simDate").value = simDate();
+}
+$("simDate").addEventListener("change", e => { store.set("mSimDate", e.target.value || ""); festKey = festKeyNow(); scenes(true, true); });
+$("simClear").addEventListener("click", () => { store.set("mSimDate", ""); festKey = festKeyNow(); scenes(true); });
+$("festReplay").addEventListener("click", () => scenes(true, true));
 
 // ---------------------------------------------------------------- settings
 function drawFx() {
@@ -2270,8 +2317,8 @@ $("demoBday").addEventListener("click", () => {
   const db = store.get("mDemo4", null); if (!db || !session) return;
   const t = new Date(); db.birthdays = Object.assign({}, db.birthdays, { [session.name]: `1997-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}` });
   db.rev++; store.set("mDemo4", db);
-  try { localStorage.removeItem("bdaySeen"); } catch (e) {}
-  scenes(false); scenes(true); location.hash = "#/home";
+  try { localStorage.removeItem("bdaySeen"); localStorage.removeItem("xiaom-celebrated"); } catch (e) {}
+  location.hash = "#/home"; refresh();   // the new birthday changes festKey, so refresh plays it once
 });
 $("ver").textContent = "Studio M Workspace v" + APP_VER + (DEMO ? " (demo)" : "");
 
