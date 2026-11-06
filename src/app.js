@@ -100,8 +100,8 @@ function demoRows() {
   return out;
 }
 function demo(fn, args) {
-  const db = store.get("mDemo5", null) || { rev: 1, shoots: [], settings: {}, team: ["Hang", "Mun", "Michael"],
-    pins: { Hang: "111111", Mun: "222222", Michael: "3333", "小M": "999999" }, roles: { Mun: "admin" }, gmail: { Mun: "mun.studiom@gmail.com" }, rows: demoRows(),
+  const db = store.get("mDemo6", null) || { rev: 1, shoots: [], settings: {}, team: ["Hang", "Mun", "Michael"],
+    pins: { Hang: "111111", Mun: "222222", Michael: "3333", "M": "999999" }, roles: { Mun: "admin" }, gmail: { Mun: "mun.studiom@gmail.com" }, rows: demoRows(),
     pending: [{ id: "p1", name: "Aina", gmail: "aina.films@gmail.com", birthday: "1998-05-02", pin: "444444", at: new Date(Date.now() - 36e5).toISOString(), ip: "175.139.20.11" }],
     log: [{ at: new Date(Date.now() - 36e5).toISOString(), who: "Aina", action: "signed up", target: "Aina", detail: "aina.films@gmail.com", ip: "175.139.20.11", device: "iPhone Safari" },
       { at: new Date(Date.now() - 864e5).toISOString(), who: "Mun", action: "signed in", target: "Mun", detail: "", ip: "60.53.12.4", device: "Mac Chrome" }] };
@@ -114,18 +114,18 @@ function demo(fn, args) {
     db.birthdays = { Hang: "1990-03-12", Mun: "1994-08-21" };
     db.seeded = true;
   }
-  const save = () => { db.rev++; store.set("mDemo5", db); };
-  if (!store.get("mDemo5", null)) store.set("mDemo5", db);
+  const save = () => { db.rev++; store.set("mDemo6", db); };
+  if (!store.get("mDemo6", null)) store.set("mDemo6", db);
   const ok = v => new Promise(r => setTimeout(() => r(v), 120)), no = m => Promise.reject(new Error(m));
   db.pending = db.pending || []; db.log = db.log || []; db.roles = db.roles || {}; db.gmail = db.gmail || {};
   let me = session ? session.name : "";
-  const roleD = n => n === "小M" ? "xiaom" : n === db.team[0] ? "boss" : db.roles[n] === "admin" ? "admin" : "member", rankD = n => ({ member: 1, admin: 2, xiaom: 3, boss: 4 })[roleD(n)];
-  const signersD = () => db.team.concat(db.pins["小M"] ? ["小M"] : []);
+  const roleD = n => n === "M" ? "xiaom" : n === db.team[0] ? "boss" : db.roles[n] === "admin" ? "admin" : "member", rankD = n => ({ member: 1, admin: 2, xiaom: 3, boss: 4 })[roleD(n)];
+  const signersD = () => db.team.concat(db.pins["M"] ? ["M"] : []);
   const logD = (action, target, detail, who) => { db.log.push({ at: new Date().toISOString(), who: who || me, action, target: target || "", detail: detail || "", ip: "203.106.88.17", device: DEV }); if (db.log.length > 300) db.log.shift(); };
   const peopleD = () => ({ me: { name: me, role: roleD(me) }, people: signersD().map(n => ({ name: n, role: roleD(n), hasPin: !!db.pins[n], gmail: rankD(me) >= 2 ? db.gmail[n] || "" : "" })),
     pending: rankD(me) >= 2 ? db.pending.map(({ pin, ...p }) => p) : [] });
   switch (fn) {
-    case "team": return ok({ members: db.team.map(n => ({ name: n, hasPin: !!db.pins[n] })), xiaom: !!db.pins["小M"], studioPin: true, pinLength: 6 });
+    case "team": return ok({ members: db.team.map(n => ({ name: n, hasPin: !!db.pins[n] })), xiaom: !!db.pins["M"], studioPin: true, pinLength: 6 });
     case "login": {
       const [pin, nm] = args, n = nm ? (db.pins[nm] === pin ? nm : "") : signersD().find(x => db.pins[x] === pin);
       if (nm && db.pending.some(p => p.name === nm)) return no("Your sign-up is waiting for approval");
@@ -140,7 +140,7 @@ function demo(fn, args) {
     case "resetPin": {
       const [n, pin, by, byPin] = args;
       if (db.pins[by] !== byPin) { logD("PIN reset refused", n, "wrong PIN for " + by, by); save(); return no("That admin PIN is wrong"); }
-      if (rankD(by) < 2) return no(by + " can't reset PINs (admin, 小M or boss only)");
+      if (rankD(by) < 2) return no(by + " can't reset PINs (admin, M or boss only)");
       if (rankD(n) > rankD(by)) return no(by + " can't reset the PIN of a " + roleD(n));
       db.pins[n] = pin; logD("reset PIN", n, "vouched by " + by, by); save(); me = n; return ok({ name: n, token: "demo", role: roleD(n) });
     }
@@ -163,7 +163,7 @@ function demo(fn, args) {
       if (n === me) return no("You can't remove yourself");
       if (roleD(n) === "boss") return no("Nobody can remove the boss");
       if (rankD(n) >= rankD(me)) return no("You can't remove a " + roleD(n));
-      if (n === "小M") delete db.pins["小M"]; else { db.team = db.team.filter(x => x !== n); delete db.birthdays[n]; delete db.pins[n]; delete db.roles[n]; }
+      if (n === "M") delete db.pins["M"]; else { db.team = db.team.filter(x => x !== n); delete db.birthdays[n]; delete db.pins[n]; delete db.roles[n]; }
       logD("removed", n); save(); return ok(peopleD());
     }
     case "setPinFor": {
@@ -355,7 +355,7 @@ async function loadWho() {
   try { who = await M.api("team"); store.set("mWho", who); } catch (e) { who = store.get("mWho", null); }
   drawWho();
 }
-const signers = () => who ? who.members.filter(m => m.hasPin).map(m => m.name).concat(who.xiaom ? ["小M"] : []) : [];
+const signers = () => who ? who.members.filter(m => m.hasPin).map(m => m.name).concat(who.xiaom ? ["M"] : []) : [];
 function drawWho() { $("lockTitle").textContent = "Enter your PIN"; }
 function drawDots() {
   [...$("dots").children].forEach((d, i) => d.classList.toggle("on", i < entered.length));
@@ -423,7 +423,7 @@ async function openForm(id) {
   if (id === "forgotForm") {
     const has = who.members.filter(m => m.hasPin).map(m => m.name);
     $("fgName").innerHTML = opts(has, me);
-    $("fgBy").innerHTML = `<option value="">Pick who approves</option>` + opts(has.concat(who.xiaom ? ["小M"] : []));
+    $("fgBy").innerHTML = `<option value="">Pick who approves</option>` + opts(has.concat(who.xiaom ? ["M"] : []));
   }
 }
 // an old 4-digit PIN worked: pick the new 6-digit one now (the old one is the "current PIN")
@@ -1544,7 +1544,7 @@ $("bkExport").addEventListener("click", () => {
 // own PIN, and the activity log (admins and above).
 // Roles: boss > 小M > admin > member. The server checks every one of these; the buttons only show what will work.
 let birthdays = {}, memArmed = null, teamOk = false, ppl = null, pplAt = 0, pplOld = false, logRows = null;
-const RANK = { member: 1, admin: 2, xiaom: 3, boss: 4 }, ROLE_NAME = { boss: "Boss", xiaom: "小M", admin: "Admin", member: "Member" };
+const RANK = { member: 1, admin: 2, xiaom: 3, boss: 4 }, ROLE_NAME = { boss: "Boss", xiaom: "M", admin: "Admin", member: "Member" };
 const myRank = () => RANK[(ppl && ppl.me.role) || (data.me && data.me.role) || "member"] || 1;
 const roleOf = n => { const p = ppl && ppl.people.find(x => x.name === n); return p ? p.role : "member"; };
 const canRemove = n => n !== session.name && (pplOld || (roleOf(n) !== "boss" && myRank() >= 2 && RANK[roleOf(n)] < myRank()));
@@ -1595,7 +1595,7 @@ $("reqList").addEventListener("click", async e => {
 // one card per person, highest role first. Edit opens the card's own settings: birthday, role, a new PIN, Remove.
 let editOpen = null;
 const PEN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>';
-const canEdit = n => n === session.name ? n !== "小M" : (canRole(n) || canReset(n) || canRemove(n) || myRank() >= 2);
+const canEdit = n => n === session.name ? n !== "M" : (canRole(n) || canReset(n) || canRemove(n) || myRank() >= 2);
 function cardEditor(p) {
   const n = p.name, bot = p.role === "xiaom", v = birthdays[n] || "", m = /(\d{2})-(\d{2})$/.exec(v), yy = /^(\d{4})-/.exec(v);
   const y0 = new Date().getFullYear(), years = Array.from({ length: 67 }, (_, i) => y0 - 14 - i);
@@ -1629,7 +1629,7 @@ function drawTeam() {
       <div class="bar" aria-hidden="true"><i class="ok" style="flex-grow:${ok}"></i><i class="no" style="flex-grow:${un}"></i>${rs.length ? "" : '<i style="flex-grow:1"></i>'}</div>
       <p class="tm-next">${next ? `Next shoot <a href="#/calendar/${esc(encodeURIComponent(next.d))}">${esc(fmtDay(next.d))}</a>, ${esc(next.s.name)}.` : '<span class="muted">No shoots coming up.</span>'}</p>`;
     return `<article class="tm${n === session.name ? " me" : ""}${bot ? " bot" : ""}${open ? " editing" : ""}" data-n="${esc(n)}" style="--i:${i}">
-      <div class="tm-h"><span class="tm-av r-${ro}">${bot ? "M" : esc(initials(n))}</span><div><span class="tm-name"><b>${esc(n)}</b>${n === session.name ? '<span class="tag">You</span>' : ""}${ro !== "member" ? `<span class="role r-${ro}">${ROLE_NAME[ro]}</span>` : ""}</span><span class="muted small">${bot ? "Studio assistant" : bd ? "Birthday " + esc(bd) : "No birthday yet"}${!bot && p.hasPin === false ? ", no PIN yet" : ""}</span></div>
+      <div class="tm-h"><span class="tm-av r-${ro}">${bot ? "M" : esc(initials(n))}</span><div><span class="tm-name"><b>${esc(n)}</b>${n === session.name ? '<span class="tag">You</span>' : ""}${ro !== "member" && !bot ? `<span class="role r-${ro}">${ROLE_NAME[ro]}</span>` : ""}</span><span class="muted small">${bot ? "Studio assistant" : bd ? "Birthday " + esc(bd) : "No birthday yet"}${!bot && p.hasPin === false ? ", no PIN yet" : ""}</span></div>
         ${canEdit(n) ? `<button type="button" class="ibtn tm-ed" data-ed="${esc(n)}" aria-expanded="${open}" aria-label="Edit ${esc(n)}" title="Edit">${PEN}</button>` : ""}</div>
       ${body}${canEdit(n) ? cardEditor(p) : ""}
     </article>`;
@@ -1639,7 +1639,7 @@ function drawTeam() {
 const drawMembers = () => drawTeam();
 async function saveTeam(members, bd, msg) {
   // never write a team list that didn't come from a good load, or one without you in it: that would wipe the list in Backup too
-  if (!teamOk || !(members.includes(session.name) || session.name === "小M")) { $("memMsg").textContent = "The team list hasn't loaded yet. Try again in a moment."; return; }
+  if (!teamOk || !(members.includes(session.name) || session.name === "M")) { $("memMsg").textContent = "The team list hasn't loaded yet. Try again in a moment."; return; }
   const prevT = team, prevB = birthdays;
   team = members; birthdays = bd; data.team = members; data.birthdays = bd; drawTeam(); drawSide();
   try { await M.api("setTeam", ["", members, bd]); toast(msg); buzz(); pplAt = 0; loadPeople(); }
@@ -1662,7 +1662,7 @@ $("teamGrid").addEventListener("submit", async e => {
     const inp = add.querySelector("input"), n = inp.value.trim().replace(/\s+/g, " ");
     if (!n) return;
     if (team.some(x => x.toLowerCase() === n.toLowerCase())) { $("memMsg").textContent = `${n} is already on the team.`; return; }
-    if (/[,<>"]/.test(n) || n === "小M") { $("memMsg").textContent = "Use letters and spaces only."; return; }
+    if (/[,<>"]/.test(n) || n === "M") { $("memMsg").textContent = "Use letters and spaces only."; return; }
     inp.value = ""; inp.blur(); $("memMsg").textContent = "";
     saveTeam([...team, n], birthdays, `${n} added. They pick a PIN with First time.`); return;
   }

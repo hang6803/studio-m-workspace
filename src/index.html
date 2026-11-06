@@ -76,7 +76,7 @@
   </div>
   <form class="card setup-card" id="forgotForm" hidden>
     <h2>Forgot PIN</h2>
-    <p class="muted small">Ask an admin, the boss or 小M to type their PIN here. Then pick a new one.</p>
+    <p class="muted small">Ask an admin, the boss or M to type their PIN here. Then pick a new one.</p>
     <label>Your name<select id="fgName" required></select></label>
     <label>New PIN (6 digits)<input id="fgPin" type="password" inputmode="numeric" maxlength="6" pattern="\d{6}" required autocomplete="new-password"></label>
     <label>New PIN again<input id="fgPin2" type="password" inputmode="numeric" maxlength="6" pattern="\d{6}" required autocomplete="new-password"></label>
@@ -180,7 +180,7 @@
           <label>New PIN again<input id="pfNew2" type="password" inputmode="numeric" maxlength="6" pattern="\d{6}" required autocomplete="new-password"></label>
           <p class="msg" id="pfMsg"></p><div class="actions"><button class="btn">Change PIN</button></div></form>
         <div class="card tlog" id="teamLog" hidden>
-          <div class="tlog-h"><h3>Activity</h3><span class="muted small">Only admins, 小M and the boss see this. Opening it is recorded too.</span><button type="button" class="btn ghost sm" id="logMore">Refresh</button></div>
+          <div class="tlog-h"><h3>Activity</h3><span class="muted small">Only admins, M and the boss see this. Opening it is recorded too.</span><button type="button" class="btn ghost sm" id="logMore">Refresh</button></div>
           <div class="tlog-list" id="logList"></div></div>
         </div>
       </section>
@@ -213,7 +213,7 @@
 
       <section class="view page" id="v-settings" hidden>
         <div class="card"><h3>Theme</h3><div class="seg" id="themeSeg"><button type="button" data-t="dark">Dark</button><button type="button" data-t="light">Light</button></div></div>
-        <div class="card"><h3>Sound &amp; touch</h3><p class="muted small">A soft sound and a tap you can feel on every press. Sound follows 小M's mute.</p><div class="fx-set"><span>Sound</span><div class="seg" id="sndSeg"><button type="button" data-v="1">On</button><button type="button" data-v="0">Off</button></div><span id="hapLbl">Haptics</span><div class="seg" id="hapSeg"><button type="button" data-v="1">On</button><button type="button" data-v="0">Off</button></div></div></div>
+        <div class="card"><h3>Sound &amp; touch</h3><p class="muted small">A soft sound and a tap you can feel on every press. Sound follows M's mute.</p><div class="fx-set"><span>Sound</span><div class="seg" id="sndSeg"><button type="button" data-v="1">On</button><button type="button" data-v="0">Off</button></div><span id="hapLbl">Haptics</span><div class="seg" id="hapSeg"><button type="button" data-v="1">On</button><button type="button" data-v="0">Off</button></div></div></div>
         <div class="card"><h3>Voice</h3><p class="muted small">Language M listens for when you tap the mic.</p><div class="seg" id="voiceSeg"><button type="button" data-l="zh-CN">中文</button><button type="button" data-l="en-MY">English</button><button type="button" data-l="ms-MY">Melayu</button></div></div>
         <form class="card" id="aiSet"><h3>AI model</h3>
           <label>Provider<select id="aiProv"></select></label>

@@ -1193,3 +1193,11 @@ h1, h2, h3, .tm-name b { text-wrap: balance }
 @media (prefers-reduced-motion: reduce) { .jel { animation: none } body::after { display: none } }
 /* 小M stands on top of a team card: the rows leave room for him so he never covers the card above */
 .team-grid { row-gap: 40px }
+/* the chat box is one field: the textarea inside stays bare, the box around it takes the gentle focus */
+.composer textarea, .composer textarea:focus, .composer textarea:focus-visible, :root .composer #aiIn:focus { border: 0; background: none; box-shadow: none; outline: none; scrollbar-width: none }
+.composer textarea::-webkit-scrollbar { display: none }
+.composer textarea:focus::placeholder { transform: none }
+.composer { border-color: var(--line-soft, var(--line)); transition: border-color .35s ease, box-shadow .45s cubic-bezier(.2, .8, .2, 1), background-color .35s ease }
+.composer:focus-within { border-color: color-mix(in srgb, var(--accent) 38%, var(--line)); background-color: color-mix(in srgb, var(--surface-2) 70%, var(--bg));
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, .14), 0 0 0 4px color-mix(in srgb, var(--accent) 7%, transparent), 0 10px 26px -14px rgba(0, 0, 0, .45) }
+:root[data-theme="dark"] .composer:focus-within { box-shadow: inset 0 1px 3px rgba(0, 0, 0, .55), 0 0 0 4px color-mix(in srgb, var(--accent) 9%, transparent), 0 12px 30px -14px rgba(0, 0, 0, .85) }

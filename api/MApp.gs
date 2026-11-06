@@ -53,7 +53,7 @@ function doPost(e) {
 // Kept in script properties: PIN_SALT, UPIN_<name> (hashed PINs), ROLES {name: role}, PEOPLE {name: {gmail}},
 // PENDING [sign-up requests, each with its hashed PIN], BOSS (optional: who the boss is; else the first on the Team list).
 // 小M's PIN: put XIAOM_PIN (6 digits) in the script properties; on its first use it is hashed and the plain one deleted.
-const XIAOM = "小M";
+const XIAOM = "M";
 const RANK = { member: 1, admin: 2, xiaom: 3, boss: 4 };
 const PIN_RE = /^\d{6}$/, OLD_PIN_RE = /^\d{4}$/;
 function salt_() {
@@ -160,7 +160,7 @@ function resetPin_(name, newPin, byName, byPin) {
   if (!PIN_RE.test(newPin)) throw new Error("PIN is 6 digits");
   if (tooMany_(byName)) throw new Error("Too many tries. Wait 15 minutes.");
   if (!checkWho_(byName, byPin)) { failed_(byName); audit_("PIN reset refused", name, "wrong PIN for " + byName, byName); throw new Error("That admin PIN is wrong"); }
-  if (rank_(byName) < RANK.admin) throw new Error(byName + " can't reset PINs (admin, 小M or boss only)");
+  if (rank_(byName) < RANK.admin) throw new Error(byName + " can't reset PINs (admin, M or boss only)");
   if (rank_(name) > rank_(byName)) throw new Error(byName + " can't reset the PIN of a " + roleOf_(name));
   props_().setProperty("UPIN_" + name, hash_(newPin));
   audit_("reset PIN", name, "vouched by " + byName, byName);
