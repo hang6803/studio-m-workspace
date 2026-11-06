@@ -364,6 +364,7 @@ function markNav() {
   const ind = $("navInd");
   if (on) { ind.style.transform = `translateY(${on.offsetTop}px)`; ind.style.height = on.offsetHeight + "px"; ind.style.opacity = 1; } else ind.style.opacity = 0;
   const tab = { home: "home", calendar: "calendar", backup: "backup", classic: "backup", team: "team", drives: "drives", drive: "drives" }[route.name];
+  document.body.classList.toggle("on-team", route.name === "team");
   document.querySelectorAll("#tabs [data-r]").forEach(a => a.classList.toggle("on", a.dataset.r === tab));
 }
 document.addEventListener("click", e => {
@@ -371,8 +372,10 @@ document.addEventListener("click", e => {
   if (!e.target.closest("#meMenu, #meBtn, #meBtn2")) $("meMenu").hidden = true;
 });
 $("backBtn").addEventListener("click", () => { if (history.length > 1) history.back(); else location.hash = "#/home"; });
-const toggleMenu = () => { $("meMenu").hidden = !$("meMenu").hidden; };
-$("meBtn").addEventListener("click", toggleMenu); $("meBtn2").addEventListener("click", toggleMenu);
+// your profile is the Team page (you, then everyone); log out is right next to it
+const toProfile = () => { if (location.hash !== "#/team") location.hash = "#/team"; };
+$("meBtn").addEventListener("click", toProfile); $("meBtn2").addEventListener("click", toProfile);
+document.querySelectorAll(".logout").forEach(b => b.addEventListener("click", () => { fx("close"); lock("Logged out."); }));
 
 async function refresh() {
   if (session && session.offline) { const c = offlineCopy(); if (c) useCopy(c); drawAll(); return; }

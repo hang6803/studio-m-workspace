@@ -269,7 +269,7 @@ body.m-open .find { border-color: var(--accent) }
   .legend, .g-hint { display: none }
   .pin-card { left: 12px; right: 84px; top: auto; bottom: 12px; width: auto; padding: 12px 14px; gap: 4px }
   .pin-card p + p { display: none } .pin-card .pc-h b { font-size: 16px }
-  .tabs { display: grid; grid-template-columns: repeat(5, 1fr); border-top: 1px solid var(--line); background: var(--bg); padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px)); z-index: 6 }
+  .tabs { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); background: var(--bg); padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px)); z-index: 6 }
   .tabs a, .tabs button { position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 48px; border: 0; background: none; color: var(--muted); font-size: 12px; border-radius: 8px; text-decoration: none }
   .tabs svg { width: 22px; height: 22px; transition: transform .35s var(--spring) }
   .tabs .on { color: var(--accent-text); font-weight: 700 } .tabs .on svg { transform: translateY(-2px) scale(1.08) }
@@ -1015,3 +1015,12 @@ html { touch-action: pan-x pan-y }
 }
 /* phone, scrolled down: 小M sits on the tab bar's top edge */
 .mbtn.docked { position: fixed; left: auto; top: auto; right: 14px; z-index: 26 }
+/* profile = Team, from the avatar; log out sits right next to it */
+.top .top-out { display: none }
+@media (max-width: 899px) { .top .top-me { margin-left: auto } .top .top-out { display: grid; width: 36px; height: 36px; margin-left: 4px } }
+.logout svg { width: 18px; height: 18px }
+
+.avatar { cursor: pointer; transition: transform .3s var(--spring), box-shadow .25s, background .2s }
+.avatar:hover { transform: scale(1.06) }
+body.on-team .avatar { background: var(--accent); color: var(--accent-ink); box-shadow: 0 0 0 4px var(--accent-soft) }
+.side-me { gap: 6px } .side-me .ibtn { width: 34px; height: 34px } .side-me .ibtn svg { width: 17px; height: 17px } .side-me .side-name { min-width: 3ch }
