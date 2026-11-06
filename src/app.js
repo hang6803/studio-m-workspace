@@ -524,7 +524,7 @@ function paint() {
   if (v === "classic") loadBackup(); else if (v === "backup" && !backupLoaded) (window.requestIdleCallback || (g => setTimeout(g, 600)))(() => { if (session) loadBackup(); }, { timeout: 1500 });   // after the list has drawn   // Backup saves through Classic Backup, kept ready in the background
   if (v === "team") { if (shownView !== "team") { $("teamLog").hidden = true; loadPeople(true).then(loadLog); } drawTeam(); }
   shownView = v;
-  if (v === "settings") { drawTheme(); drawAI(); drawVoice(); drawFx(); drawFest(); }
+  if (v === "settings") { drawTheme(); drawAI(); drawVoice(); drawFx(); drawFest(); drawLearn(); }
 }
 function markNav() {
   const key = route.name === "drive" || route.name === "editor" ? route.name + ":" + route.key : route.name === "job" ? "" : route.name === "classic" ? "backup" : route.name;
@@ -1816,7 +1816,7 @@ ${found.join("\n") || "none matched; ask them for the event name, couple's name,
 // Streams the reply (Server-Sent Events) and calls onText with the text so far; falls back to one plain reply
 async function callModel(messages, onText, signal) {
   if (!DEMO) return callServer(messages, onText, signal);
-  try { return await callServer(messages, onText, signal); } catch (e) { if (signal && signal.aborted) throw e; return fakeModel(messages, onText, signal); }
+  try { return await callServer(messages, onText, signal); } catch (e) { if (signal && signal.aborted) throw e; throw Object.assign(new Error("demo"), { local: false }); }
 }
 // DeepSeek through MApp.gs: one reply, written out quickly so it still reads as M typing
 async function callStudio(messages, onText, signal) {
@@ -1829,34 +1829,6 @@ async function callStudio(messages, onText, signal) {
     onText(chars.slice(0, k).join("")); await new Promise(r => setTimeout(r, 16));
   }
   onText(full); return full;
-}
-// Demo only: when no model server is reachable, M answers from a few canned replies so the app can be tried anywhere
-async function fakeModel(messages, onText, signal) {
-  const q = String(messages[messages.length - 1].content || ""), zh = /[一-鿿]/.test(q), d = new Date();
-  d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7 || 7));
-  const day = ymd(d), found = findJobs(q, 3);
-  let out;
-  if (/shoot|wedding|拍|婚|活动|event/i.test(q) && !/where|哪/i.test(q)) {
-    const name = (q.match(/(?:shoot[:：]?|拍)\s*([^,，。\n]{2,40})/i) || [])[1] || (zh ? "婚礼拍摄" : "Wedding shoot");
-    out = (zh ? "好，帮你排好了，确认一下：\n" : "Got it. Check this and tap Add:\n") + "```shoot\n" +
-      JSON.stringify({ name: name.trim(), dates: [day], location: zh ? "吉隆坡" : "Kuala Lumpur", type: "both", crew: [session.name], notes: "" }) + "\n```";
-  } else if (found.length) {
-    const r = found[0];
-    out = (zh ? `**${r.name}** 在 ${r.drive || "（没写硬盘）"}，${r.editor || "没人"} 剪的。` : `**${r.name}** is on ${r.drive || "no drive yet"}, edited by ${r.editor || "nobody yet"}. `) +
-      (unbacked(r) ? (zh ? "还没备份。" : "It is not backed up yet.") : (zh ? "已经备份了。" : "It is backed up."));
-  } else if (/back|备份/i.test(q)) {
-    const lines = rowsOf(String(new Date().getFullYear())).filter(unbacked).slice(0, 6).map(r => `- ${r.name} (${sectionOf(r)}, ${r.editor || "-"}, ${r.drive || "-"})`);
-    out = lines.length ? (zh ? "还没备份的：\n" : "Not backed up yet:\n") + lines.join("\n") : (zh ? "全部都备份好了 👍" : "Everything is backed up 👍");
-  } else {
-    out = zh ? `嗨 ${session.name}！这是 **demo 模式**，我是模拟回复。\n- 说「拍 Tan & Lim 婚礼」试试加 shoot\n- 问「Rinjani 在哪个硬盘？」` :
-      `Hi ${session.name}! This is **demo mode**, so my replies are canned.\n- Try "Add a shoot: Tan & Lim wedding"\n- Or ask "Where is Rinjani?"`;
-  }
-  let text = "";
-  for (const ch of Array.from(out)) {
-    if (signal && signal.aborted) throw new DOMException("Aborted", "AbortError");
-    text += ch; onText(text); await new Promise(r => setTimeout(r, 18));
-  }
-  return text;
 }
 async function callServer(messages, onText, signal) {
   const c = aiCfg();
@@ -1886,12 +1858,144 @@ async function callServer(messages, onText, signal) {
   }
   return text;
 }
+// ---------------------------------------------------------------- M offline: learns from every AI answer
+// Each time the AI handles a request, M keeps (on this device) what kind of request it was and the words that went
+// with it: places from the shoots it set up, names people use. With no internet, or when the AI can't be reached,
+// M answers from that and from the data already on the phone: what isn't backed up, upcoming shoots, where a job
+// is, and a shoot card to add (saving it still needs the server). Answers are always worked out from today's data,
+// never replayed from old replies.
+const LEARN_KEY = "mLearn";
+const learnDb = () => { const d = store.get(LEARN_KEY, null) || {}; d.ex = d.ex || []; d.loc = d.loc || []; d.nick = d.nick || {}; return d; };
+const normQ = t => String(t || "").toLowerCase().replace(/\d{4}-\d{2}-\d{2}|\d+/g, "#").replace(/[^\p{L}#& ]+/gu, " ").replace(/\s+/g, " ").trim();
+const grams = t => { const s = normQ(t).replace(/ /g, ""), g = new Set(); for (let i = 0; i < s.length - 1; i++) g.add(s.slice(i, i + 2)); return g; };
+const dice = (a, b) => { if (!a.size || !b.size) return 0; let n = 0; a.forEach(x => { if (b.has(x)) n++; }); return 2 * n / (a.size + b.size); };
+const isZh = t => /[一-鿿]/.test(t);
+const RULES = [
+  ["add", /\b(add|book|schedule|new shoot|set up a shoot)\b|加(个|一个)?(shoot|拍摄|行程)|安排|排(个|一个)|帮我(加|排)|要拍|去拍|新(的)?(shoot|拍摄)/i],
+  ["unbacked", /not backed|n'?t backed|unbacked|haven'?t backed|backup|back up|没(有)?备份|未备份|还没备|备份/i],
+  ["shoots", /shoots?\b|schedule|calendar|this week|next week|tomorrow|today|拍摄|行程|日程|这周|本周|下周|明天|今天|后天|几号拍/i],
+  ["find", /where|which drive|find|哪(个|里|颗)|在哪|硬盘|找/i]
+];
+function learnFrom(q, reply) {
+  if (!q || !reply) return;
+  const d = learnDb(), sm = reply.match(SHOOT_RE); let intent = "";
+  if (sm) {
+    intent = "add";
+    try { const o = JSON.parse(sm[1]); if (o.location && !d.loc.includes(o.location)) d.loc.unshift(o.location);
+      (o.crew || []).forEach(n => { const m = q.match(new RegExp("([\\p{L}]{1,6})" + "(?=[,，、和 ]|$)", "gu")) || []; m.forEach(w => { if (w !== n && !team.includes(w) && w.length <= 4 && q.includes(w) && /^阿|^小|仔$/.test(w)) d.nick[w] = n; }); });
+    } catch (e) {}
+  } else {
+    const year = String(new Date().getFullYear()), low = reply.toLowerCase();
+    const unb = rowsOf(year).filter(unbacked).filter(r => low.includes(String(r.name).toLowerCase())).length;
+    const sh = shoots.filter(s => low.includes(String(s.name).toLowerCase())).length;
+    const fj = findJobs(q, 5).filter(r => low.includes(String(r.name).toLowerCase())).length;
+    intent = unb >= 2 ? "unbacked" : sh ? "shoots" : fj ? "find" : "";
+  }
+  if (!intent) return;
+  d.ex = [{ t: q.slice(0, 160), i: intent, at: Date.now() }, ...d.ex.filter(x => normQ(x.t) !== normQ(q))].slice(0, 400);
+  d.loc = d.loc.slice(0, 60);
+  store.set(LEARN_KEY, d); drawLearn();
+}
+function intentOf(q) {
+  const d = learnDb(), g = grams(q); let best = null, sim = 0;
+  d.ex.forEach(x => { const s = dice(g, grams(x.t)); if (s > sim) { sim = s; best = x; } });
+  if (best && sim >= .62) return best.i;   // said like something the AI handled before
+  if (datesIn(q).length && /拍|shoot|婚礼|wedding|活动|发布会|gala|event|launch|dinner|party|晚宴/i.test(q) && !/[?？]|什么|哪|几|where|which|what|when|any/i.test(q)) return "add";
+  for (const [k, re] of RULES) if (re.test(q)) return k;
+  if (best && sim >= .45) return best.i;
+  return findJobs(q, 1).length ? "find" : "help";
+}
+// people named in the text: team names, learned nicknames, and "me / 我"
+function namesIn(q) {
+  const d = learnDb(), low = q.toLowerCase(), out = team.filter(n => low.includes(n.toLowerCase()));
+  Object.entries(d.nick).forEach(([w, n]) => { if (q.includes(w) && team.includes(n) && !out.includes(n)) out.push(n); });
+  if (/\b(me|my|mine|i)\b|我/i.test(q) && session && !out.includes(session.name)) out.push(session.name);
+  return out;
+}
+// dates in plain words: today, tomorrow, next Saturday, 下周六, 12月5日, 5 Dec, 2026-12-05, "5 to 7 Dec", 5号到7号
+const WDX = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 }, ZWD = { 日: 0, 天: 0, 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6 };
+function datesIn(q) {
+  const t0 = new Date(); t0.setHours(12, 0, 0, 0);
+  const at = (y, m, d) => { const x = new Date(y, m, d, 12); return x.getMonth() === m ? x : null; };
+  const fut = (m, d) => { const y = t0.getFullYear(); let x = at(y, m, d); if (x && x < new Date(t0.getTime() - 864e5 * 30)) x = at(y + 1, m, d); return x; };
+  const plus = n => { const x = new Date(t0); x.setDate(x.getDate() + n); return x; };
+  const range = (a, b) => { const out = []; if (!a || !b || b < a) return a ? [a] : []; for (let x = new Date(a); x <= b && out.length < 14; x.setDate(x.getDate() + 1)) out.push(new Date(x)); return out; };
+  const low = q.toLowerCase(); let m;
+  if ((m = low.match(/(\d{4})-(\d{1,2})-(\d{1,2})(?:\s*(?:to|-|–|到|至|~)\s*(\d{4})-(\d{1,2})-(\d{1,2}))?/))) return range(at(+m[1], m[2] - 1, +m[3]), m[4] ? at(+m[4], m[5] - 1, +m[6]) : at(+m[1], m[2] - 1, +m[3]));
+  if ((m = q.match(/(\d{1,2})月(\d{1,2})[日号]?(?:\s*(?:到|至|-|–|~)\s*(?:(\d{1,2})月)?(\d{1,2})[日号]?)?/))) { const a = fut(m[1] - 1, +m[2]); return range(a, m[4] ? fut((m[3] || m[1]) - 1, +m[4]) : a); }
+  const MM = "jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec";
+  if ((m = low.match(new RegExp(`(\\d{1,2})(?:\\s*(?:-|–|to)\\s*(\\d{1,2}))?\\s*(${MM})[a-z]*`)))) { const mo = MM.split("|").indexOf(m[3]), a = fut(mo, +m[1]); return range(a, m[2] ? fut(mo, +m[2]) : a); }
+  if ((m = low.match(new RegExp(`(${MM})[a-z]*\\s*(\\d{1,2})(?:\\s*(?:-|–|to)\\s*(\\d{1,2}))?`)))) { const mo = MM.split("|").indexOf(m[1]), a = fut(mo, +m[2]); return range(a, m[3] ? fut(mo, +m[3]) : a); }
+  if ((m = q.match(/(\d{1,2})[号日](?:\s*(?:到|至|-|~)\s*(\d{1,2})[号日]?)?/))) { const dd = +m[1], mo = dd < t0.getDate() ? t0.getMonth() + 1 : t0.getMonth(), a = at(t0.getFullYear() + (mo > 11 ? 1 : 0), mo % 12, dd); return range(a, m[2] ? at(a.getFullYear(), a.getMonth(), +m[2]) : a); }
+  if (/day after tomorrow|后天/.test(low)) return [plus(2)];
+  if (/tomorrow|明天/.test(low)) return [plus(1)];
+  if (/today|今天/.test(low)) return [plus(0)];
+  const wk = (w, next) => { let n = (w - t0.getDay() + 7) % 7; if (next) n += n === 0 ? 7 : (7 - ((t0.getDay() + 6) % 7)) <= n ? 0 : 7; if (!next && n === 0) n = 0; return plus(n); };
+  if ((m = low.match(/(next|this)?\s*(sun|mon|tue|wed|thu|fri|sat)[a-z]*/))) return [wk(WDX[m[2]], m[1] === "next")];
+  if ((m = q.match(/(下|这|本)?(?:周|星期|礼拜)([日天一二三四五六])/))) return [wk(ZWD[m[2]], m[1] === "下")];
+  return [];
+}
+// the span someone asks about: this week, next week, this month, or the next two weeks
+function spanIn(q) {
+  const t = new Date(), mon = new Date(t); mon.setDate(t.getDate() - (t.getDay() + 6) % 7);
+  const add = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+  if (/next week|下(个)?(周|星期|礼拜)/i.test(q)) return [add(mon, 7), add(mon, 13), isZh(q) ? "下周" : "next week"];
+  if (/this week|这(个)?(周|星期|礼拜)|本周/i.test(q)) return [t, add(mon, 6), isZh(q) ? "这周" : "this week"];
+  if (/this month|这个月|本月/i.test(q)) return [t, new Date(t.getFullYear(), t.getMonth() + 1, 0), isZh(q) ? "这个月" : "this month"];
+  const ds = datesIn(q); if (ds.length) return [ds[0], ds[ds.length - 1], ds.length > 1 ? `${fmtDay(ymd(ds[0]))}–${fmtDay(ymd(ds[ds.length - 1]))}` : fmtDay(ymd(ds[0]))];
+  return [t, add(t, 13), isZh(q) ? "接下来两周" : "the next two weeks"];
+}
+const jobLink = r => `[${r.name}](#/job/${encodeURIComponent(r.id)})`;
+function localM(q) {
+  const zh = isZh(q), who = namesIn(q), it = intentOf(q), year = (q.match(/\b(20\d\d)\b/) || [])[1] || String(new Date().getFullYear());
+  if (it === "unbacked") {
+    let rs = rowsOf(year).filter(unbacked); const drv = (q.match(/\bm\s?(\d)\b/i) || [])[1];
+    if (who.length) rs = rs.filter(r => who.includes(r.editor)); if (drv) rs = rs.filter(r => new RegExp("^M" + drv + "\\b", "i").test(r.drive || ""));
+    const head = who.length ? who.join(", ") + " " : "";
+    if (!rs.length) return zh ? `${head}${year} 年都备份好了 👍` : `${head ? head + "has" : "Everything in " + year + " is"} backed up 👍`;
+    return (zh ? `${head}${year} 年还有 ${rs.length} 个没备份：\n` : `${rs.length} not backed up in ${year}${head ? " for " + head.trim() : ""}:\n`) +
+      rs.slice(0, 12).map(r => `- ${jobLink(r)} (${sectionOf(r)}, ${r.editor || "-"}, ${r.drive || (zh ? "没写硬盘" : "no drive")})`).join("\n") + (rs.length > 12 ? (zh ? `\n…还有 ${rs.length - 12} 个，在 [Not backed up](#/unbacked) 看全部。` : `\n…and ${rs.length - 12} more in [Not backed up](#/unbacked).`) : "");
+  }
+  if (it === "shoots") {
+    const [a, b, label] = spanIn(q), A = ymd(a), B = ymd(b);
+    let ss = shoots.filter(s => datesOf(s).some(d => d >= A && d <= B)); if (who.length) ss = ss.filter(s => crewOf(s).some(n => who.includes(n)));
+    ss.sort((x, y) => (datesOf(x).find(d => d >= A) || "").localeCompare(datesOf(y).find(d => d >= A) || ""));
+    if (!ss.length) return zh ? `${label}没有拍摄${who.length ? "（" + who.join("、") + "）" : ""}。` : `No shoots ${label}${who.length ? " for " + who.join(", ") : ""}.`;
+    return (zh ? `${label}的拍摄：\n` : `Shoots ${label}:\n`) + ss.map(s => { const d = datesOf(s).filter(x => x >= A && x <= B);
+      return `- [${fmtDay(d[0])}](#/calendar/${d[0]})${d.length > 1 ? "–" + fmtDay(d[d.length - 1]) : ""} **${s.name}**${s.location ? ", " + s.location : ""} (${crewOf(s).join(", ") || "-"})`; }).join("\n");
+  }
+  if (it === "find") {
+    const rs = findJobs(q, 6);
+    if (!rs.length) return zh ? "没找到。告诉我活动名、新人名字、硬盘或剪辑师，我再找。" : "Nothing matched. Tell me the event, the couple's names, the drive or the editor.";
+    return rs.map(r => `- ${jobLink(r)}: ${r.drive || (zh ? "没写硬盘" : "no drive yet")}, ${r.editor || "-"}, ${unbacked(r) ? (zh ? "**还没备份**" : "**not backed up**") : (zh ? "已备份" : "backed up")}`).join("\n");
+  }
+  if (it === "add") {
+    const d = learnDb(), ds = datesIn(q).map(ymd);
+    const locM = q.match(/(?:\bat\b|\bin\b|在)\s*([^\s,，。.;；]{2,30}(?:\s[A-Z][^\s,，。]*)?)/), loc = (locM && locM[1]) || d.loc.find(l => q.toLowerCase().includes(l.toLowerCase())) || "";
+    const type = /video|录像|视频|摄像/i.test(q) && !/photo|照片|拍照|摄影/i.test(q) ? "video" : /photo|照片|拍照/i.test(q) && !/video|视频|录像/i.test(q) ? "photo" : "both";
+    let name = q.replace(/(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}月\d{1,2}[日号]?|\d{1,2}[号日]|(下|这|本)?(周|星期|礼拜)[日天一二三四五六]|明天|后天|今天|tomorrow|today|(next|this)\s*\w+day|\d{1,2}\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*)/gi, " ")
+      .replace(/\b(add|book|schedule|a|an|the|shoot|new|please|on|for|with|and|to)\b|帮我|帮忙|加(个|一个)?|安排|排(个|一个)?|要拍|去拍|拍摄|行程|一个|个|和|跟|到|至|拍/gi, " ");
+    if (loc) name = name.replace(loc, " ").replace(/\bat\b|\bin\b|在/g, " ");
+    who.forEach(n => { name = name.replace(new RegExp(n, "ig"), " "); }); Object.keys(d.nick).forEach(w => { name = name.replace(w, " "); });
+    name = name.replace(/\b(video|photo|me|my|i)\b|视频|录像|照片|拍照|我/gi, " ").replace(/[,，。.:：;；]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 50);
+    const card = { name: name || (zh ? "新拍摄" : "New shoot"), dates: ds, location: loc, type, crew: who.length ? who : [session.name], notes: "" };
+    return (zh ? (ds.length ? "好，帮你排好了，确认一下：" : "日期没听清楚，点 Edit 选日期：") : (ds.length ? "Got it. Check this and tap Add:" : "I couldn't catch the date. Tap Edit to pick it:")) + "\n```shoot\n" + JSON.stringify(card) + "\n```";
+  }
+  const hits = findJobs(q, 4);
+  if (hits.length) return (zh ? "可能是这些：\n" : "Maybe one of these:\n") + hits.map(r => `- ${jobLink(r)} (${r.drive || "-"})`).join("\n");
+  return zh ? "我现在离线，可以帮你：\n- 看还没备份的（「Mun 还有哪些没备份」）\n- 看拍摄（「下周拍什么」）\n- 找资料在哪个硬盘（「Rinjani 在哪」）\n- 加拍摄（「12月5日 在 Ipoh 拍 Lim 婚礼」）"
+    : "I'm offline right now, but I can still:\n- list what isn't backed up (\"what has Mun not backed up?\")\n- show shoots (\"shoots next week\")\n- find a job's drive (\"where is Rinjani?\")\n- set up a shoot (\"Lim wedding on 5 Dec at Ipoh\")";
+}
+function drawLearn() { const el = $("learnN"); if (!el) return; const n = learnDb().ex.length;
+  el.textContent = n ? `M has learned from ${n} of your requests, so it can still answer offline or when the AI is down.` : "M learns from each request you make, so it can still answer offline or when the AI is down."; }
+
 // Small Markdown: code blocks, inline code, bold, italic, headings, lists, links. Everything is escaped first.
 function md(src) {
   const blocks = [];
   let t = esc(src).replace(/```(\w*)\n?([\s\S]*?)(```|$)/g, (m, lang, code) => { blocks.push(`<pre><code>${code.replace(/\n$/, "")}</code></pre>`); return `\u0000${blocks.length - 1}\u0000`; });
   const inline = x => x.replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<i>$2</i>")
-    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/\[([^\]]+)\]\((#\/[^)\s]+)\)/g, '<a href="$2">$1</a>');
   const out = []; let list = null;
   const close = () => { if (list) { out.push(`</${list}>`); list = null; } };
   for (const line of t.split("\n")) {
@@ -2061,8 +2165,27 @@ function perchWant() {
   if (perch.st > 0) { const els = stationEls(); if (els[perch.st]) return [els[perch.st], true, true]; perch.st = 0; }
   const w = PERCH[shownView]; return w && [document.querySelector(w[0]), w[1]];
 }
+// Sitting on a card, 小M lives inside the scrolling page, so a jump above the page's top edge was cut off under the top
+// bar. While he jumps (any one-off move of his), he is lifted out to the top layer on the same spot, then set back.
+let liftT = 0;
+function unliftM() { clearTimeout(liftT); if (!MBTN.classList.contains("lifted")) return; MBTN.classList.remove("lifted"); ["position", "left", "top", "right", "bottom", "width", "height", "zIndex"].forEach(k => { MBTN.style[k] = ""; }); }
+function liftM(ms) {
+  if (!MBTN.classList.contains("perched") || MBTN.hidden) return;
+  if (!MBTN.classList.contains("lifted")) {
+    const r = MBTN.getBoundingClientRect(); if (!r.width) return;
+    Object.assign(MBTN.style, { position: "fixed", left: r.left + "px", top: r.top + "px", right: "auto", bottom: "auto", width: r.width + "px", height: r.height + "px", zIndex: 31 });
+    MBTN.classList.add("lifted");
+    const v = $("views"), back = () => unliftM(); v.addEventListener("scroll", back, { once: true, passive: true });   // scrolling: back on his card at once
+  }
+  clearTimeout(liftT); liftT = setTimeout(unliftM, Math.min(4000, (ms || 1200) + 120));
+}
+MBTN.addEventListener("animationstart", e => { const cs = getComputedStyle(e.target); if (cs.animationIterationCount.includes("infinite")) return;
+  liftM(Math.max(...cs.animationDuration.split(",").map(x => parseFloat(x) * (x.includes("ms") ? 1 : 1000))) || 1200); });
+{ const an = MBTN.animate.bind(MBTN); MBTN.animate = (k, o) => { const a = an(k, o); const ms = typeof o === "number" ? o : o && (o.duration || 0) + (o.delay || 0);
+  requestAnimationFrame(() => { if (MBTN.classList.contains("perched")) liftM(ms); }); return a; }; }
 function perch(from, how) {
   const b = MBTN; if (!b.isConnected) document.body.appendChild(b);
+  unliftM();
   if (b.hidden || mOpen) return;
   if (b.getAnimations().some(a => a.playState === "running") && !from) return;   // mid-jump: a redraw doesn't move him
   // a pop-up is open: he sits on its top edge
@@ -2411,14 +2534,19 @@ async function ask(text) {
   const ctl = new AbortController(); streaming = ctl;
   try {
     const history = cur.msgs.slice(0, -1).slice(-12).map(m => ({ role: m.role, content: m.content }));
+    if (navigator.onLine === false || (session && session.offline)) throw Object.assign(new Error("offline"), { local: true });
     await callModel([{ role: "system", content: aiSystem(text) }, ...history], t => {
       bot.content = t; fillBot(d, bot, i, true);
       const th = $("thread"); if (th.scrollHeight - th.scrollTop - th.clientHeight < 160) th.scrollTop = th.scrollHeight;
     }, ctl.signal);
-    mood("happy");
+    mood("happy"); if (!DEMO) learnFrom(text, bot.content);
   } catch (e) {
     if (e.name === "AbortError") { if (!bot.content) bot.content = "_Stopped._"; }
-    else { bot.error = `Couldn't reach ${(AI_PROVIDERS[aiCfg().prov] || AI_PROVIDERS.custom).label} (${e.message}).`; mood("huh"); }
+    else {   // no internet, or the AI is down: M answers from what it has learned and the data on this device
+      const zh = isZh(text);
+      bot.content = localM(text) + "\n\n_" + (e.local ? (zh ? "离线回答，用的是手机里的资料。" : "Offline answer, from the data on this phone.") : DEMO ? (zh ? "Demo 模式：这是 M 自己的离线回答。" : "Demo mode: this is M's own offline answer.") : (zh ? "AI 暂时连不上，这是我自己学过的回答。" : "The AI can't be reached right now, so this is M's own answer.")) + "_";
+      bot.local = true; fillBot(d, bot, i, false); mood("happy");
+    }
   }
   streaming = null; setSending(false);
   fillBot(d, bot, i, false); saveChats(); drawChats(); scrollEnd();

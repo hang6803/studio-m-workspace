@@ -11,7 +11,7 @@ const SESSION_TTL = 21600;   // 6 hours, the longest CacheService keeps a value;
 
 // Reads need a signed-in person. Writes also need one; the studio PIN (first argument of each Code.gs write) is
 // filled in here, so people only ever type their own PIN.
-const API_READ = { getAll: getAll, getRev: getRev, getJob: getJob, getShoots: getShoots, addFeedback: addFeedback, ask: ask_, aiStatus: aiStatus_,
+const API_READ = { getAll: getAll, getRev: getRev, getJob: getJob_, getShoots: getShoots, addFeedback: addFeedback, ask: ask_, aiStatus: aiStatus_,
   people: people_, approve: approve_, reject: reject_, setRole: setRole_, removeMember: removeMember_, auditLog: auditLog_, setPinFor: setPinFor_ };
 const API_WRITE = { saveJob: saveJob, deleteJob: deleteJob, setTeam: setTeamGuarded_, setSetting: setSetting,
   saveShoot: saveShoot, deleteShoot: deleteShoot };
@@ -283,6 +283,9 @@ function auditLog_(limit) {
   return sh.getRange(from, 1, last - from + 1, AUDIT_COLS.length).getDisplayValues().reverse()
     .map(r => ({ at: r[0], who: r[1], action: r[2], target: r[3], detail: r[4], ip: r[5], device: r[6] }));
 }
+
+// One job by id (Code.gs has no getJob of its own)
+function getJob_(id) { id = String(id || ""); return (getAll().rows || []).find(r => String(r.id) === id) || null; }
 
 // ---- Shoot days (the M app calendar) ----
 // One row per shoot. dates = "YYYY-MM-DD" values joined by ","; crew = team names joined by ",";
