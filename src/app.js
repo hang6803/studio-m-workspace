@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.4";
+const APP_VER = "0.9.5";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
@@ -330,6 +330,26 @@ async function slow(work) {
   finally { clearTimeout(t); if (shown) { b.classList.add("breathe"); setTimeout(() => { if (b.classList.contains("breathe")) b.hidden = true; }, 1500); } }
 }
 
+// After the PIN the loading stays up until Home is whole: the data is in and the graph has drawn it (settled, every dot
+// there). Then it breathes out onto the finished graph, which takes one small zoom-out breath. 8 s at most.
+let graphReady = null, booting = false;
+function holdBoot() {
+  const b = $("boot"); booting = true;
+  b.classList.remove("breathe"); b.hidden = false;
+  let done = false;
+  const out = () => {
+    if (done) return; done = true; booting = false; graphReady = null; clearTimeout(cap);
+    if (!session) return;
+    b.classList.add("breathe"); setTimeout(() => { if (b.classList.contains("breathe")) b.hidden = true; }, 1500);
+    if (route.name === "home" && graph) setTimeout(() => graph.reset(), 650);   // the graph breathes as the loading lifts
+  };
+  const cap = setTimeout(out, 8000);
+  return () => {   // the data is in
+    if (route.name !== "home" || !graph || !(data.rows || []).length) { out(); return; }
+    const want = graph.seq; graphReady = q => { if (q >= want) out(); };
+  };
+}
+
 // ---------------------------------------------------------------- offline (the phone app with no connection)
 // After a PIN works online, this device keeps a scrambled copy of it and the last data it loaded, so with no
 // connection the same PIN still opens the app and shows that data (view only). Back online, the PIN is asked
@@ -483,9 +503,10 @@ function unlock() {
   $("meBtn").textContent = $("meBtn2").textContent = session.name[0].toUpperCase();
   $("menuName").textContent = $("sideName").textContent = session.name;
   $("demoBadge").hidden = !DEMO;
-  if (!graph) graph = Graph3D($("graph"), { onPin: drawPin, onOpen: n => { location.hash = hrefOf(n); } });
+  if (!graph) graph = Graph3D($("graph"), { onPin: drawPin, onOpen: n => { location.hash = hrefOf(n); }, onReady: q => graphReady && graphReady(q) });
   if (!location.hash || location.hash === "#/") history.replaceState(null, "", "#/home");
-  showM(); drawAll(); render(true); refresh();   // festivals / birthdays start once the first refresh brings the birthdays (festAfterData)
+  const loaded = holdBoot();
+  showM(); drawAll(); render(true); refresh().then(loaded);   // festivals / birthdays start once the first refresh brings the birthdays (festAfterData)
 }
 function parse(h) {
   const p = String(h || "").replace(/^#\/?/, "").split("/").map(s => { try { return decodeURIComponent(s); } catch (e) { return s; } });
@@ -516,7 +537,7 @@ function paint() {
   $("topTitle").textContent = route.name === "drive" ? dName(route.key) : route.name === "editor" ? route.key : route.name === "job" ? "Job" : TITLES[route.name] || "";
   document.body.dataset.route = route.name;
   markNav();
-  if (v === "home") { graph.start(); graph.theme(); graph.reset(); } else if (graph) graph.stop();
+  if (v === "home") { graph.start(); graph.theme(); if (!booting) graph.reset(); } else if (graph) graph.stop();
   if (v === "list") { const lk = route.name + ":" + route.key; if (lk !== drawList.key) { drawList.key = lk; listUn = false; } drawList(); }
   if (v === "job") drawJob();
   if (v === "calendar") { if (route.key && parseYmd(route.key)) { selDay = route.key; const d = parseYmd(route.key); calY = d.getFullYear(); calM = d.getMonth(); } drawCal(); }
@@ -608,7 +629,7 @@ function drawHome() {
   const b = next ? ` Your next shoot is <a href="#/calendar/${esc(encodeURIComponent(next.d))}">${esc(fmtDay(next.d))}</a>, ${esc(next.s.name)}.` : " No shoots on your calendar yet.";
   $("sum").innerHTML = a + b;
   drawYear(false);
-  if (graph) { const gd = graphData(gYear), k = gYear + JSON.stringify(gd); if (k !== gKey) { gKey = k; graph.setData(gd); drawPin(graph.pinned); } }
+  if (graph) { const gd = graphData(gYear), k = gYear + JSON.stringify(gd); if (k !== gKey) { gKey = k; graph.setData(gd, booting); drawPin(graph.pinned); } }
 }
 // nodes: drives and editors of the year, every job row of the year, and upcoming shoots not made into a job yet
 function graphData(y) {
