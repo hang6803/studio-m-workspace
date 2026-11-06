@@ -1212,7 +1212,7 @@ h1, h2, h3, .tm-name b { text-wrap: balance }
 /* the light layer sits over the whole app and only brightens (soft light): blacks stay black, lit things glow */
 .light { position: fixed; inset: 0; z-index: 27; pointer-events: none; mix-blend-mode: soft-light; overflow: hidden; contain: strict }
 .light .key { position: absolute; inset: 0; background: radial-gradient(75% 60% at 88% -6%, var(--key), transparent 70%), radial-gradient(60% 45% at 10% 108%, rgba(120, 150, 220, .22), transparent 70%) }
-.light .lamp { position: absolute; left: 0; top: 0; width: 760px; height: 760px; margin: -380px 0 0 -380px; border-radius: 50%;
+.light .lamp { position: absolute; left: 0; top: 0; width: 300px; height: 300px; margin: -150px 0 0 -150px; border-radius: 50%;
   background: radial-gradient(closest-side, var(--lamp), rgba(255, 200, 150, .18) 45%, transparent 100%); opacity: 0; transition: opacity .6s ease;
   transform: translate3d(var(--mx, 50vw), var(--my, 40vh), 0); will-change: transform }
 body.lamp-on .light .lamp { opacity: 1 }
