@@ -21,6 +21,7 @@
     let col = {};
     // camera: orbit around (tx,ty,tz)
     const cam = { yaw: 0.6, pitch: -0.32, dist: 620, tx: 0, ty: 0, tz: 0, gDist: 620, zoom: 1, fit: 300 };
+    let wantReady = false, readySeq = 0;   // say "ready" (with which data) after the first frame drawn with new data
     let alpha = 0;                 // layout heat: 1 = moving a lot, 0 = settled
     let hover = null, pinned = null, idleAt = 0, filter = null, fly = null;
     const ptrs = new Map(); let drag = null, pinch = 0, moved = 0, lastTap = { id: null, t: 0 };
@@ -48,8 +49,8 @@
     const radiusOf = n => n.kind === "drive" ? 15 : n.kind === "editor" ? 12 : 5;
 
     // ---------------------------------------------------------------- data
-    function setData(d) {
-      const old = byId;
+    function setData(d, whole, seq) {
+      const old = byId; readySeq = seq;
       nodes = d.nodes.map(n => {
         const o = old.get(n.id);
         const nn = Object.assign({}, n, { r: radiusOf(n), vx: 0, vy: 0, vz: 0, lit: o ? o.lit : 0, show: o ? o.show : 0, seen: !!o });
@@ -66,8 +67,13 @@
       else if (pinned) pinned = byId.get(pinned.id);
       hover = null;
       alpha = 1;
-      const warm = still ? 320 : (old.size ? 30 : 60);   // the rest of the settling is shown, so it unfolds in front of you
+      // the first data comes while the Studio M loading still covers the screen: settle it there and show every dot, so
+      // when the loading breathes out the graph is already whole. Later data (a new year) unfolds in front of you.
+      const first = whole || !old.size;
+      if (first) nodes.forEach(n => { n.show = 1; n.seen = true; });
+      const warm = still ? 320 : first ? 300 : 30;
       for (let i = 0; i < warm; i++) step(1 / 60, true);
+      wantReady = true;
       refit();
       kick();
     }
@@ -245,6 +251,7 @@
       cam.dist += (gd - cam.dist) * ease(dt, fly ? 6 : 3);
       if (!still && !drag && !pinned && !hover && now - idleAt > 3500) cam.yaw += dt * 0.07;   // slow turn while idle
       draw(dt, now);
+      if (wantReady) { wantReady = false; emit("ready", readySeq); }
       if (fly && (now - fly.t0 > 520)) { const f = fly; fly = null; f.done && f.done(); }
       // keep drawing while anything moves; with reduced motion it rests 1.5 s after the last touch
       const busy = !still || alpha > 0 || drag || fly || now - idleAt < 1500 || now - kickAt < 1500;
@@ -315,7 +322,7 @@
         case "size": size(m.w, m.h, m.dpr); break;
         case "theme": theme(m.col); if (m.font) fontName = m.font; kick(); break;
         case "font": fontName = m.font; kick(); break;
-        case "data": setData(m.d); break;
+        case "data": setData(m.d, m.whole, m.seq); break;
         case "filter": { const hide = m.hide ? new Set(m.hide) : null; filter = hide ? n => !hide.has(n.id) : null; kick(); break; }
         case "pin": setPin(m.id ? byId.get(m.id) || null : null); break;
         case "open": { const n = byId.get(m.id); if (n) open(n); break; }
@@ -350,7 +357,7 @@
         const raf = self.requestAnimationFrame ? f => self.requestAnimationFrame(f) : f => setTimeout(() => f(performance.now()), 16);
         const caf = self.cancelAnimationFrame ? id => self.cancelAnimationFrame(id) : id => clearTimeout(id);
         send = Core({ canvas: m.canvas, still: m.still, makeCanvas: (w, h) => new OffscreenCanvas(w, h), raf, caf,
-          emit: (type, value) => self.postMessage({ type, value }) });
+          emit: (type, value) => type === "ready" ? fontsReady.then(() => setTimeout(() => self.postMessage({ type, value }), 60)) : self.postMessage({ type, value }) });
         fontsReady.then(() => send && send({ t: "kick" }));
         return;
       }
@@ -363,13 +370,14 @@
   function Graph3D(canvas, opt) {
     opt = opt || {};
     const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    let nodes = new Map(), pinnedId = null, filterFn = null, send, worker = null;
+    let nodes = new Map(), dataSeq = 0, pinnedId = null, filterFn = null, send, worker = null;
     const nodeOf = id => id == null ? null : nodes.get(id) || null;
     function on(type, value) {
       if (type === "pin") { pinnedId = value; opt.onPin && opt.onPin(nodeOf(value)); }
       else if (type === "hover") opt.onHover && opt.onHover(nodeOf(value));
       else if (type === "open") opt.onOpen && opt.onOpen(nodeOf(value));
       else if (type === "cursor") canvas.style.cursor = value;
+      else if (type === "ready") opt.onReady && opt.onReady(value);
       else if (type === "buzz") { if (window.UIFx) UIFx("pin"); else if (navigator.vibrate) try { navigator.vibrate(6); } catch (e) {} }
     }
     const src = document.currentScript && document.currentScript.src || "graph.js";
@@ -407,10 +415,11 @@
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(theme);
 
     return {
-      setData(d) {
+      // whole: settle it out of sight and show every dot at once (behind the loading); returns which data this is, for onReady
+      setData(d, whole) {
         nodes = new Map(d.nodes.map(n => [n.id, n]));
         if (pinnedId != null && !nodes.has(pinnedId)) pinnedId = null;
-        send({ t: "data", d });
+        send({ t: "data", d, whole: !!whole, seq: ++dataSeq });
         if (filterFn) this.setFilter(filterFn);
       },
       setFilter(fn) { filterFn = fn; send({ t: "filter", hide: fn ? [...nodes.values()].filter(n => !fn(n)).map(n => n.id) : null }); },
@@ -421,7 +430,8 @@
       start() { theme(); send({ t: "start" }); },
       stop() { send({ t: "stop" }); },
       reset() { send({ t: "reset" }); },
-      get offThread() { return !!worker; }
+      get offThread() { return !!worker; },
+      get seq() { return dataSeq; }
     };
   }
   Graph3D.src = document.currentScript && document.currentScript.src;

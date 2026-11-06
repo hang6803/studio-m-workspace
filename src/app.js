@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.4";
+const APP_VER = "0.9.7";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
@@ -330,6 +330,26 @@ async function slow(work) {
   finally { clearTimeout(t); if (shown) { b.classList.add("breathe"); setTimeout(() => { if (b.classList.contains("breathe")) b.hidden = true; }, 1500); } }
 }
 
+// After the PIN the loading stays up until Home is whole: the data is in and the graph has drawn it (settled, every dot
+// there). Then it breathes out onto the finished graph, which takes one small zoom-out breath. 8 s at most.
+let graphReady = null, booting = false;
+function holdBoot() {
+  const b = $("boot"); booting = true;
+  b.classList.remove("breathe"); b.hidden = false;
+  let done = false;
+  const out = () => {
+    if (done) return; done = true; booting = false; graphReady = null; clearTimeout(cap);
+    if (!session) return;
+    b.classList.add("breathe"); setTimeout(() => { if (b.classList.contains("breathe")) b.hidden = true; }, 1500);
+    if (route.name === "home" && graph) setTimeout(() => graph.reset(), 650);   // the graph breathes as the loading lifts
+  };
+  const cap = setTimeout(out, 8000);
+  return () => {   // the data is in
+    if (route.name !== "home" || !graph || !(data.rows || []).length) { out(); return; }
+    const want = graph.seq; graphReady = q => { if (q >= want) out(); };
+  };
+}
+
 // ---------------------------------------------------------------- offline (the phone app with no connection)
 // After a PIN works online, this device keeps a scrambled copy of it and the last data it loaded, so with no
 // connection the same PIN still opens the app and shows that data (view only). Back online, the PIN is asked
@@ -376,19 +396,25 @@ function drawDots() {
 }
 async function signIn(pin) {
   clearTimeout(legacyT);
+  // checking stays on the PIN screen (the dots ripple); the loading only comes once the PIN is right
+  const dots = $("dots"); dots.classList.remove("bad"); dots.classList.add("checking"); $("pad").inert = true; $("lockMsg").textContent = "";
+  const done = () => { dots.classList.remove("checking"); $("pad").inert = false; };
   try {
-    session = await slow(M.api("login", [pin]));
+    session = await M.api("login", [pin]); done();
     keepPin(pin, session.name); store.set("mUser", session.name);
     store.set("mLen4", pin.length === 4);
     entered = ""; drawDots(); setTimeout(() => lockMood("yay"), 300);
     if (session.upgrade) { setTimeout(() => openUpgrade(pin), 700); return; }
     setTimeout(unlock, 900);
   } catch (e) {
+    done();
     const off = isNetErr(e) && await offlineName(pin);
     if (off) { session = { name: off, token: "", offline: true }; entered = ""; drawDots(); setTimeout(() => lockMood("yay"), 300); setTimeout(unlock, 900); return; }
     if (isNetErr(e) && !DEMO) e = new Error(store.get("mPins", null) ? "No connection, and that PIN doesn't match. Try again." : "No connection. Sign in once with internet, then it opens offline too.");
-    $("dots").classList.remove("shake"); void $("dots").offsetWidth; $("dots").classList.add("shake");
-    $("lockMsg").textContent = e.message; entered = ""; drawDots(); setTimeout(() => lockMood("no"), 300);
+    // wrong: the dots flash red and shake, a buzz, M shakes its head; the dots clear after the shake
+    dots.classList.remove("shake"); void dots.offsetWidth; dots.classList.add("shake", "bad"); fx("err");
+    $("lockMsg").textContent = e.message; setTimeout(() => lockMood("no"), 120);
+    setTimeout(() => { dots.classList.remove("bad"); entered = ""; drawDots(); }, 520);
   }
 }
 function key(k) {
@@ -483,9 +509,10 @@ function unlock() {
   $("meBtn").textContent = $("meBtn2").textContent = session.name[0].toUpperCase();
   $("menuName").textContent = $("sideName").textContent = session.name;
   $("demoBadge").hidden = !DEMO;
-  if (!graph) graph = Graph3D($("graph"), { onPin: drawPin, onOpen: n => { location.hash = hrefOf(n); } });
+  if (!graph) graph = Graph3D($("graph"), { onPin: drawPin, onOpen: n => { location.hash = hrefOf(n); }, onReady: q => graphReady && graphReady(q) });
   if (!location.hash || location.hash === "#/") history.replaceState(null, "", "#/home");
-  showM(); drawAll(); render(true); refresh();   // festivals / birthdays start once the first refresh brings the birthdays (festAfterData)
+  const loaded = holdBoot();
+  showM(); drawAll(); render(true); refresh().then(loaded);   // festivals / birthdays start once the first refresh brings the birthdays (festAfterData)
 }
 function parse(h) {
   const p = String(h || "").replace(/^#\/?/, "").split("/").map(s => { try { return decodeURIComponent(s); } catch (e) { return s; } });
@@ -501,9 +528,12 @@ function render(first) {
   const next = parse(location.hash);
   const b = MBTN, from = b.hidden ? null : b.getBoundingClientRect();
   // with a page transition, 小M is his own layer in it: he isn't cross-faded with the page (that was the flash), he hops to his new spot
-  const vt = !first && !STILL && document.startViewTransition;
-  const apply = () => { route = next; paint(); perch.st = 0; perch.dock = false; perch(from); };
+  // phones skip View Transitions: Android squashed the whole screen into its snapshot for a moment (tab bar halfway up,
+  // page black). There the new page simply rises in from a soft blur, drawn live, with the bars never leaving their place.
+  const phone = PHONE.matches, vt = !first && !STILL && !phone && document.startViewTransition;
+  const apply = () => { route = next; perch.navAt = performance.now(); paint(); perch.st = 0; perch.dock = false; perch(from); };
   if (vt) document.startViewTransition(apply); else apply();
+  if (phone && !first && !STILL) $("views").animate([{ opacity: 0, transform: "translateY(14px)", filter: "blur(6px)" }, { opacity: 1, transform: "none", filter: "blur(0)" }], { duration: 340, easing: "cubic-bezier(.2,.8,.2,1)" });
   if (window.innerWidth < 900 && !$("mPanel").hidden) closeM();
 }
 let shownView = "";
@@ -516,7 +546,7 @@ function paint() {
   $("topTitle").textContent = route.name === "drive" ? dName(route.key) : route.name === "editor" ? route.key : route.name === "job" ? "Job" : TITLES[route.name] || "";
   document.body.dataset.route = route.name;
   markNav();
-  if (v === "home") { graph.start(); graph.theme(); graph.reset(); } else if (graph) graph.stop();
+  if (v === "home") { graph.start(); graph.theme(); if (!booting) graph.reset(); } else if (graph) graph.stop();
   if (v === "list") { const lk = route.name + ":" + route.key; if (lk !== drawList.key) { drawList.key = lk; listUn = false; } drawList(); }
   if (v === "job") drawJob();
   if (v === "calendar") { if (route.key && parseYmd(route.key)) { selDay = route.key; const d = parseYmd(route.key); calY = d.getFullYear(); calM = d.getMonth(); } drawCal(); }
@@ -608,7 +638,7 @@ function drawHome() {
   const b = next ? ` Your next shoot is <a href="#/calendar/${esc(encodeURIComponent(next.d))}">${esc(fmtDay(next.d))}</a>, ${esc(next.s.name)}.` : " No shoots on your calendar yet.";
   $("sum").innerHTML = a + b;
   drawYear(false);
-  if (graph) { const gd = graphData(gYear), k = gYear + JSON.stringify(gd); if (k !== gKey) { gKey = k; graph.setData(gd); drawPin(graph.pinned); } }
+  if (graph) { const gd = graphData(gYear), k = gYear + JSON.stringify(gd); if (k !== gKey) { gKey = k; graph.setData(gd, booting); drawPin(graph.pinned); } }
 }
 // nodes: drives and editors of the year, every job row of the year, and upcoming shoots not made into a job yet
 function graphData(y) {
@@ -1127,18 +1157,26 @@ const metaRow = (...xs) => xs.filter(Boolean).map(x => `<span class="mr">${x}</s
 // pop-ups are drawers: they push up from the bottom edge and slide back down; drag the top of one down to put it away
 function sheetShow(sc) {
   sc._closing = false; (sc._anims || []).forEach(a => a.cancel()); sc._anims = null; sc.hidden = false;
-  clearTimeout(sc._sit); sc._sit = setTimeout(() => { const b = MBTN; if (!sc.hidden && !b.hidden && typeof perch === "function") perch(b.getBoundingClientRect(), "hop"); }, 380);   // he hops onto the drawer once it is up
+  clearTimeout(sc._sit); sc._sit = setTimeout(() => { const b = MBTN; if (!sc.hidden && !b.hidden && typeof perch === "function") perch(b.getBoundingClientRect(), "hop"); }, DESK.matches ? 300 : 380);   // he hops onto it once it has landed
 }
 function sheetHide(sc) {
   if (sc.hidden || sc._closing) return;
   const sh = sc.querySelector(".sheet"); if (STILL || !sh) { sc.hidden = true; afterSheet(); return; }
   sc._closing = true;
+  if (DESK.matches) {   // computer: the dialog sinks back into the page, softening as it goes; 小M hops off it straight away
+    sc._anims = [sh.animate([{ transform: "none", opacity: 1, filter: "blur(0)" }, { transform: "translateY(10px) scale(.95)", opacity: 0, filter: "blur(6px)" }], { duration: 240, easing: "cubic-bezier(.4,0,.7,.2)", fill: "forwards" }),
+      sc.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 260, fill: "forwards" })];
+    if (typeof perch === "function" && !MBTN.hidden) { const b = MBTN, from = b.getBoundingClientRect(); setTimeout(() => perch(from, "hop"), 0); }
+  } else {
   const cur = getComputedStyle(sh).transform, from = cur && cur !== "none" ? cur : "none";
   sc._anims = [sh.animate([{ transform: from }, { transform: "translateY(110%)" }], { duration: 280, easing: "cubic-bezier(.5,0,.75,.4)", fill: "forwards" }),
     sc.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 280, fill: "forwards" })];
+  }
   sc._anims[0].onfinish = () => { if (!sc._closing) return; sc._closing = false; sc._anims.forEach(a => a.cancel()); sc._anims = null; sc.hidden = true; afterSheet(); };
 }
-const afterSheet = () => { if (typeof perch === "function" && !document.querySelector(".scrim:not([hidden])")) perch(MBTN.getBoundingClientRect()); };
+const afterSheet = () => { if (typeof perch === "function" && !document.querySelector(".scrim:not([hidden])") && !(DESK.matches && !MBTN.classList.contains("on-sheet"))) perch(MBTN.getBoundingClientRect(), DESK.matches ? "hop" : undefined); };
+// computer: pop-ups are dialogs in the middle (they rise in and sink back); phone: drawers from the bottom edge
+const DESK = matchMedia("(min-width: 900px)");
 const SHEET_CLOSE = { jobScrim: () => closeJob(), chkScrim: () => closeChk(), shootScrim: () => closeShoot() };
 document.querySelectorAll(".scrim > .sheet").forEach(sh => {
   // push it down and it goes; pull it up and it stretches like rubber and springs back. A finger drags it when the drawer
@@ -1146,7 +1184,7 @@ document.querySelectorAll(".scrim > .sheet").forEach(sh => {
   let y0 = null, dy = 0, t0 = 0, on = false;
   const pull = d => d >= 0 ? `translateY(${d}px)` : `translateY(${-Math.sqrt(-d) * 3.2}px) scaleY(${1 + Math.min(.06, Math.sqrt(-d) / 260)})`;
   const skip = t => t.closest("input, select, textarea, button, a, label, [contenteditable]");
-  const start = (y, t) => { if (skip(t)) return; y0 = y; dy = 0; on = false; t0 = performance.now(); sh.style.transformOrigin = "50% 100%"; };
+  const start = (y, t) => { if (skip(t) || DESK.matches) return; y0 = y; dy = 0; on = false; t0 = performance.now(); sh.style.transformOrigin = "50% 100%"; };
   const move = (y, e) => { if (y0 == null) return; const d = y - y0;
     if (!on) { const atTop = sh.scrollTop <= 0, atEnd = sh.scrollTop + sh.clientHeight >= sh.scrollHeight - 1;
       if ((d > 6 && atTop) || (d < -6 && atEnd)) { on = true; y0 = y; } else if (Math.abs(d) > 6) { y0 = null; return; } else return; }
@@ -1189,25 +1227,28 @@ function drawBackup(first) {
   const TH = '<div class="bk-th" aria-hidden="true"><span>No.</span><span>Job</span><span>Date</span><span>Backed up</span><span>Drive</span></div>';
   const sortJ = js => bk.desc ? js.slice().reverse() : js;
   const head = (title, n, jump) => `<h3 class="bk-gh">${jump ? `<button type="button" class="bk-jump" data-y="${esc(title)}">${esc(title)}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>` : esc(title)}<span>${n} ${n === 1 ? "job" : "jobs"}</span></h3>`;
-  const sortBtn = `<button type="button" class="btn ghost sm bk-sort" id="bkSort" aria-label="Sort">${bk.desc ? "Newest first" : "Oldest first"}</button>`;
+  // right end of the filter row: Add backup, then the sort as an icon (the arrows turn over when the order flips)
+  const SORT_I = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4v16M8 20l-3.5-3.5M8 20l3.5-3.5"/><path d="M16 20V4M16 4l-3.5 3.5M16 4l3.5 3.5"/></svg>';
+  const tools = sort => `<span class="bk-tools"><button type="button" class="btn sm bk-add" id="bkAdd" aria-label="Add backup"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Add backup</span></button>${sort ? `<button type="button" class="ibtn bk-sort${bk.desc ? "" : " asc"}" id="bkSort" aria-label="${bk.desc ? "Newest first" : "Oldest first"}" title="${bk.desc ? "Newest first" : "Oldest first"}">${SORT_I}</button>` : ""}</span>`;
+  const sortBtn = tools(true), noSort = tools(false);
   let html = "", filt = "";
   if (searching) {
     const pool = bk.scope === "year" ? inYear : rows, hits = jobsOf(pool).filter(j => j.rows.some(r => bkMatch(r, ts)));
     const shown = bk.all ? hits : hits.slice(0, 60);
-    filt = `<span class="muted">${hits.length ? `${hits.length} found` : ""}</span>${hits.length > 1 ? sortBtn : ""}`;
+    filt = `<span class="muted">${hits.length ? `${hits.length} found` : ""}</span>${hits.length > 1 ? sortBtn : noSort}`;
     html = hits.length ? ys.map(y => [y, shown.filter(j => String(j.main.year) === y)]).filter(([, l]) => l.length).map(([y, l]) => `<section class="bk-group">${head(y, l.length, bk.scope === "all")}<div class="bk-rows">${TH}${sortJ(l).map(row).join("")}</div></section>`).join("")
       + (shown.length < hits.length ? `<button type="button" class="btn ghost" id="bkAll">Show all ${hits.length}</button>` : "")
       : `<div class="bk-empty">Nothing matches “${esc($("bkQ").value.trim())}”${bk.scope === "year" ? ` in ${esc(bk.year)}` : ""}.</div>`;
   } else if (bk.un) {
     const js = secJobs(inYear.filter(unbacked));
-    filt = `<button type="button" class="fchip on" id="bkUnOff">Not backed up in ${esc(bk.year)} ✕</button>${js.length > 1 ? sortBtn : ""}`;
+    filt = `<button type="button" class="fchip on" id="bkUnOff">Not backed up in ${esc(bk.year)} ✕</button>${js.length > 1 ? sortBtn : noSort}`;
     html = cats.map(c => [c, js.filter(j => sectionOf(j.main) === c)]).filter(([, l]) => l.length).map(([c, l]) => `<section class="bk-group">${head(c, l.length)}<div class="bk-rows">${TH}${sortJ(l).map(row).join("")}</div></section>`).join("");
   } else {
     const inCat = inYear.filter(r => sectionOf(r) === bk.cat);
     const drives = [...new Set(inCat.flatMap(drivesOf))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     if (bk.drive && !drives.includes(bk.drive)) bk.drive = null;
     const js = secJobs(inCat).filter(j => !bk.drive || drivesOf(j.main).includes(bk.drive));
-    filt = (drives.length > 1 ? `<span class="muted small">Drives</span>${drives.map(d => `<button type="button" class="fchip${bk.drive === d ? " on" : ""}" data-drive="${esc(d)}" aria-pressed="${bk.drive === d}">${esc(d === "未知" ? "Unknown" : d)}</button>`).join("")}` : "") + (js.length > 1 ? sortBtn : "");
+    filt = (drives.length > 1 ? `<span class="muted small">Drives</span>${drives.map(d => `<button type="button" class="fchip${bk.drive === d ? " on" : ""}" data-drive="${esc(d)}" aria-pressed="${bk.drive === d}">${esc(d === "未知" ? "Unknown" : d)}</button>`).join("")}` : "") + (js.length > 1 ? sortBtn : noSort);
     html = js.length ? `<div class="bk-rows">${TH}${sortJ(js).map(row).join("")}</div>` : `<div class="bk-empty">No jobs in ${esc(bk.year)} yet.</div>`;
   }
   setHTML($("bkFilters"), filt);
@@ -1228,6 +1269,7 @@ $("bkQ").addEventListener("input", () => { bk.all = false; clearTimeout(bkT); bk
 $("bkQ").addEventListener("keydown", e => { if (e.key === "Escape" && $("bkQ").value) { e.stopPropagation(); $("bkQ").value = ""; drawBackup(); } });
 $("bkFilters").addEventListener("click", e => {
   const d = e.target.closest("[data-drive]"); if (d) { bk.drive = bk.drive === d.dataset.drive ? null : d.dataset.drive; buzz(); return drawBackup(); }
+  if (e.target.closest("#bkAdd")) { fx("open"); return newJob(); }
   if (e.target.closest("#bkSort")) { bk.desc = !bk.desc; try { localStorage.setItem("bkDesc", bk.desc ? "1" : "0"); } catch (x) {} buzz(); return drawBackup(); }
   if (e.target.closest("#bkUnOff")) { bk.un = false; return drawBackup(); }
 });
@@ -2168,21 +2210,39 @@ function perchWant() {
 // Sitting on a card, 小M lives inside the scrolling page, so a jump above the page's top edge was cut off under the top
 // bar. While he jumps (any one-off move of his), he is lifted out to the top layer on the same spot, then set back.
 let liftT = 0;
-function unliftM() { clearTimeout(liftT); if (!MBTN.classList.contains("lifted")) return; MBTN.classList.remove("lifted"); ["position", "left", "top", "right", "bottom", "width", "height", "zIndex"].forEach(k => { MBTN.style[k] = ""; }); }
-function liftM(ms) {
+// set back down: if his spot moved while he was up (the page finished drawing under him), he glides there instead of snapping
+function glideFrom(a) { const z = MBTN.getBoundingClientRect(), dx = a.left - z.left, dy = a.top - z.top;
+  if (!STILL && z.width && a.width && (Math.abs(dx) > 3 || Math.abs(dy) > 3) && Math.hypot(dx, dy) < 600 && !MBTN.getAnimations().some(x => x.playState === "running"))
+    MBTN.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: 420, easing: SNAP }); }
+function unliftM(quiet) { clearTimeout(liftT); if (!MBTN.classList.contains("lifted")) return; const a = MBTN.getBoundingClientRect();
+  MBTN.classList.remove("lifted"); ["position", "left", "top", "right", "bottom", "width", "height", "zIndex"].forEach(k => { MBTN.style[k] = ""; });
+  if (!quiet) glideFrom(a); }
+// after a jump lands, he looks at the page once more (it may have finished drawing under him: room above, buttons) and settles
+function landM() { if (!MBTN.classList.contains("lifted")) return; const a = MBTN.getBoundingClientRect(); unliftM(true);
+  if (MBTN.classList.contains("perched") && typeof perch === "function") perch(); glideFrom(a); }
+// a page redrawn under him (Team cards, Drives) can take his card away with him on it: put him back on the page
+const mLost = () => !MBTN.isConnected || (MBTN.classList.contains("perched") && !$("views").contains(seat));
+new MutationObserver(() => { if (session && !MBTN.hidden && mLost() && typeof perch === "function") requestAnimationFrame(() => { if (!mLost()) return;
+  MBTN.getAnimations().forEach(a => { if (!a.effect || a.effect.getComputedTiming().iterations !== Infinity) a.cancel(); });   // a jump onto the card that just went away
+  perch(); }); })
+  .observe($("views"), { childList: true, subtree: true });
+function liftM(ms, rest) {
   if (!MBTN.classList.contains("perched") || MBTN.hidden) return;
   if (!MBTN.classList.contains("lifted")) {
-    const r = MBTN.getBoundingClientRect(); if (!r.width) return;
+    // his resting spot, not where the jump has him this frame: the jump's own transform plays on top of it, so measuring
+    // with getBoundingClientRect (which includes it) landed him off his spot and then snapped him back when he was set down
+    const op = MBTN.offsetParent; if (!op || !MBTN.offsetWidth) return;
+    const o = op.getBoundingClientRect(), r = rest && rest.width ? rest : { left: o.left + op.clientLeft + MBTN.offsetLeft, top: o.top + op.clientTop + MBTN.offsetTop, width: MBTN.offsetWidth, height: MBTN.offsetHeight };
     Object.assign(MBTN.style, { position: "fixed", left: r.left + "px", top: r.top + "px", right: "auto", bottom: "auto", width: r.width + "px", height: r.height + "px", zIndex: 31 });
     MBTN.classList.add("lifted");
     const v = $("views"), back = () => unliftM(); v.addEventListener("scroll", back, { once: true, passive: true });   // scrolling: back on his card at once
   }
-  clearTimeout(liftT); liftT = setTimeout(unliftM, Math.min(4000, (ms || 1200) + 120));
+  clearTimeout(liftT); liftT = setTimeout(landM, Math.min(4000, (ms || 1200) + 120));
 }
 MBTN.addEventListener("animationstart", e => { const cs = getComputedStyle(e.target); if (cs.animationIterationCount.includes("infinite")) return;
   liftM(Math.max(...cs.animationDuration.split(",").map(x => parseFloat(x) * (x.includes("ms") ? 1 : 1000))) || 1200); });
-{ const an = MBTN.animate.bind(MBTN); MBTN.animate = (k, o) => { const a = an(k, o); const ms = typeof o === "number" ? o : o && (o.duration || 0) + (o.delay || 0);
-  requestAnimationFrame(() => { if (MBTN.classList.contains("perched")) liftM(ms); }); return a; }; }
+{ const an = MBTN.animate.bind(MBTN); MBTN.animate = (k, o) => { const rest = MBTN.getAnimations().some(x => x.playState === "running") ? null : MBTN.getBoundingClientRect(); const a = an(k, o); const ms = typeof o === "number" ? o : o && (o.duration || 0) + (o.delay || 0);
+  requestAnimationFrame(() => { if (MBTN.classList.contains("perched")) liftM(ms, rest); }); return a; }; }
 function perch(from, how) {
   const b = MBTN; if (!b.isConnected) document.body.appendChild(b);
   unliftM();
@@ -2292,8 +2352,8 @@ function sitOn(b, sh) {
   if (window.visualViewport && !sitOn.vv) { sitOn.vv = true; visualViewport.addEventListener("resize", () => { const s = document.querySelector(".scrim:not([hidden]) > .sheet"); if (s && b.classList.contains("on-sheet")) sitOn(b, s); }); }
 }
 // on Team / Drives: when his card is almost out of sight he blinks to the next card in view; quickly back at the top, to the first
-let stT = 0, lastY = 0;
-$("views").addEventListener("scroll", () => { if (stT || shownView === "home") return; stT = requestAnimationFrame(() => { stT = 0;
+let stT = 0, lastY = 0;   // (the page jumping to its top on a page change isn't you scrolling: ignored for 700 ms)
+$("views").addEventListener("scroll", () => { if (stT || shownView === "home" || performance.now() - (perch.navAt || 0) < 700) return; stT = requestAnimationFrame(() => { stT = 0;
   const b = MBTN; if (b.hidden || mOpen || b.getAnimations().some(a => a.playState === "running")) return;
   if (PHONE.matches) {   // phone: scroll down and he blinks onto the tab bar; back at the top, onto the page again
     const y = $("views").scrollTop, dn = y > lastY; lastY = y;

@@ -1252,3 +1252,38 @@ body.lamp-tap.lamp-off .light .lamp { opacity: 0; transition: opacity .7s ease-o
 .mbtn.space::before { inset: -55% }
 @keyframes mGlow { 50% { opacity: .7; transform: scale(.94) } }
 @media (prefers-reduced-motion: reduce) { .mbtn::before { animation: none } }
+
+/* ---- 0.9.6: on a computer, pop-ups are dialogs in the middle, not drawers. They rise in from a soft blur with a little
+   spring and sink back the same way; no grab handle, no drag-to-close. The page behind goes out of focus. ---- */
+@keyframes dlgIn { 0% { opacity: 0; transform: translateY(18px) scale(.94); filter: blur(10px) } 60% { opacity: 1; filter: blur(0) } 100% { transform: none } }
+@media (min-width: 900px) {
+  .scrim, .scrim[class] { place-items: center; padding: 32px; backdrop-filter: blur(6px) saturate(1.1); -webkit-backdrop-filter: blur(6px) saturate(1.1) }
+  .scrim > .sheet { max-height: min(84vh, calc(100vh - 64px)); border-radius: var(--r-sheet); border-bottom: 1px solid var(--rim, var(--line));
+    padding-top: 22px; padding-bottom: 20px; animation: dlgIn .46s cubic-bezier(.2, 1.16, .32, 1) both; transform-origin: 50% 60% }
+  .scrim > .sheet::before { display: none }
+}
+@media (min-width: 900px) and (prefers-reduced-motion: reduce) { .scrim > .sheet { animation: fade .2s ease both } }
+
+/* 0.9.7: checking the PIN happens on the PIN screen: the dots ripple in a wave. Wrong: they flash red and shake */
+.dots.checking i { animation: pinWave .9s cubic-bezier(.45, 0, .55, 1) infinite }
+.dots.checking i:nth-child(2) { animation-delay: .08s } .dots.checking i:nth-child(3) { animation-delay: .16s } .dots.checking i:nth-child(4) { animation-delay: .24s }
+.dots.checking i:nth-child(5) { animation-delay: .32s } .dots.checking i:nth-child(6) { animation-delay: .4s }
+@keyframes pinWave { 0%, 100% { transform: translateY(0) scale(1); opacity: 1 } 35% { transform: translateY(-7px) scale(1.15); opacity: .7 } }
+.dots.bad i, .dots.bad i.on { background: var(--danger); border-color: var(--danger); box-shadow: 0 0 10px color-mix(in srgb, var(--danger) 60%, transparent) }
+#lockMsg:not(:empty) { color: var(--danger) }
+@media (prefers-reduced-motion: reduce) { .dots.checking i { animation: none; opacity: .6 } }
+
+/* 0.9.7: Backup's filter row ends with Add backup and the sort as an icon */
+.bk-tools { margin-left: auto; display: inline-flex; align-items: center; gap: 8px }
+.bk-tools .bk-sort { margin-left: 0 }
+.bk-add { display: inline-flex; align-items: center; gap: 6px }
+.bk-add svg, .bk-sort svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round }
+.bk-sort svg { transition: transform .45s var(--spring) }
+.bk-sort.asc svg { transform: scaleY(-1) }
+
+/* phone: Add backup is a round + next to the sort */
+@media (max-width: 899px) {
+  .bk-tools .bk-add { width: 40px; height: 40px; padding: 0; justify-content: center; border-radius: 50%; gap: 0 }
+  .bk-tools .bk-add span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0) }
+  .bk-add svg { width: 18px; height: 18px }
+}
