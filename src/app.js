@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.7";
+const APP_VER = "0.9.8";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
@@ -2213,7 +2213,7 @@ let liftT = 0;
 // set back down: if his spot moved while he was up (the page finished drawing under him), he glides there instead of snapping
 function glideFrom(a) { const z = MBTN.getBoundingClientRect(), dx = a.left - z.left, dy = a.top - z.top;
   if (!STILL && z.width && a.width && (Math.abs(dx) > 3 || Math.abs(dy) > 3) && Math.hypot(dx, dy) < 600 && !MBTN.getAnimations().some(x => x.playState === "running"))
-    MBTN.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: 420, easing: SNAP }); }
+    (MBTN._an || MBTN.animate.bind(MBTN))([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: 420, easing: SNAP }); }   // a glide is not a jump: it doesn't lift him (that looped into a twitch)
 function unliftM(quiet) { clearTimeout(liftT); if (!MBTN.classList.contains("lifted")) return; const a = MBTN.getBoundingClientRect();
   MBTN.classList.remove("lifted"); ["position", "left", "top", "right", "bottom", "width", "height", "zIndex"].forEach(k => { MBTN.style[k] = ""; });
   if (!quiet) glideFrom(a); }
@@ -2239,9 +2239,10 @@ function liftM(ms, rest) {
   }
   clearTimeout(liftT); liftT = setTimeout(landM, Math.min(4000, (ms || 1200) + 120));
 }
-MBTN.addEventListener("animationstart", e => { const cs = getComputedStyle(e.target); if (cs.animationIterationCount.includes("infinite")) return;
+MBTN.addEventListener("animationstart", e => { if (e.target !== MBTN) return;   // his own jumps only: a blink or a look on his face is not a jump
+  const cs = getComputedStyle(e.target); if (cs.animationIterationCount.includes("infinite")) return;
   liftM(Math.max(...cs.animationDuration.split(",").map(x => parseFloat(x) * (x.includes("ms") ? 1 : 1000))) || 1200); });
-{ const an = MBTN.animate.bind(MBTN); MBTN.animate = (k, o) => { const rest = MBTN.getAnimations().some(x => x.playState === "running") ? null : MBTN.getBoundingClientRect(); const a = an(k, o); const ms = typeof o === "number" ? o : o && (o.duration || 0) + (o.delay || 0);
+{ const an = MBTN.animate.bind(MBTN); MBTN._an = an; MBTN.animate = (k, o) => { const rest = MBTN.getAnimations().some(x => x.playState === "running") ? null : MBTN.getBoundingClientRect(); const a = an(k, o); const ms = typeof o === "number" ? o : o && (o.duration || 0) + (o.delay || 0);
   requestAnimationFrame(() => { if (MBTN.classList.contains("perched")) liftM(ms, rest); }); return a; }; }
 function perch(from, how) {
   const b = MBTN; if (!b.isConnected) document.body.appendChild(b);
