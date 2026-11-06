@@ -30,28 +30,63 @@
   <div class="lock-in">
     <div class="lock-m" id="lockM" aria-hidden="true"></div>
     <h1 class="lock-title" id="lockTitle">Enter your PIN</h1>
-    <div class="dots" id="dots" aria-live="polite"><i></i><i></i><i></i><i></i></div>
+    <label class="lock-who" id="lockWhoRow" hidden><span class="sr">Who is signing in</span><select id="lockWho" aria-label="Who is signing in"></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></label>
+    <div class="dots" id="dots" aria-live="polite"><i></i><i></i><i></i><i></i><i></i><i></i></div>
     <p class="lock-msg" id="lockMsg"></p>
     <div class="pad" id="pad">
       <button type="button" data-k="1">1</button><button type="button" data-k="2">2</button><button type="button" data-k="3">3</button>
       <button type="button" data-k="4">4</button><button type="button" data-k="5">5</button><button type="button" data-k="6">6</button>
       <button type="button" data-k="7">7</button><button type="button" data-k="8">8</button><button type="button" data-k="9">9</button>
-      <span></span><button type="button" data-k="0">0</button><button type="button" data-k="del" aria-label="Delete">⌫</button>
+      <button type="button" class="pad-ok" id="padOk" data-k="ok" aria-label="Sign in with an old 4-digit PIN">OK</button><button type="button" data-k="0">0</button><button type="button" data-k="del" aria-label="Delete">⌫</button>
     </div>
-    <button type="button" class="link" id="setupBtn">First time? Set up your PIN</button>
+    <nav class="lock-links" aria-label="Other ways in">
+      <button type="button" class="link" data-form="setupForm">First time</button>
+      <button type="button" class="link" data-form="regForm">Register</button>
+      <button type="button" class="link" data-form="forgotForm">Forgot PIN</button>
+    </nav>
   </div>
 </section>
 
-<!-- First-time PIN setup -->
+<!-- First time, Register, Forgot PIN (one card at a time) -->
 <section class="lock" id="setup" hidden>
-  <form class="card setup-card" id="setupForm">
-    <h2>Set up your PIN</h2>
-    <label>Who are you?<select id="suName" required></select></label>
+  <form class="card setup-card" id="setupForm" data-mode="first">
+    <h2 id="suTitle">Set up your PIN</h2>
+    <p class="muted small" id="suHint">You're on the team but haven't picked a PIN yet.</p>
+    <label id="suNameRow">Who are you?<select id="suName" required></select></label>
     <label id="suStudioRow">Studio PIN<input id="suStudio" type="password" inputmode="numeric" autocomplete="off"></label>
-    <label>New PIN (4 digits)<input id="suPin" type="password" inputmode="numeric" maxlength="4" pattern="\d{4}" required autocomplete="off"></label>
-    <label>New PIN again<input id="suPin2" type="password" inputmode="numeric" maxlength="4" pattern="\d{4}" required autocomplete="off"></label>
+    <label>New PIN (6 digits)<input id="suPin" type="password" inputmode="numeric" maxlength="6" pattern="\d{6}" required autocomplete="new-password"></label>
+    <label>New PIN again<input id="suPin2" type="password" inputmode="numeric" maxlength="6" pattern="\d{6}" required autocomplete="new-password"></label>
     <p class="msg" id="suMsg"></p>
-    <div class="actions"><button type="button" class="btn ghost" id="suCancel">Back</button><button class="btn">Save</button></div>
+    <div class="actions"><button type="button" class="btn ghost" data-back>Back</button><button class="btn">Save PIN</button></div>
+  </form>
+  <form class="card setup-card" id="regForm" hidden>
+    <h2>Register</h2>
+    <p class="muted small">New to the team? Send this, and an admin approves it. You can sign in after that.</p>
+    <label>Your name<input id="rgName" maxlength="40" required autocomplete="name"></label>
+    <label>Gmail<input id="rgMail" type="email" required autocomplete="email" placeholder="you@gmail.com"></label>
+    <label>Birthday<input id="rgBday" type="date" required></label>
+    <label>PIN (6 digits)<input id="rgPin" type="password" inputmode="numeric" maxlength="6" pattern="\d{6}" required autocomplete="new-password"></label>
+    <label>PIN again<input id="rgPin2" type="password" inputmode="numeric" maxlength="6" pattern="\d{6}" required autocomplete="new-password"></label>
+    <p class="msg" id="rgMsg"></p>
+    <div class="actions"><button type="button" class="btn ghost" data-back>Back</button><button class="btn">Send for approval</button></div>
+  </form>
+  <div class="card setup-card sent-card" id="regSent" hidden>
+    <h2>Sent for approval</h2>
+    <p id="regSentText">An admin will see it on the Team page. Once it's approved, sign in with your name and PIN.</p>
+    <div class="actions"><button type="button" class="btn" data-back>Done</button></div>
+  </div>
+  <form class="card setup-card" id="forgotForm" hidden>
+    <h2>Forgot PIN</h2>
+    <p class="muted small">Ask an admin, the boss or 小M to type their PIN here. Then pick a new one.</p>
+    <label>Your name<select id="fgName" required></select></label>
+    <label>New PIN (6 digits)<input id="fgPin" type="password" inputmode="numeric" maxlength="6" pattern="\d{6}" required autocomplete="new-password"></label>
+    <label>New PIN again<input id="fgPin2" type="password" inputmode="numeric" maxlength="6" pattern="\d{6}" required autocomplete="new-password"></label>
+    <fieldset class="vouch"><legend>Approved by</legend>
+      <label>Name<select id="fgBy" required></select></label>
+      <label>Their PIN<input id="fgByPin" type="password" inputmode="numeric" maxlength="6" required autocomplete="off"></label>
+    </fieldset>
+    <p class="msg" id="fgMsg"></p>
+    <div class="actions"><button type="button" class="btn ghost" data-back>Back</button><button class="btn">Reset PIN</button></div>
   </form>
 </section>
 
@@ -135,18 +170,23 @@
       </section>
 
       <section class="view page team-page" id="v-team" hidden>
+        <div class="card tq" id="teamReq" hidden><h3>Sign-up requests <b class="pill" id="reqN"></b></h3>
+          <div id="reqList"></div><p class="msg" id="reqMsg"></p></div>
         <div class="team-grid" id="teamGrid"></div>
         <div class="team-lower">
-          <div class="card" id="teamEdit"><h3>Members and birthdays</h3><p class="muted small">Only the day and month are shown. Age is never shown.</p>
+          <div class="card" id="teamEdit"><h3>People and roles</h3><p class="muted small" id="roleHint">Only the day and month of a birthday are shown. Age is never shown.</p>
             <div class="mem-list" id="memList"></div>
-            <form class="mem-add" id="memAdd"><input id="memNew" maxlength="40" placeholder="New member's name" aria-label="New member's name" autocomplete="off"><button class="btn ghost">Add</button></form>
+            <form class="mem-add" id="memAdd" hidden><input id="memNew" maxlength="40" placeholder="Add someone by name" aria-label="New member's name" autocomplete="off"><button class="btn ghost">Add</button></form>
             <p class="msg" id="memMsg"></p></div>
         <form class="card" id="pinForm"><h3>Change my PIN</h3>
-          <label>Current PIN<input id="pfOld" type="password" inputmode="numeric" maxlength="4" required autocomplete="off"></label>
-          <label>New PIN<input id="pfNew" type="password" inputmode="numeric" maxlength="4" pattern="\d{4}" required autocomplete="off"></label>
-          <label>New PIN again<input id="pfNew2" type="password" inputmode="numeric" maxlength="4" pattern="\d{4}" required autocomplete="off"></label>
+          <label>Current PIN<input id="pfOld" type="password" inputmode="numeric" maxlength="6" required autocomplete="current-password"></label>
+          <label>New PIN (6 digits)<input id="pfNew" type="password" inputmode="numeric" maxlength="6" pattern="\d{6}" required autocomplete="new-password"></label>
+          <label>New PIN again<input id="pfNew2" type="password" inputmode="numeric" maxlength="6" pattern="\d{6}" required autocomplete="new-password"></label>
           <p class="msg" id="pfMsg"></p><div class="actions"><button class="btn">Change PIN</button></div></form>
         </div>
+        <div class="card tlog" id="teamLog" hidden>
+          <div class="tlog-h"><h3>Activity</h3><span class="muted small">Only admins, 小M and the boss see this. Opening it is recorded too.</span><button type="button" class="btn ghost sm" id="logMore">Refresh</button></div>
+          <div class="tlog-list" id="logList"></div></div>
       </section>
 
       <section class="view page bk-page" id="v-backup" hidden>

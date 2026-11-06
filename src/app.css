@@ -93,6 +93,23 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round
 .pad button:active { transform: scale(.92); background: var(--accent-soft) }
 .link { background: none; border: 0; color: var(--accent); padding: 4px; font-size: 14px }
 .setup-card { width: min(420px, 100%) }
+.setup-card h2 { margin: 0 } .setup-card > p.muted { margin: -4px 0 4px }
+.setup-card input[type="date"] { min-height: 44px }
+.vouch { border: 1px dashed var(--line); border-radius: var(--r-in, 12px); padding: 10px 12px 12px; margin: 4px 0 0; display: flex; flex-direction: column; gap: 10px; min-width: 0 }
+.vouch legend { padding: 0 6px; font-size: 12px; color: var(--muted) }
+/* who is signing in: a quiet chip under the title (a real select, so phones show their own picker) */
+.lock-who { position: relative; display: flex; align-items: center; margin: -8px 0 0; flex-direction: row }
+.lock-who select { appearance: none; -webkit-appearance: none; font: inherit; font-size: 15px; font-weight: 600; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 99px; padding: 8px 34px 8px 16px; min-height: 40px; box-shadow: var(--hi, none), var(--d1, none); cursor: pointer; max-width: 70vw }
+.lock-who svg { position: absolute; right: 12px; width: 16px; height: 16px; fill: none; stroke: var(--muted); stroke-width: 2; pointer-events: none }
+.lock-who select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.dots.old i:nth-child(n+5) { opacity: .35; transform: scale(.8) }
+.pad .pad-ok { font-size: 15px; font-weight: 700; letter-spacing: .02em; color: var(--accent-text, var(--accent)); visibility: hidden; opacity: 0; transform: scale(.8); transition: opacity .2s, transform .3s var(--spring), visibility 0s .2s }
+.pad .pad-ok.on { visibility: visible; opacity: 1; transform: none; transition: opacity .2s, transform .3s var(--spring) }
+.lock-links { display: flex; gap: 6px 18px; flex-wrap: wrap; justify-content: center; margin-top: 2px }
+.lock-links .link { min-height: 40px; padding: 8px 6px; color: var(--muted); font-size: 14px; transition: color .2s }
+.lock-links .link:first-child { color: var(--accent-text, var(--accent)) }
+.lock-links .link:hover { color: var(--fg) }
+.sent-card p { margin: 0; line-height: 1.5 }
 
 
 /* M's moves (the corner 小M, the one in the chat header, and the PIN screen) */
@@ -468,17 +485,57 @@ body.cal-dragging, body.cal-dragging * { cursor: grabbing !important; user-selec
 .tm-stats a:hover { border-color: var(--accent) } .tm-stats b { font-size: 26px; line-height: 30px; font-variant-numeric: tabular-nums } .tm-stats span { font-size: 12px; color: var(--muted) }
 .tm-stats a.red b { color: var(--danger) }
 .tm-next { margin: 0; font-size: 13px }
-.team-lower { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; align-items: start }
+.team-lower { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 14px; align-items: start }
+@media (max-width: 1179px) { .team-lower { grid-template-columns: minmax(0, 1fr) } }
 .mem-list { display: flex; flex-direction: column }
 .mem { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line) } .mem:first-child { border-top: 0 }
 .mem > b { flex: 1; min-width: 0 }
 .mem .bd { display: flex; flex-direction: row; align-items: center; gap: 6px; margin: 0 } .mem select { width: auto; padding: 6px 8px; border-radius: 4px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: inherit; font-size: 13px }
 .mem .rm.armed { border-color: var(--danger); color: var(--danger) } .rm-sp { width: 82px }
 .mem-add { display: flex; gap: 8px } .mem-add input { flex: 1; min-width: 0 }
+.tq .msg:empty, #memMsg:empty { display: none }
+@media (min-width: 900px) {
+  .mem { display: grid; grid-template-columns: 30px minmax(96px, 1fr) auto 100px 82px; column-gap: 10px } .mem-bot { justify-self: start }
+  .mem .ro select { width: 100% } .mem .rm { justify-self: end } .rm-sp { width: auto }
+  .mem-who .small { white-space: normal; word-break: break-all }
+}
+.mem-h { margin: 14px 0 0; padding-bottom: 2px; font-size: 12px; font-weight: 600; color: var(--muted) } .mem-h:first-child { margin-top: 0 }
+.mem-h + .mem { border-top: 0 }
+.mem .hub { width: 30px; height: 30px; font-size: 12px }
+.hub.r-boss { background: var(--fg); color: var(--bg); box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--fg) }
+.hub.r-xiaom { background: radial-gradient(circle at 35% 30%, #fff, #e9e9e9 55%, #bdbdbd); color: #141414 }
+.hub.r-admin { background: color-mix(in srgb, var(--fg) 72%, var(--bg)); color: var(--bg) }
+.hub.r-member { background: transparent; color: var(--fg); box-shadow: inset 0 0 0 1.5px var(--line) }
+.mem-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px } .mem-who b { display: flex; align-items: center } .mem-who .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.mem.me .mem-who > b { color: var(--fg) }
+.mem-bot { margin-right: auto }
+.mem .ro { margin: 0; flex-direction: row } .mem .ro select { font-weight: 600 }
+.role { display: inline-block; margin-left: 8px; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted) }
+.role.r-boss { background: var(--fg); color: var(--bg); border-color: var(--fg) }
+/* sign-up requests: the first thing on the page when there are any */
+.tq { margin: 0 0 14px; border-color: color-mix(in srgb, var(--danger) 45%, var(--line)) }
+.tq h3 { display: flex; align-items: center; gap: 8px; margin: 0 }
+.rq { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line) } .rq:first-child { border-top: 0; padding-top: 4px }
+.rq .hub { width: 36px; height: 36px; font-size: 13px }
+.rq-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px } .rq-who b { font-size: 16px }
+.rq-act { display: flex; gap: 8px; flex: none }
+/* the activity log */
+.tlog { margin-top: 14px }
+.tlog-h { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap } .tlog-h h3 { margin: 0 } .tlog-h .small { flex: 1; min-width: 200px } .tlog-h .btn { align-self: center }
+.tlog-list { display: flex; flex-direction: column; max-height: 460px; overflow: auto; margin: 0 -4px; padding: 0 4px; overscroll-behavior: contain }
+.lg { display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; gap: 4px 14px; align-items: baseline; padding: 9px 0 9px 10px; border-top: 1px solid var(--line-soft, var(--line)); position: relative; font-size: 13px }
+.lg:first-child { border-top: 0 }
+.lg::before { content: ""; position: absolute; left: 0; top: 12px; width: 4px; height: 4px; border-radius: 50%; background: var(--line) }
+.lg.bad::before { background: var(--danger) } .lg.key::before { background: var(--fg) }
+.lg time { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap } .lg p { margin: 0; line-height: 1.4 }
+.lg-from { color: var(--muted); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; line-height: 1.35 }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0) }
 @media (max-width: 899px) {
   .team-lower { grid-template-columns: minmax(0, 1fr) }
-  .mem { flex-wrap: wrap } .mem .bd { order: 3; width: 100%; padding-left: 28px } .rm-sp { display: none }
+  .mem { flex-wrap: wrap } .mem .bd { order: 3; width: 100%; padding-left: 40px } .rm-sp { display: none }
+  .mem .ro { order: 1; margin-left: auto } .mem .rm { order: 2 } .ro-sp { display: none }
+  .rq { flex-wrap: wrap } .rq-act { width: 100%; padding-left: 48px } .rq-act .btn { flex: 1 }
+  .lg { grid-template-columns: minmax(0, 1fr) auto } .lg time { grid-column: 1 / -1; font-size: 12px } .lg-from { grid-row: 2; grid-column: 2 }
 }
 
 .toast { position: fixed; left: 50%; bottom: calc(28px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 10px 18px; border-radius: 8px; z-index: 40 }

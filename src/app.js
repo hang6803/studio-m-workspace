@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.8.12";
+const APP_VER = "0.8.13";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
@@ -28,11 +28,22 @@ let session = null;   // { name, token } — kept only in memory, so closing the
 // Inside the Mac app, requests go out through Tauri's HTTP plugin (no browser CORS rules, so local servers like
 // Hermes Agent work without opening CORS); in a plain browser (tests, demo) the normal fetch is used.
 const net = (window.__TAURI__ && window.__TAURI__.http && window.__TAURI__.http.fetch) || window.fetch.bind(window);
+// The Team page's log says where a sign-in or a change came from. Apps Script can't see the caller's address, so the
+// app asks ipify once for its public IP and sends it along with a short device name (both reported, not proven).
+const DEV = (() => { const u = navigator.userAgent;
+  const os = /iPhone/.test(u) ? "iPhone" : /iPad/.test(u) || (/Mac/.test(u) && navigator.maxTouchPoints > 1) ? "iPad" : /Android/.test(u) ? "Android" : /Mac/.test(u) ? "Mac" : /Windows/.test(u) ? "Windows" : /Linux/.test(u) ? "Linux" : "Other";
+  const app = window.__TAURI__ ? "app" : matchMedia("(display-mode: standalone)").matches ? "home screen app" : /Edg\//.test(u) ? "Edge" : /Chrome\//.test(u) ? "Chrome" : /Firefox\//.test(u) ? "Firefox" : /Safari\//.test(u) ? "Safari" : "browser";
+  return os + " " + app; })();
+let myIp = "";
+const ipReady = DEMO ? Promise.resolve() : Promise.race([
+  window.fetch("https://api.ipify.org?format=json").then(r => r.json()).then(j => { myIp = String(j.ip || ""); }).catch(() => {}),
+  new Promise(r => setTimeout(r, 1500))]);
 M.api = async function (fn, args = []) {
   if (DEMO) return demo(fn, args);
+  if (!myIp) await ipReady;
   const res = await net(CFG.apiUrl, {
     method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },   // text/plain: no CORS preflight
-    body: JSON.stringify({ key: CFG.apiKey, token: session && session.token, fn, args })
+    body: JSON.stringify({ key: CFG.apiKey, token: session && session.token, fn, args, ip: myIp, dev: DEV })
   });
   const out = await res.json();
   if (out.error) {
@@ -42,7 +53,7 @@ M.api = async function (fn, args = []) {
   return out.result;
 };
 
-// Demo data (no server): PINs Hang 1111, Mun 2222, Michael 3333; studio PIN 0000
+// Demo data (no server): PINs Hang (boss) 111111, Mun (admin) 222222, Michael 3333 (an old 4-digit one), 小M 999999; studio PIN 0000
 function demoRows() {
   const y = new Date().getFullYear(), at = y + "-01-01T00:00:00Z", out = [];
   // [year offset, section, name, MM-DD, drive, editor, video backed up?, photo row: undefined = none, true/false = backed up?]
@@ -66,8 +77,11 @@ function demoRows() {
   return out;
 }
 function demo(fn, args) {
-  const db = store.get("mDemo4", null) || { rev: 1, shoots: [], settings: {}, team: ["Hang", "Mun", "Michael"],
-    pins: { Hang: "1111", Mun: "2222", Michael: "3333" }, rows: demoRows() };
+  const db = store.get("mDemo5", null) || { rev: 1, shoots: [], settings: {}, team: ["Hang", "Mun", "Michael"],
+    pins: { Hang: "111111", Mun: "222222", Michael: "3333", "小M": "999999" }, roles: { Mun: "admin" }, gmail: { Mun: "mun.studiom@gmail.com" }, rows: demoRows(),
+    pending: [{ id: "p1", name: "Aina", gmail: "aina.films@gmail.com", birthday: "1998-05-02", pin: "444444", at: new Date(Date.now() - 36e5).toISOString(), ip: "175.139.20.11" }],
+    log: [{ at: new Date(Date.now() - 36e5).toISOString(), who: "Aina", action: "signed up", target: "Aina", detail: "aina.films@gmail.com", ip: "175.139.20.11", device: "iPhone Safari" },
+      { at: new Date(Date.now() - 864e5).toISOString(), who: "Mun", action: "signed in", target: "Mun", detail: "", ip: "60.53.12.4", device: "Mac Chrome" }] };
   if (!db.shoots.length && !db.seeded) {   // two upcoming shoots so Home has something to show
     const d = n => { const t = new Date(); t.setDate(t.getDate() + n); return ymd(t); };
     db.shoots = [{ id: "s_demo1", name: "Lim Wedding", dates: d(3), location: "Ipoh", type: "both", crew: "Hang,Mun", notes: "", jobId: "" },
@@ -77,24 +91,65 @@ function demo(fn, args) {
     db.birthdays = { Hang: "1990-03-12", Mun: "1994-08-21" };
     db.seeded = true;
   }
-  const save = () => { db.rev++; store.set("mDemo4", db); };
-  if (!store.get("mDemo4", null)) store.set("mDemo4", db);
-  const ok = v => new Promise(r => setTimeout(() => r(v), 120));
+  const save = () => { db.rev++; store.set("mDemo5", db); };
+  if (!store.get("mDemo5", null)) store.set("mDemo5", db);
+  const ok = v => new Promise(r => setTimeout(() => r(v), 120)), no = m => Promise.reject(new Error(m));
+  db.pending = db.pending || []; db.log = db.log || []; db.roles = db.roles || {}; db.gmail = db.gmail || {};
+  let me = session ? session.name : "";
+  const roleD = n => n === "小M" ? "xiaom" : n === db.team[0] ? "boss" : db.roles[n] === "admin" ? "admin" : "member", rankD = n => ({ member: 1, admin: 2, xiaom: 3, boss: 4 })[roleD(n)];
+  const signersD = () => db.team.concat(db.pins["小M"] ? ["小M"] : []);
+  const logD = (action, target, detail, who) => { db.log.push({ at: new Date().toISOString(), who: who || me, action, target: target || "", detail: detail || "", ip: "203.106.88.17", device: DEV }); if (db.log.length > 300) db.log.shift(); };
+  const peopleD = () => ({ me: { name: me, role: roleD(me) }, people: signersD().map(n => ({ name: n, role: roleD(n), hasPin: !!db.pins[n], gmail: rankD(me) >= 2 ? db.gmail[n] || "" : "" })),
+    pending: rankD(me) >= 2 ? db.pending.map(({ pin, ...p }) => p) : [] });
   switch (fn) {
-    case "team": return ok({ members: db.team.map(n => ({ name: n, hasPin: !!db.pins[n] })), studioPin: true });
-    case "login": { const n = db.team.find(x => db.pins[x] === args[0]); return n ? ok({ name: n, token: "demo" }) : Promise.reject(new Error("Wrong PIN")); }
+    case "team": return ok({ members: db.team.map(n => ({ name: n, hasPin: !!db.pins[n] })), xiaom: !!db.pins["小M"], studioPin: true, pinLength: 6 });
+    case "login": {
+      const [pin, nm] = args, n = nm ? (db.pins[nm] === pin ? nm : "") : signersD().find(x => db.pins[x] === pin);
+      if (nm && db.pending.some(p => p.name === nm)) return no("Your sign-up is waiting for approval");
+      if (!n) { logD("sign-in failed", nm, "", nm || "?"); save(); return no("Wrong PIN"); }
+      me = n; logD("signed in", n, "", n); save(); return ok({ name: n, token: "demo", role: roleD(n), upgrade: pin.length !== 6 });
+    }
     case "setMyPin": {
       const [n, auth, pin] = args;
-      if (db.pins[n] ? auth !== db.pins[n] : auth !== "0000") return Promise.reject(new Error(db.pins[n] ? "Current PIN is wrong" : "Studio PIN is wrong"));
-      if (db.team.some(x => x !== n && db.pins[x] === pin)) return Promise.reject(new Error("That PIN is taken. Pick another."));
-      db.pins[n] = pin; save(); return ok({ name: n, token: "demo" });
+      if (db.pins[n] ? auth !== db.pins[n] : auth !== "0000") return no(db.pins[n] ? "Current PIN is wrong" : "Studio PIN is wrong");
+      logD(db.pins[n] ? "changed PIN" : "set first PIN", n, "", n); db.pins[n] = pin; save(); me = n; return ok({ name: n, token: "demo", role: roleD(n) });
     }
-    case "getAll": return ok({ rev: db.rev, rows: db.rows, team: db.team, birthdays: db.birthdays || {}, settings: db.settings, pinRequired: false });
+    case "resetPin": {
+      const [n, pin, by, byPin] = args;
+      if (db.pins[by] !== byPin) { logD("PIN reset refused", n, "wrong PIN for " + by, by); save(); return no("That admin PIN is wrong"); }
+      if (rankD(by) < 2) return no(by + " can't reset PINs (admin, 小M or boss only)");
+      if (rankD(n) > rankD(by)) return no(by + " can't reset the PIN of a " + roleD(n));
+      db.pins[n] = pin; logD("reset PIN", n, "vouched by " + by, by); save(); me = n; return ok({ name: n, token: "demo", role: roleD(n) });
+    }
+    case "register": {
+      const [n, gmail, bd, pin] = args;
+      if (db.team.some(x => x.toLowerCase() === n.toLowerCase())) return no("That name is already on the team. Use First time or Forgot PIN.");
+      db.pending.push({ id: "p" + Date.now(), name: n, gmail, birthday: bd, pin, at: new Date().toISOString(), ip: "" }); logD("signed up", n, gmail, n); save(); return ok({ waiting: true });
+    }
+    case "people": return ok(peopleD());
+    case "approve": case "reject": {
+      if (rankD(me) < 2) return no("Only admins and above can do that");
+      const i = db.pending.findIndex(p => p.id === args[0]); if (i < 0) return no("That sign-up is gone (someone else handled it)");
+      const p = db.pending.splice(i, 1)[0];
+      if (fn === "approve") { db.team.push(p.name); db.birthdays[p.name] = p.birthday; db.pins[p.name] = p.pin; db.gmail[p.name] = p.gmail; }
+      logD(fn === "approve" ? "approved" : "rejected", p.name, p.gmail); save(); return ok(peopleD());
+    }
+    case "setRole": if (rankD(me) < 3) return no("Only xiaoms and above can do that"); db.roles[args[0]] = args[1]; logD("role " + args[1], args[0]); save(); return ok(peopleD());
+    case "removeMember": {
+      const n = args[0];
+      if (n === me) return no("You can't remove yourself");
+      if (roleD(n) === "boss") return no("Nobody can remove the boss");
+      if (rankD(n) >= rankD(me)) return no("You can't remove a " + roleD(n));
+      if (n === "小M") delete db.pins["小M"]; else { db.team = db.team.filter(x => x !== n); delete db.birthdays[n]; delete db.pins[n]; delete db.roles[n]; }
+      logD("removed", n); save(); return ok(peopleD());
+    }
+    case "auditLog": if (rankD(me) < 2) return no("Only admins and above can do that"); logD("opened the log", ""); save(); return ok(db.log.slice().reverse());
+    case "getAll": return ok({ rev: db.rev, rows: db.rows, team: db.team, birthdays: db.birthdays || {}, settings: db.settings, pinRequired: false, me: { name: me, role: roleD(me) } });
     case "getRev": return ok(db.rev);
     case "getJob": return ok(db.rows.find(r => r.id === args[0]) || null);
     case "saveJob": { const j = args[1], i = db.rows.findIndex(r => r.id === j.id); if (i < 0) db.rows.push(j); else db.rows[i] = j; save(); return ok(true); }
     case "deleteJob": db.rows = db.rows.filter(r => r.id !== args[1]); save(); return ok(true);
-    case "setTeam": db.team = args[1]; if (args[2]) db.birthdays = args[2]; save(); return ok(true);
+    case "setTeam": { const add = args[1].filter(n => !db.team.includes(n)); if (add.length && rankD(me) < 2) return no("Only admins and above can do that"); if (add.length) logD("added", add.join(", ")); db.team = args[1]; if (args[2]) db.birthdays = args[2]; save(); return ok(true); }
     case "setSetting": db.settings[args[1]] = args[2]; save(); return ok(true);
     case "addFeedback": return ok(true);
     case "getShoots": return ok(db.shoots);
@@ -251,58 +306,139 @@ function useCopy(c) { data = c.all; team = c.all.team || []; shoots = c.sh || []
 addEventListener("online", () => { if (session && session.offline) lock("Back online. Enter your PIN to sync."); });
 
 // ---------------------------------------------------------------- PIN lock
-let entered = "", team = [];
+// Pick your name, then your 6-digit PIN. An old 4-digit PIN still opens once (press OK, or it goes by itself on a
+// device that used it before), and then asks for a new 6-digit one. First time / Register / Forgot PIN sit below the pad.
+const PIN_LEN = 6;
+let entered = "", team = [], who = null, legacyT = 0;
+const lens = () => store.get("mLen", {}) || {};
 function lock(msg) {
-  session = null; entered = "";
+  session = null; entered = ""; clearTimeout(legacyT);
   $("shell").hidden = true; $("setup").hidden = true; $("lock").hidden = false;
   $("lockMsg").textContent = msg || ""; drawDots();
   $("backupFrame").removeAttribute("src"); backupLoaded = false; scenes(false);
   closeM(true); MBTN.hidden = true; if (graph) graph.stop();
   closeShoot(); if (streaming) streaming.abort(); gKey = ""; teamOk = false; closeJob(true);
+  ppl = null; logRows = null; pplAt = 0; if (data) data.me = null; shownView = "";
+  loadWho();
 }
-function drawDots() { [...$("dots").children].forEach((d, i) => d.classList.toggle("on", i < entered.length)); lockTurn(entered.length > 0); }
-async function key(k) {
-  if (k === "del") entered = entered.slice(0, -1);
-  else if (entered.length < 4 && /\d/.test(k)) entered += k;
-  drawDots();
-  if (entered.length === 4) {
-    const pin = entered;
-    try { session = await slow(M.api("login", [pin])); keepPin(pin, session.name); entered = ""; drawDots(); setTimeout(() => lockMood("yay"), 300); setTimeout(unlock, 900); }
-    catch (e) {
-      const off = isNetErr(e) && await offlineName(pin);
-      if (off) { session = { name: off, token: "", offline: true }; entered = ""; drawDots(); setTimeout(() => lockMood("yay"), 300); setTimeout(unlock, 900); return; }
-      if (isNetErr(e) && !DEMO) e = new Error(store.get("mPins", null) ? "No connection, and that PIN doesn't match. Try again." : "No connection. Sign in once with internet, then it opens offline too.");
-      $("dots").classList.remove("shake"); void $("dots").offsetWidth; $("dots").classList.add("shake");
-      $("lockMsg").textContent = e.message; entered = ""; drawDots(); setTimeout(() => lockMood("no"), 300);
-    }
+// who can sign in: everyone on the team with a PIN, and 小M when it has one (kept on the device for offline)
+async function loadWho() {
+  try { who = await M.api("team"); store.set("mWho", who); } catch (e) { who = store.get("mWho", null); }
+  drawWho();
+}
+const signers = () => who ? who.members.filter(m => m.hasPin).map(m => m.name).concat(who.xiaom ? ["小M"] : []) : [];
+function drawWho() {
+  const list = signers(), me = store.get("mUser", "");
+  $("lockWhoRow").hidden = !list.length;
+  $("lockWho").innerHTML = (list.includes(me) ? "" : `<option value="">Pick your name</option>`) + list.map(n => `<option${n === me ? " selected" : ""}>${esc(n)}</option>`).join("");
+  $("lockTitle").textContent = list.includes(me) ? `Hi ${me}, enter your PIN` : "Enter your PIN";
+}
+$("lockWho").addEventListener("change", e => { store.set("mUser", e.target.value); entered = ""; drawDots(); drawWho(); $("lockMsg").textContent = ""; fx("toggle"); });
+function drawDots() {
+  [...$("dots").children].forEach((d, i) => d.classList.toggle("on", i < entered.length));
+  $("dots").classList.toggle("old", entered.length === 4);
+  $("padOk").classList.toggle("on", entered.length === 4);
+  lockTurn(entered.length > 0);
+}
+async function signIn(pin) {
+  clearTimeout(legacyT);
+  const name = $("lockWho").value;
+  try {
+    session = await slow(M.api("login", [pin, name]));
+    keepPin(pin, session.name); store.set("mUser", session.name);
+    const l = lens(); l[session.name] = pin.length; store.set("mLen", l);
+    entered = ""; drawDots(); setTimeout(() => lockMood("yay"), 300);
+    if (session.upgrade) { setTimeout(() => openUpgrade(pin), 700); return; }
+    setTimeout(unlock, 900);
+  } catch (e) {
+    const off = isNetErr(e) && await offlineName(pin);
+    if (off) { session = { name: off, token: "", offline: true }; entered = ""; drawDots(); setTimeout(() => lockMood("yay"), 300); setTimeout(unlock, 900); return; }
+    if (isNetErr(e) && !DEMO) e = new Error(store.get("mPins", null) ? "No connection, and that PIN doesn't match. Try again." : "No connection. Sign in once with internet, then it opens offline too.");
+    $("dots").classList.remove("shake"); void $("dots").offsetWidth; $("dots").classList.add("shake");
+    $("lockMsg").textContent = e.message; entered = ""; drawDots(); setTimeout(() => lockMood("no"), 300);
   }
+}
+function key(k) {
+  clearTimeout(legacyT);
+  if (k === "del") entered = entered.slice(0, -1);
+  else if (k === "ok") { if (entered.length === 4) signIn(entered); return; }
+  else if (entered.length < PIN_LEN && /\d/.test(k)) entered += k;
+  drawDots();
+  if (entered.length === PIN_LEN) signIn(entered);
+  else if (entered.length === 4 && lens()[$("lockWho").value] === 4) { const p = entered; legacyT = setTimeout(() => { if (entered === p) signIn(p); }, 1100); }
 }
 $("pad").addEventListener("click", e => { const b = e.target.closest("button"); if (b) key(b.dataset.k); });
 document.addEventListener("keydown", e => {
   if ($("lock").hidden) return;
-  if (/^\d$/.test(e.key)) key(e.key); else if (e.key === "Backspace") key("del");
+  if (/^\d$/.test(e.key)) key(e.key); else if (e.key === "Backspace") key("del"); else if (e.key === "Enter") key("ok");
 });
 $("lockBtn").addEventListener("click", () => lock());
 
-// First-time setup: pick your name (only people without a PIN), studio PIN, new PIN twice
-$("setupBtn").addEventListener("click", async () => {
-  $("lock").hidden = true; $("setup").hidden = false; $("suMsg").textContent = "";
-  try {
-    const t = await M.api("team");
-    const free = t.members.filter(m => !m.hasPin);
-    $("suName").innerHTML = free.length ? free.map(m => `<option>${esc(m.name)}</option>`).join("") : `<option value="">Everyone has a PIN</option>`;
-    $("suStudioRow").hidden = !t.studioPin;
-  } catch (e) { $("suMsg").textContent = e.message; }
-});
-$("suCancel").addEventListener("click", () => lock());
+// the cards under the PIN pad: one at a time, Back returns to the pad
+function showForm(id) {
+  $("lock").hidden = true; $("setup").hidden = false;
+  [...$("setup").children].forEach(c => { c.hidden = c.id !== id; });
+  const f = $(id); f.querySelectorAll(".msg").forEach(m => { m.textContent = ""; });
+  const first = f.querySelector("input:not([hidden]), select"); if (first && window.innerWidth >= 900) setTimeout(() => first.focus(), 60);
+  fx("open"); return f;
+}
+document.querySelectorAll("[data-form]").forEach(b => b.addEventListener("click", () => openForm(b.dataset.form)));
+$("setup").addEventListener("click", e => { if (e.target.closest("[data-back]")) { fx("close"); lock(); } });
+const sixOk = (a, b, msg) => { if (!/^\d{6}$/.test(a)) { msg.textContent = "PIN is 6 digits"; return false; } if (a !== b) { msg.textContent = "The two PINs are different"; return false; } return true; };
+const opts = (list, pick) => list.map(n => `<option${n === pick ? " selected" : ""}>${esc(n)}</option>`).join("");
+async function openForm(id) {
+  const f = showForm(id);
+  if (id === "regForm") return;
+  try { who = await M.api("team"); store.set("mWho", who); } catch (e) { f.querySelector(".msg").textContent = e.message; return; }
+  const me = store.get("mUser", "");
+  if (id === "setupForm") {
+    f.dataset.mode = "first"; $("suTitle").textContent = "Set up your PIN"; $("suHint").textContent = "You're on the team but haven't picked a PIN yet.";
+    $("suNameRow").hidden = false; $("suName").required = true;
+    const free = who.members.filter(m => !m.hasPin).map(m => m.name);
+    $("suName").innerHTML = free.length ? opts(free, me) : `<option value="">Everyone has a PIN. Use Forgot PIN.</option>`;
+    $("suStudioRow").hidden = !who.studioPin; $("suStudioRow").firstChild.textContent = "Studio PIN";
+  }
+  if (id === "forgotForm") {
+    const has = who.members.filter(m => m.hasPin).map(m => m.name);
+    $("fgName").innerHTML = opts(has, me);
+    $("fgBy").innerHTML = `<option value="">Pick who approves</option>` + opts(has.concat(who.xiaom ? ["小M"] : []));
+  }
+}
+// an old 4-digit PIN worked: pick the new 6-digit one now (the old one is the "current PIN")
+function openUpgrade(old) {
+  const f = showForm("setupForm"); f.dataset.mode = "upgrade"; f.dataset.old = old;
+  $("suTitle").textContent = "Pick a new 6-digit PIN"; $("suHint").textContent = `PINs are 6 digits now, ${session.name}. Your old one worked this last time.`;
+  $("suNameRow").hidden = true; $("suName").required = false; $("suStudioRow").hidden = true;
+}
 $("setupForm").addEventListener("submit", async e => {
-  e.preventDefault();
-  const pin = $("suPin").value, name = $("suName").value;
+  e.preventDefault(); const f = e.target, msg = $("suMsg"), pin = $("suPin").value;
+  if (!sixOk(pin, $("suPin2").value, msg)) return;
+  const up = f.dataset.mode === "upgrade", name = up ? session.name : $("suName").value;
   if (!name) return;
-  if (!/^\d{4}$/.test(pin)) { $("suMsg").textContent = "PIN is 4 digits"; return; }
-  if (pin !== $("suPin2").value) { $("suMsg").textContent = "The two PINs are different"; return; }
-  try { session = await slow(M.api("setMyPin", [name, $("suStudio").value, pin])); e.target.reset(); unlock(); }
-  catch (err) { $("suMsg").textContent = err.message; }
+  try { session = await slow(M.api("setMyPin", [name, up ? f.dataset.old : $("suStudio").value, pin])); }
+  catch (err) { msg.textContent = err.message; fx("err"); return; }
+  keepPin(pin, session.name); store.set("mUser", session.name); const l = lens(); l[session.name] = 6; store.set("mLen", l);
+  f.reset(); delete f.dataset.old; fx("ok"); unlock();
+});
+$("regForm").addEventListener("submit", async e => {
+  e.preventDefault(); const msg = $("rgMsg"), pin = $("rgPin").value, mail = $("rgMail").value.trim().toLowerCase(), name = $("rgName").value.trim().replace(/\s+/g, " ");
+  if (!/^[^@\s]+@(gmail|googlemail)\.com$/.test(mail)) { msg.textContent = "Use a Gmail address"; return; }
+  if (!$("rgBday").value) { msg.textContent = "Birthday is needed"; return; }
+  if (!sixOk(pin, $("rgPin2").value, msg)) return;
+  try { await slow(M.api("register", [name, mail, $("rgBday").value, pin])); }
+  catch (err) { msg.textContent = err.message; fx("err"); return; }
+  e.target.reset(); store.set("mUser", name);
+  $("regSentText").textContent = `Thanks, ${name}. An admin sees your request on the Team page. Once it's approved, sign in with your name and PIN.`;
+  showForm("regSent"); fx("ok");
+});
+$("forgotForm").addEventListener("submit", async e => {
+  e.preventDefault(); const msg = $("fgMsg"), pin = $("fgPin").value, by = $("fgBy").value;
+  if (!sixOk(pin, $("fgPin2").value, msg)) return;
+  if (!by) { msg.textContent = "Pick who approves"; return; }
+  try { session = await slow(M.api("resetPin", [$("fgName").value, pin, by, $("fgByPin").value])); }
+  catch (err) { msg.textContent = err.message; fx("err"); return; }
+  keepPin(pin, session.name); store.set("mUser", session.name); const l = lens(); l[session.name] = 6; store.set("mLen", l);
+  e.target.reset(); fx("ok"); toast("PIN reset"); unlock();
 });
 
 // ---------------------------------------------------------------- shell + routes
@@ -353,7 +489,7 @@ function paint() {
   if (v === "calendar") { if (route.key && parseYmd(route.key)) { selDay = route.key; const d = parseYmd(route.key); calY = d.getFullYear(); calM = d.getMonth(); } drawCal(); }
   if (v === "backup") drawBackup(true);
   if (v === "classic") loadBackup(); else if (v === "backup" && !backupLoaded) (window.requestIdleCallback || (g => setTimeout(g, 600)))(() => { if (session) loadBackup(); }, { timeout: 1500 });   // after the list has drawn   // Backup saves through Classic Backup, kept ready in the background
-  if (v === "team") drawTeam();
+  if (v === "team") { if (shownView !== "team") { $("teamLog").hidden = true; loadPeople(true).then(loadLog); } drawTeam(); }
   shownView = v;
   if (v === "settings") { drawTheme(); drawAI(); drawVoice(); drawFx(); }
 }
@@ -1374,52 +1510,119 @@ $("bkExport").addEventListener("click", () => {
 });
 
 // ---------------------------------------------------------------- team
-// One card per person: this year's jobs and what isn't backed up, the next shoot, the birthday. Below: members and
-// birthdays (the same list Backup uses) and changing your own PIN.
-let birthdays = {}, memArmed = null, teamOk = false;
+// One card per person: this year's jobs and what isn't backed up, the next shoot, the birthday. Below: sign-up requests
+// (admins and above), everyone grouped by role with birthdays, role and Remove where you're allowed, changing your
+// own PIN, and the activity log (admins and above).
+// Roles: boss > 小M > admin > member. The server checks every one of these; the buttons only show what will work.
+let birthdays = {}, memArmed = null, teamOk = false, ppl = null, pplAt = 0, pplOld = false, logRows = null;
+const RANK = { member: 1, admin: 2, xiaom: 3, boss: 4 }, ROLE_NAME = { boss: "Boss", xiaom: "小M", admin: "Admin", member: "Member" };
+const myRank = () => RANK[(ppl && ppl.me.role) || (data.me && data.me.role) || "member"] || 1;
+const roleOf = n => { const p = ppl && ppl.people.find(x => x.name === n); return p ? p.role : "member"; };
+const canRemove = n => n !== session.name && (pplOld || (roleOf(n) !== "boss" && myRank() >= 2 && RANK[roleOf(n)] < myRank()));
+const canRole = n => !pplOld && myRank() >= 3 && n !== session.name && !["boss", "xiaom"].includes(roleOf(n));
 const bdayText = v => { const m = /^(\d{4}|-{0,4})-?(\d{2})-(\d{2})$/.exec(v || ""); return m ? `${+m[3]} ${MON[+m[2] - 1]}` : ""; };
+async function loadPeople(force) {
+  if (!session || session.offline || pplOld || (!force && Date.now() - pplAt < 30000)) return;
+  if (!force && !ppl && pplAt) return;   // the first load is still on its way
+  pplAt = Date.now();
+  try { ppl = await M.api("people"); }
+  catch (e) { if (/Unknown call/.test(e.message)) pplOld = true; else { pplAt = 0; return; } }   // an older MApp.gs: the plain list, as before
+  if (route.name === "team") { drawReq(); drawMembers(true); drawTeam(); }
+  if (myRank() < 2) $("teamLog").hidden = true;
+}
+async function loadLog() {
+  if (!session || myRank() < 2 || pplOld || session.offline) { $("teamLog").hidden = true; return; }
+  $("teamLog").hidden = false; $("logList").innerHTML = logRows ? $("logList").innerHTML : '<p class="muted small">Loading…</p>';
+  try { logRows = await M.api("auditLog", [150]); drawLog(); } catch (e) { $("logList").innerHTML = `<p class="msg">${esc(e.message)}</p>`; }
+}
+$("logMore").addEventListener("click", () => { fx("tap"); loadLog(); });
+const when = iso => { const d = new Date(iso); if (isNaN(d)) return esc(iso); const t = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return ymd(d) === ymd(new Date()) ? `Today ${t}` : `${d.getDate()} ${MON[d.getMonth()]}${d.getFullYear() !== new Date().getFullYear() ? " " + d.getFullYear() : ""} ${t}`; };
+const LOG_KIND = a => /fail|refused|rejected|removed/.test(a) ? "bad" : /approved|added|signed up|role/.test(a) ? "key" : "";
+function drawLog() {
+  const rs = logRows || [];
+  $("logList").innerHTML = rs.length ? rs.map(r => `<div class="lg ${LOG_KIND(r.action)}">
+    <time>${when(r.at)}</time>
+    <p><b>${esc(r.who || "Someone")}</b> ${esc(r.action)}${r.target && r.target !== r.who ? ` <b>${esc(r.target)}</b>` : ""}${r.detail ? `<span class="muted"> ${esc(r.detail)}</span>` : ""}</p>
+    <span class="lg-from">${esc(r.ip || "no IP")}${r.device ? `<br>${esc(r.device)}` : ""}</span></div>`).join("") : '<p class="muted small">Nothing recorded yet.</p>';
+}
+function drawReq() {
+  const pend = (ppl && ppl.pending) || [];
+  $("teamReq").hidden = !pend.length || myRank() < 2;
+  $("reqN").textContent = pend.length;
+  $("reqList").innerHTML = pend.map(p => `<div class="rq" data-id="${esc(p.id)}"><span class="hub ed">${esc(initials(p.name))}</span>
+    <div class="rq-who"><b>${esc(p.name)}</b><span class="muted small">${esc(p.gmail)}</span><span class="muted small">Birthday ${esc(bdayText(p.birthday) || "?")}, asked ${when(p.at)}${p.ip ? ", from " + esc(p.ip) : ""}</span></div>
+    <div class="rq-act"><button type="button" class="btn ghost sm" data-rq="reject">Reject</button><button type="button" class="btn sm" data-rq="approve">Approve</button></div></div>`).join("");
+}
+$("reqList").addEventListener("click", async e => {
+  const b = e.target.closest("[data-rq]"); if (!b || b.disabled) return;
+  const row = b.closest(".rq"), p = ppl.pending.find(x => x.id === row.dataset.id), yes = b.dataset.rq === "approve";
+  row.querySelectorAll("button").forEach(x => { x.disabled = true; }); $("reqMsg").textContent = "";
+  try { ppl = await M.api(b.dataset.rq, [row.dataset.id]); fx(yes ? "ok" : "off"); toast(`${p.name} ${yes ? "approved. They can sign in now." : "rejected"}`);
+    drawReq(); if (yes) refresh(); else drawMembers(true); if (logRows) loadLog(); }
+  catch (err) { $("reqMsg").textContent = err.message; fx("err"); row.querySelectorAll("button").forEach(x => { x.disabled = false; }); }
+});
 function drawTeam() {
   if (!session) return;
+  loadPeople();
   birthdays = Object.assign({}, data.birthdays || {});
   const y = String(new Date().getFullYear()), today = ymd(new Date());
   $("teamGrid").innerHTML = team.map((n, i) => {
     const rs = rowsOf(y).filter(r => r.editor === n), un = rs.filter(unbacked).length, ok = rs.length - un;
     const next = shoots.filter(s => crewOf(s).includes(n)).map(s => ({ s, d: datesOf(s).sort().find(d => d >= today) })).filter(x => x.d).sort((a, b) => a.d < b.d ? -1 : 1)[0];
-    const bd = bdayText(birthdays[n]);
+    const bd = bdayText(birthdays[n]), ro = roleOf(n);
     return `<article class="tm${n === session.name ? " me" : ""}" style="--i:${i}">
-      <div class="tm-h"><span class="tm-av">${esc(initials(n))}</span><div><span class="tm-name"><b>${esc(n)}</b>${n === session.name ? '<span class="tag">You</span>' : ""}</span><span class="muted small">${bd ? "Birthday " + esc(bd) : "No birthday yet"}</span></div></div>
+      <div class="tm-h"><span class="tm-av">${esc(initials(n))}</span><div><span class="tm-name"><b>${esc(n)}</b>${n === session.name ? '<span class="tag">You</span>' : ""}${ro !== "member" ? `<span class="role r-${ro}">${ROLE_NAME[ro]}</span>` : ""}</span><span class="muted small">${bd ? "Birthday " + esc(bd) : "No birthday yet"}</span></div></div>
       <div class="tm-stats"><a href="#/editor/${encodeURIComponent(n)}"><b>${rs.length}</b><span>${rs.length === 1 ? "job" : "jobs"} in ${y}</span></a>
         <a href="#/editor/${encodeURIComponent(n)}" class="${un ? "red" : ""}"><b>${un}</b><span>not backed up</span></a></div>
       <div class="bar" aria-hidden="true"><i class="ok" style="flex-grow:${ok}"></i><i class="no" style="flex-grow:${un}"></i>${rs.length ? "" : '<i style="flex-grow:1"></i>'}</div>
       <p class="tm-next">${next ? `Next shoot <a href="#/calendar/${esc(encodeURIComponent(next.d))}">${esc(fmtDay(next.d))}</a>, ${esc(next.s.name)}.` : '<span class="muted">No shoots coming up.</span>'}</p>
     </article>`;
   }).join("");
-  drawMembers();
+  drawReq(); drawMembers();
+  $("memAdd").hidden = !(pplOld || myRank() >= 2);
+  $("roleHint").textContent = pplOld ? "Only the day and month of a birthday are shown. Age is never shown."
+    : myRank() >= 3 ? "You can change roles and remove people below you. Birthdays show day and month only."
+    : myRank() >= 2 ? "You can approve sign-ups and remove members. Birthdays show day and month only."
+    : "Birthdays show day and month only. Age is never shown.";
 }
-function drawMembers() {
+function drawMembers(force) {
   // a half-picked birthday or an open select stays as it is through the minute refresh
   const ml = $("memList");
-  if (ml.contains(document.activeElement) || [...ml.querySelectorAll(".mem")].some(r => { const v = [...r.querySelectorAll("select")].map(x => !!x.value); return v.some(Boolean) && !v.every(Boolean); })) return;
+  if (!force && (ml.contains(document.activeElement) || [...ml.querySelectorAll(".mem")].some(r => { const v = [...r.querySelectorAll("[data-bd]")].map(x => !!x.value); return v.some(Boolean) && !v.every(Boolean); }))) return;
   const y0 = new Date().getFullYear(), years = Array.from({ length: 67 }, (_, i) => y0 - 14 - i);
-  ml.innerHTML = team.map(n => {
-    const v = birthdays[n] || "", m = /(\d{2})-(\d{2})$/.exec(v), yy = /^(\d{4})-/.exec(v);
-    return `<div class="mem" data-n="${esc(n)}"><span class="hub ed">${esc(initials(n))}</span><b>${esc(n)}</b>
-      <label class="bd"><span class="sr">Birthday of ${esc(n)}</span><select data-bd="m" aria-label="Month"><option value="">Month</option>${MON.map((x, i) => `<option value="${String(i + 1).padStart(2, "0")}"${m && +m[1] === i + 1 ? " selected" : ""}>${x}</option>`).join("")}</select>
+  const people = ppl && !pplOld ? ppl.people : team.map(n => ({ name: n, role: "member" }));
+  const row = p => {
+    const n = p.name, v = birthdays[n] || "", m = /(\d{2})-(\d{2})$/.exec(v), yy = /^(\d{4})-/.exec(v), bot = p.role === "xiaom";
+    const rm = canRemove(n) ? `<button type="button" class="btn ghost sm rm${memArmed === n ? " armed" : ""}" data-rm="${esc(n)}">${memArmed === n ? "Remove?" : "Remove"}</button>` : '<span class="rm-sp"></span>';
+    const role = canRole(n) ? `<label class="ro"><span class="sr">Role of ${esc(n)}</span><select data-role="${esc(n)}"><option value="member"${p.role === "member" ? " selected" : ""}>Member</option><option value="admin"${p.role === "admin" ? " selected" : ""}>Admin</option></select></label>` : '<span class="ro-sp"></span>';
+    return `<div class="mem${n === session.name ? " me" : ""}" data-n="${esc(n)}"><span class="hub ed r-${p.role}">${bot ? "M" : esc(initials(n))}</span>
+      <div class="mem-who"><b>${esc(n)}${n === session.name ? '<span class="tag">You</span>' : ""}</b>${p.gmail ? `<span class="muted small">${esc(p.gmail)}</span>` : ""}${!bot && p.hasPin === false ? '<span class="muted small">No PIN yet</span>' : ""}</div>
+      ${bot ? '<span class="muted small mem-bot">Studio assistant</span>' : `<label class="bd"><span class="sr">Birthday of ${esc(n)}</span><select data-bd="m" aria-label="Month"><option value="">Month</option>${MON.map((x, i) => `<option value="${String(i + 1).padStart(2, "0")}"${m && +m[1] === i + 1 ? " selected" : ""}>${x}</option>`).join("")}</select>
       <select data-bd="d" aria-label="Day"><option value="">Day</option>${Array.from({ length: 31 }, (_, i) => `<option value="${String(i + 1).padStart(2, "0")}"${m && +m[2] === i + 1 ? " selected" : ""}>${i + 1}</option>`).join("")}</select>
-      <select data-bd="y" aria-label="Year"><option value="">Year</option>${years.map(x => `<option${yy && +yy[1] === x ? " selected" : ""}>${x}</option>`).join("")}</select></label>
-      ${n === session.name ? '<span class="rm-sp"></span>' : `<button type="button" class="btn ghost sm rm${memArmed === n ? " armed" : ""}" data-rm="${esc(n)}">${memArmed === n ? "Remove?" : "Remove"}</button>`}</div>`;
-  }).join("");
+      <select data-bd="y" aria-label="Year"><option value="">Year</option>${years.map(x => `<option${yy && +yy[1] === x ? " selected" : ""}>${x}</option>`).join("")}</select></label>`}
+      ${role}${rm}</div>`;
+  };
+  ml.innerHTML = (pplOld || !ppl ? [["", people]] : ["boss", "xiaom", "admin", "member"].map(r => [r, people.filter(p => p.role === r)]))
+    .filter(([, l]) => l.length).map(([r, l]) => (r ? `<p class="mem-h">${r === "admin" ? "Admins" : r === "member" ? "Members" : ROLE_NAME[r]}</p>` : "") + l.map(row).join("")).join("");
 }
 async function saveTeam(members, bd, msg) {
   // never write a team list that didn't come from a good load, or one without you in it: that would wipe the list in Backup too
-  if (!teamOk || !members.includes(session.name)) { $("memMsg").textContent = "The team list hasn't loaded yet. Try again in a moment."; return; }
+  if (!teamOk || !(members.includes(session.name) || session.name === "小M")) { $("memMsg").textContent = "The team list hasn't loaded yet. Try again in a moment."; return; }
   const prevT = team, prevB = birthdays;
   team = members; birthdays = bd; data.team = members; data.birthdays = bd; drawTeam(); drawSide();
-  try { await M.api("setTeam", ["", members, bd]); toast(msg); buzz(); }
+  try { await M.api("setTeam", ["", members, bd]); toast(msg); buzz(); pplAt = 0; loadPeople(); }
   catch (err) { team = prevT; birthdays = prevB; data.team = prevT; data.birthdays = prevB; drawTeam(); $("memMsg").textContent = err.message; }
 }
-$("memList").addEventListener("change", e => {
-  const row = e.target.closest(".mem"); if (!row) return;
+$("memList").addEventListener("change", async e => {
+  const rs = e.target.closest("[data-role]");
+  if (rs) {
+    const n = rs.dataset.role, v = rs.value; $("memMsg").textContent = "";
+    try { ppl = await M.api("setRole", [n, v]); fx("ok"); toast(`${n} is now ${v === "admin" ? "an admin" : "a member"}`); }
+    catch (err) { $("memMsg").textContent = err.message; fx("err"); }
+    drawMembers(true); drawTeam(); return;
+  }
+  const row = e.target.closest(".mem"); if (!row || !row.querySelector('[data-bd="m"]')) return;
   const n = row.dataset.n, m = row.querySelector('[data-bd="m"]').value, d = row.querySelector('[data-bd="d"]').value, y = row.querySelector('[data-bd="y"]').value;
   if (!(m && d && y) && (m || d || y)) return;   // wait for all three (Backup keeps the year for the zodiac hat)
   const bd = Object.assign({}, birthdays);
@@ -1427,21 +1630,25 @@ $("memList").addEventListener("change", e => {
   if (m && !parseYmd(bd[n])) { $("memMsg").textContent = "That day doesn't exist."; return; }
   $("memMsg").textContent = ""; saveTeam(team, bd, m ? `Birthday saved for ${n}` : `Birthday cleared for ${n}`);
 });
-$("memList").addEventListener("click", e => {
+$("memList").addEventListener("click", async e => {
   const b = e.target.closest("[data-rm]"); if (!b) return;
   const n = b.dataset.rm;
-  if (memArmed !== n) { memArmed = n; drawMembers(); setTimeout(() => { if (memArmed === n) { memArmed = null; drawMembers(); } }, 3000); return; }
-  memArmed = null; const bd = Object.assign({}, birthdays); delete bd[n];
-  saveTeam(team.filter(x => x !== n), bd, `${n} removed`);
+  if (memArmed !== n) { memArmed = n; fx("tap"); drawMembers(true); setTimeout(() => { if (memArmed === n) { memArmed = null; drawMembers(true); } }, 3000); return; }
+  memArmed = null;
+  if (pplOld) { const bd = Object.assign({}, birthdays); delete bd[n]; saveTeam(team.filter(x => x !== n), bd, `${n} removed`); return; }
+  b.disabled = true; $("memMsg").textContent = "";
+  try { ppl = await M.api("removeMember", [n]); fx("off"); toast(`${n} removed`); refresh(); if (logRows) loadLog(); }
+  catch (err) { $("memMsg").textContent = err.message; fx("err"); }
+  drawMembers(true);
 });
 $("memAdd").addEventListener("submit", e => {
   e.preventDefault();
   const n = $("memNew").value.trim().replace(/\s+/g, " ");
   if (!n) return;
   if (team.some(x => x.toLowerCase() === n.toLowerCase())) { $("memMsg").textContent = `${n} is already on the team.`; return; }
-  if (/[,<>"]/.test(n)) { $("memMsg").textContent = "Use letters and spaces only."; return; }
+  if (/[,<>"]/.test(n) || n === "小M") { $("memMsg").textContent = "Use letters and spaces only."; return; }
   $("memNew").value = ""; $("memMsg").textContent = "";
-  saveTeam([...team, n], birthdays, `${n} added`);
+  saveTeam([...team, n], birthdays, `${n} added. They pick a PIN with First time.`);
 });
 
 // ---------------------------------------------------------------- shoot form
@@ -2262,9 +2469,8 @@ function drawVoice() { document.querySelectorAll("#voiceSeg button").forEach(b =
 $("voiceSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { store.set("mVoice", b.dataset.l); drawVoice(); } });
 $("pinForm").addEventListener("submit", async e => {
   e.preventDefault(); const n = $("pfNew").value;
-  if (!/^\d{4}$/.test(n)) { $("pfMsg").textContent = "PIN is 4 digits"; return; }
-  if (n !== $("pfNew2").value) { $("pfMsg").textContent = "The two PINs are different"; return; }
-  try { session = await M.api("setMyPin", [session.name, $("pfOld").value, n]); e.target.reset(); $("pfMsg").textContent = ""; toast("PIN changed"); }
+  if (!sixOk(n, $("pfNew2").value, $("pfMsg"))) return;
+  try { session = await M.api("setMyPin", [session.name, $("pfOld").value, n]); keepPin(n, session.name); const l = lens(); l[session.name] = 6; store.set("mLen", l); e.target.reset(); $("pfMsg").textContent = ""; fx("ok"); toast("PIN changed"); }
   catch (err) { $("pfMsg").textContent = err.message; }
 });
 $("aiProv").innerHTML = Object.entries(AI_PROVIDERS).map(([k, p]) => `<option value="${k}">${esc(p.label)}</option>`).join("");
