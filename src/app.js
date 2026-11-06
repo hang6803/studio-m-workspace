@@ -4,10 +4,10 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.9";
+const APP_VER = "0.9.11";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
-const CFG = window.M_API || { apiUrl: "", apiKey: "" };
+const CFG = window.M_API || { apiUrl: "" };
 const DEMO = !CFG.apiUrl;
 const M = window.M = {};
 const store = {
@@ -77,7 +77,7 @@ M.api = async function (fn, args = []) {
   if (!myIp) await ipReady;
   const res = await net(CFG.apiUrl, {
     method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },   // text/plain: no CORS preflight
-    body: JSON.stringify({ key: CFG.apiKey, token: session && session.token, fn, args, ip: myIp, dev: DEV })
+    body: JSON.stringify({ token: session && session.token, fn, args, ip: myIp, dev: DEV })
   });
   const out = await res.json();
   if (out.error) {

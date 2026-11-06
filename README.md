@@ -28,13 +28,14 @@ Not backed up follows the Backup page: Video and Photo of one job are two rows, 
 
 Google Sheet "Studio M Backup Data" stays the only source. Jobs columns never change. New: tab `Shoots`
 (id, name, dates, location, type, crew, notes, jobId, createdBy, createdAt, updatedBy, updatedAt) and Script properties
-`API_KEY` (set by hand), `PIN_SALT` + `UPIN_<name>` (set by the API; hashed personal PINs, never sent to the app).
+`PIN_SALT` + `UPIN_<name>` (set by the API; hashed personal PINs, never sent to the app).
+`DEEPSEEK_KEY` stays on the server for Ask M. The app has no shared API key: after the PIN, the server checks the session token.
 
 ## Server setup (once)
 
-1. Apps Script → + file `MApp` → paste `api/MApp.gs` → Script property `API_KEY` = a long random string.
+1. Apps Script → + file `MApp` → paste `api/MApp.gs`. Do not add an API key to the app. After this version is deployed, delete an old Script property `API_KEY` if it is still there.
 2. Deploy → New deployment → Web app, Execute as: Me, Who has access: Anyone → copy the `/exec` link.
-3. `config.local.json` (see `config.example.json`) for local builds, or repo secrets `M_API_URL` / `M_API_KEY` for GitHub builds.
+3. `config.local.json` (see `config.example.json`) for local builds, or the repo secret `M_API_URL` for GitHub builds. That secret is only the `/exec` address.
 
 ## Build
 
@@ -46,6 +47,6 @@ Google Sheet "Studio M Backup Data" stays the only source. Jobs columns never ch
 Unsigned (no Apple Developer account yet): the first time, right-click the app → Open.
 
 ## Phone app (PWA)
-- Every push to `main` publishes `dist/` to GitHub Pages (`.github/workflows/pages.yml`), with the API settings from the secrets `M_API_URL` and `M_API_KEY` built in (the owner chose this on 2026-11-05, knowing the key is readable by anyone with the link; PINs still guard the data). Turn it on once: Settings → Pages → Source "GitHub Actions".
+- Every push to `main` publishes `dist/` to GitHub Pages (`.github/workflows/pages.yml`), with the address from the secret `M_API_URL` built in. The API key is not in the page. The PIN signs you in; the session token is what the server checks after that. Turn it on once: Settings → Pages → Source "GitHub Actions".
 - On the phone: open the Pages link → Share → Add to Home Screen (iPhone) or Install app (Android).
 - Offline: after one online sign-in, the same PIN opens the last data saved on that phone, view only. Back online it asks for the PIN again.

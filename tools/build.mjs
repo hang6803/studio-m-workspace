@@ -5,7 +5,9 @@
 //   xiaom.js                     — 2.5D 小M from hang6803/xiaom-module (vendor/xiaom), used by both the shell and the Backup page
 //   festivals.js, festival-theme.js, celebrate.js, sfx.js — festival calendar, particles, 小M greetings, sound (vendor/xiaom)
 //   assets/                      — Century Gothic and the Studio M logos, taken out of the Backup page
-// API settings come from config.local.json or env M_API_URL / M_API_KEY; with none the app runs on demo data.
+// The API address comes from config.local.json or env M_API_URL. With none, the app runs on demo data.
+// There is no shared API key in the build. M_API_KEY and config.local.json "apiKey" are ignored so a
+// leftover key cannot be copied into dist/ or GitHub Pages.
 // Usage: node tools/build.mjs
 import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -13,7 +15,8 @@ import { createHash } from "node:crypto";
 const at = p => new URL("../" + p, import.meta.url);
 const read = p => readFileSync(at(p), "utf8");
 const cfg = existsSync(at("config.local.json")) ? JSON.parse(read("config.local.json")) : {};
-const api = { apiUrl: process.env.M_API_URL || cfg.apiUrl || "", apiKey: process.env.M_API_KEY || cfg.apiKey || "" };
+const api = { apiUrl: process.env.M_API_URL || cfg.apiUrl || "" };
+if (process.env.M_API_KEY || cfg.apiKey) console.warn("WARN: API key is ignored and is not written into the app");
 if (!api.apiUrl) console.warn("WARN: no apiUrl (config.local.json or M_API_URL) — building the demo app");
 const must = (ok, what) => { if (!ok) throw new Error(what); };
 

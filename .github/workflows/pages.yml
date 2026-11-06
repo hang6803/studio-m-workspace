@@ -1,6 +1,7 @@
 name: Phone app (GitHub Pages)
 # Builds the web app and publishes it on GitHub Pages, so phones can open it and "Add to Home Screen".
-# Needs: Settings → Pages → Source "GitHub Actions"; the secrets M_API_URL and M_API_KEY (without them it publishes the demo).
+# Needs: Settings → Pages → Source "GitHub Actions"; the secret M_API_URL (the Apps Script /exec address).
+# The API key is not part of this build. Without M_API_URL it publishes the demo.
 on:
   workflow_dispatch:
   push:
@@ -22,10 +23,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
+      - run: npm test
       - run: node tools/build.mjs
         env:
           M_API_URL: ${{ secrets.M_API_URL }}
-          M_API_KEY: ${{ secrets.M_API_KEY }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with: { path: dist }

@@ -1,10 +1,13 @@
 // M app (Mac) — JSON API. Add this as a second file (MApp.gs) in the Studio M Backup Apps Script project, next to
 // Code.gs; it only adds, Code.gs and the web page are not changed.
-// The app sends POST {key, token, fn, args} as text/plain and gets {result} or {error} back.
-// Script properties: API_KEY (required, also built into the app), PIN (the studio PIN, as today),
-// DEEPSEEK_KEY (for Ask M; stays here on the server, the app never sees it).
-// Set by this file: PIN_SALT, UPIN_<name> (each person's hashed 4-digit PIN — never sent to the app).
+// The app sends POST {token, fn, args} as text/plain and gets {result} or {error} back.
+// There is no shared API key. A key in an old copy of the page is ignored. Delete the API_KEY script
+// property after this version is deployed, so the key that was published with the old page is dead.
+// Script properties: PIN (the studio PIN, as today), DEEPSEEK_KEY (for Ask M; stays here, the app never sees it).
+// Set by this file: PIN_SALT, UPIN_<name> (each person's hashed PIN — never sent to the app).
 // Deploy: a web-app deployment with "Execute as: Me" and "Who has access: Anyone" (the app has no Google sign-in).
+// Code.gs is not changed by this file. saveJob / deleteJob / checkPin_ still live there. This file checks
+// the session and the role, then fills in the studio PIN before those calls, the same as before.
 const SHOOTS = "Shoots";
 const SHOOT_COLS = ["id", "name", "dates", "location", "type", "crew", "notes", "jobId", "createdBy", "createdAt", "updatedBy", "updatedAt"];
 const SESSION_TTL = 21600;   // 6 hours, the longest CacheService keeps a value; after that the app asks for the PIN again
@@ -15,20 +18,51 @@ const API_READ = { getAll: getAll, getRev: getRev, getJob: getJob_, getShoots: g
   people: people_, approve: approve_, reject: reject_, setRole: setRole_, removeMember: removeMember_, auditLog: auditLog_, setPinFor: setPinFor_ };
 const API_WRITE = { saveJob: saveJob, deleteJob: deleteJob, setTeam: setTeamGuarded_, setSetting: setSetting,
   saveShoot: saveShoot, deleteShoot: deleteShoot };
+// These writes need a signed-in team role (member and above: admin, M, boss). Checked here, before Code.gs runs.
+const WRITE_MIN = { saveJob: "member", deleteJob: "member", saveShoot: "member", deleteShoot: "member" };
 // open without a session: who exists, signing in, first-time PIN, registering, and a PIN reset vouched for by an admin
 const API_OPEN = { team: teamStatus_, login: login_, setMyPin: setMyPin_, register: register_, resetPin: resetPin_ };
+// Each open call: per reported IP, and a global cap, over 10 minutes. Apps Script cannot see the caller, so the
+// IP is the one the app reports; the global cap still applies when that IP is missing or rotated.
+const OPEN_WINDOW = 600;
+const OPEN_LIMITS = {
+  login: { ip: 8, all: 24 },
+  register: { ip: 3, all: 10 },
+  setMyPin: { ip: 6, all: 20 },
+  resetPin: { ip: 6, all: 20 },
+  team: { ip: 40, all: 200 }
+};
 
 let REQ = { who: "", ip: "", dev: "" };   // who is asking, and from where (the app reports its own public IP)
+function bump_(key, ttl) {
+  try {
+    const c = cache_();
+    const n = Number(c.get(key) || 0) + 1;
+    if (!isFinite(n)) throw new Error("bad count");
+    c.put(key, String(n), ttl);
+    return n;
+  } catch (e) {
+    throw new Error("Too many tries. Wait 10 minutes.");
+  }
+}
+function openGate_(fn) {
+  const lim = OPEN_LIMITS[fn];
+  if (!lim) throw new Error("Too many tries. Wait 10 minutes.");
+  const ip = String(REQ.ip || "").trim().slice(0, 60) || "noip";
+  const ipN = bump_("op:" + fn + ":" + ip, OPEN_WINDOW);
+  const allN = bump_("op:" + fn, OPEN_WINDOW);
+  if (ipN > lim.ip || allN > lim.all) throw new Error("Too many tries. Wait 10 minutes.");
+}
 function doPost(e) {
   let out;
   try {
     const req = JSON.parse(e.postData.contents);
-    const key = String(props_().getProperty("API_KEY") || "");
-    if (!key || req.key !== key) throw new Error("Bad API key");
     const args = Array.isArray(req.args) ? req.args : [];
     REQ = { who: "", ip: String(req.ip || "").slice(0, 60), dev: String(req.dev || "").slice(0, 120) };
-    if (API_OPEN[req.fn]) out = { result: API_OPEN[req.fn].apply(null, args) };
-    else {
+    if (API_OPEN[req.fn]) {
+      openGate_(req.fn);
+      out = { result: API_OPEN[req.fn].apply(null, args) };
+    } else {
       const who = sessionName_(req.token);
       if (!who) throw new Error("SESSION: please enter your PIN again");
       REQ.who = who;
@@ -37,6 +71,7 @@ function doPost(e) {
         if (req.fn === "getAll") { r.pinRequired = false; r.me = { name: who, role: roleOf_(who) }; }
         out = { result: r };
       } else if (API_WRITE[req.fn]) {
+        if (WRITE_MIN[req.fn]) need_(WRITE_MIN[req.fn]);
         args[0] = String(props_().getProperty("PIN") || "");
         out = { result: API_WRITE[req.fn].apply(null, args) };
       } else throw new Error("Unknown call: " + req.fn);

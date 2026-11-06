@@ -1,4 +1,3 @@
 {
-  "apiUrl": "https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec",
-  "apiKey": "<same value as the API_KEY script property>"
+  "apiUrl": "https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec"
 }
