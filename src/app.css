@@ -94,6 +94,23 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round
 .pad button:active { transform: scale(.92); background: var(--accent-soft) }
 .link { background: none; border: 0; color: var(--accent); padding: 4px; font-size: 14px }
 .setup-card { width: min(420px, 100%) }
+.setup-card h2 { margin: 0 } .setup-card > p.muted { margin: -4px 0 4px }
+.setup-card input[type="date"] { min-height: 44px }
+.vouch { border: 1px dashed var(--line); border-radius: var(--r-in, 12px); padding: 10px 12px 12px; margin: 4px 0 0; display: flex; flex-direction: column; gap: 10px; min-width: 0 }
+.vouch legend { padding: 0 6px; font-size: 12px; color: var(--muted) }
+/* who is signing in: a quiet chip under the title (a real select, so phones show their own picker) */
+.lock-who { position: relative; display: flex; align-items: center; margin: -8px 0 0; flex-direction: row }
+.lock-who select { appearance: none; -webkit-appearance: none; font: inherit; font-size: 15px; font-weight: 600; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 99px; padding: 8px 34px 8px 16px; min-height: 40px; box-shadow: var(--hi, none), var(--d1, none); cursor: pointer; max-width: 70vw }
+.lock-who svg { position: absolute; right: 12px; width: 16px; height: 16px; fill: none; stroke: var(--muted); stroke-width: 2; pointer-events: none }
+.lock-who select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.dots.old i:nth-child(n+5) { opacity: .35; transform: scale(.8) }
+.pad .pad-ok { font-size: 15px; font-weight: 700; letter-spacing: .02em; color: var(--accent-text, var(--accent)); visibility: hidden; opacity: 0; transform: scale(.8); transition: opacity .2s, transform .3s var(--spring), visibility 0s .2s }
+.pad .pad-ok.on { visibility: visible; opacity: 1; transform: none; transition: opacity .2s, transform .3s var(--spring) }
+.lock-links { display: flex; gap: 6px 18px; flex-wrap: wrap; justify-content: center; margin-top: 2px }
+.lock-links .link { min-height: 40px; padding: 8px 6px; color: var(--muted); font-size: 14px; transition: color .2s }
+.lock-links .link:first-child { color: var(--accent-text, var(--accent)) }
+.lock-links .link:hover { color: var(--fg) }
+.sent-card p { margin: 0; line-height: 1.5 }
 
 
 /* M's moves (the corner 小M, the one in the chat header, and the PIN screen) */
@@ -270,7 +287,7 @@ body.m-open .find { border-color: var(--accent) }
   .legend, .g-hint { display: none }
   .pin-card { left: 12px; right: 84px; top: auto; bottom: 12px; width: auto; padding: 12px 14px; gap: 4px }
   .pin-card p + p { display: none } .pin-card .pc-h b { font-size: 16px }
-  .tabs { display: grid; grid-template-columns: repeat(5, 1fr); border-top: 1px solid var(--line); background: var(--bg); padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px)); z-index: 6 }
+  .tabs { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); background: var(--bg); padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px)); z-index: 6 }
   .tabs a, .tabs button { position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 48px; border: 0; background: none; color: var(--muted); font-size: 12px; border-radius: 8px; text-decoration: none }
   .tabs svg { width: 22px; height: 22px; transition: transform .35s var(--spring) }
   .tabs .on { color: var(--accent-text); font-weight: 700 } .tabs .on svg { transform: translateY(-2px) scale(1.08) }
@@ -469,17 +486,60 @@ body.cal-dragging, body.cal-dragging * { cursor: grabbing !important; user-selec
 .tm-stats a:hover { border-color: var(--accent) } .tm-stats b { font-size: 26px; line-height: 30px; font-variant-numeric: tabular-nums } .tm-stats span { font-size: 12px; color: var(--muted) }
 .tm-stats a.red b { color: var(--danger) }
 .tm-next { margin: 0; font-size: 13px }
-.team-lower { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; align-items: start }
+.team-lower { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(0, 2fr); gap: 14px; align-items: start }
+.team-lower:has(#teamLog[hidden]) { grid-template-columns: minmax(0, 420px) }
+@media (max-width: 1099px) { .team-lower, .team-lower:has(#teamLog[hidden]) { grid-template-columns: minmax(0, 1fr) } }
 .mem-list { display: flex; flex-direction: column }
 .mem { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line) } .mem:first-child { border-top: 0 }
 .mem > b { flex: 1; min-width: 0 }
 .mem .bd { display: flex; flex-direction: row; align-items: center; gap: 6px; margin: 0 } .mem select { width: auto; padding: 6px 8px; border-radius: 4px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: inherit; font-size: 13px }
 .mem .rm.armed { border-color: var(--danger); color: var(--danger) } .rm-sp { width: 82px }
 .mem-add { display: flex; gap: 8px } .mem-add input { flex: 1; min-width: 0 }
+.tq .msg:empty, #memMsg:empty { display: none }
+.mem .rp.on { border-color: var(--accent); color: var(--accent-text) }
+
+@media (min-width: 900px) {
+  .mem { display: grid; grid-template-columns: 30px minmax(96px, 1fr) auto 100px auto 82px; column-gap: 10px; row-gap: 6px } .mem-bot { justify-self: start }
+  .mem .ro select { width: 100% } .mem .rm { justify-self: end } .rm-sp { width: auto }
+  .mem-who .small { white-space: normal; word-break: break-all }
+}
+.mem-h { margin: 14px 0 0; padding-bottom: 2px; font-size: 12px; font-weight: 600; color: var(--muted) } .mem-h:first-child { margin-top: 0 }
+.mem-h + .mem { border-top: 0 }
+.mem .hub { width: 30px; height: 30px; font-size: 12px }
+.hub.r-boss { background: var(--fg); color: var(--bg); box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--fg) }
+.hub.r-xiaom { background: radial-gradient(circle at 35% 30%, #fff, #e9e9e9 55%, #bdbdbd); color: #141414 }
+.hub.r-admin { background: color-mix(in srgb, var(--fg) 72%, var(--bg)); color: var(--bg) }
+.hub.r-member { background: transparent; color: var(--fg); box-shadow: inset 0 0 0 1.5px var(--line) }
+.mem-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px } .mem-who b { display: flex; align-items: center } .mem-who .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.mem.me .mem-who > b { color: var(--fg) }
+.mem-bot { margin-right: auto }
+.mem .ro { margin: 0; flex-direction: row } .mem .ro select { font-weight: 600 }
+.role { display: inline-block; margin-left: 8px; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted) }
+.role.r-boss { background: var(--fg); color: var(--bg); border-color: var(--fg) }
+/* sign-up requests: the first thing on the page when there are any */
+.tq { margin: 0 0 14px; border-color: color-mix(in srgb, var(--danger) 45%, var(--line)) }
+.tq h3 { display: flex; align-items: center; gap: 8px; margin: 0 }
+.rq { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line) } .rq:first-child { border-top: 0; padding-top: 4px }
+.rq .hub { width: 36px; height: 36px; font-size: 13px }
+.rq-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px } .rq-who b { font-size: 16px }
+.rq-act { display: flex; gap: 8px; flex: none }
+/* the activity log */
+.tlog { margin: 0 }
+.tlog-h { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap } .tlog-h h3 { margin: 0 } .tlog-h .small { flex: 1; min-width: 200px } .tlog-h .btn { align-self: center }
+.tlog-list { display: flex; flex-direction: column; max-height: 460px; overflow: auto; margin: 0 -4px; padding: 0 4px; overscroll-behavior: contain }
+.lg { display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; gap: 4px 14px; align-items: baseline; padding: 9px 0 9px 10px; border-top: 1px solid var(--line-soft, var(--line)); position: relative; font-size: 13px }
+.lg:first-child { border-top: 0 }
+.lg::before { content: ""; position: absolute; left: 0; top: 12px; width: 4px; height: 4px; border-radius: 50%; background: var(--line) }
+.lg.bad::before { background: var(--danger) } .lg.key::before { background: var(--fg) }
+.lg time { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap } .lg p { margin: 0; line-height: 1.4 }
+.lg-from { color: var(--muted); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; line-height: 1.35 }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0) }
 @media (max-width: 899px) {
   .team-lower { grid-template-columns: minmax(0, 1fr) }
-  .mem { flex-wrap: wrap } .mem .bd { order: 3; width: 100%; padding-left: 28px } .rm-sp { display: none }
+  .mem { flex-wrap: wrap } .mem .bd { order: 3; width: 100%; padding-left: 40px } .rm-sp { display: none }
+  .mem .ro { order: 1; margin-left: auto } .mem .rp { order: 2 } .mem .rm { order: 2 } .ro-sp, .rp-sp { display: none }
+  .rq { flex-wrap: wrap } .rq-act { width: 100%; padding-left: 48px } .rq-act .btn { flex: 1 }
+  .lg { grid-template-columns: minmax(0, 1fr) auto } .lg time { grid-column: 1 / -1; font-size: 12px } .lg-from { grid-row: 2; grid-column: 2 }
 }
 
 .toast { position: fixed; left: 50%; bottom: calc(28px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 10px 18px; border-radius: 8px; z-index: 40 }
@@ -558,8 +618,8 @@ body.cal-dragging, body.cal-dragging * { cursor: grabbing !important; user-selec
 .bk-parts { margin: 4px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--muted) } .bk-parts span { display: inline-block; min-width: 26px; color: var(--accent-text) }
 .bk-when { font-size: 13px; white-space: nowrap; color: var(--fg) }
 .bk-media { display: flex; gap: 4px; justify-content: flex-end }
-.md { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 4px; border: 1px solid; white-space: nowrap }
-.md.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent) } .md.no { color: #141414; background: var(--danger); border-color: var(--danger) }
+.mt { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 4px; border: 1px solid; white-space: nowrap }
+.mt.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent) } .mt.no { color: #141414; background: var(--danger); border-color: var(--danger) }
 .bk-drv { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end }
 .bk-drv a { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 4px; border: 1px dashed var(--line); color: var(--accent-text); white-space: nowrap } .bk-drv a:hover { border-style: solid; border-color: var(--accent); text-decoration: none }
 mark { background: var(--accent-soft); color: inherit; border-radius: 2px; box-shadow: 0 0 0 1px var(--accent-soft) }
@@ -933,8 +993,8 @@ html { touch-action: pan-x pan-y }
 
 /* 0.8.9: 小M's blink (闪现) and the paper letters it bursts into */
 .m-ghost .m-fan, .m-ghost .pet-say { display: none }
-.paper-burst { position: fixed; z-index: 41; width: 0; height: 0; pointer-events: none }
-.paper-burst .pb { position: absolute; left: 0; top: 0; background: #fff; backface-visibility: visible }
+.paper-burst { position: fixed; z-index: 41; width: 0; height: 0; pointer-events: none; contain: layout style }
+.paper-burst .pb { position: absolute; left: 0; top: 0; background: #fff; backface-visibility: visible; will-change: transform, opacity }
 .paper-burst .pb.o { background: var(--accent) } .paper-burst .pb.g { background: #d9d4cc }
 :root:not([data-theme="dark"]) .paper-burst .pb:not(.o) { background: #bfb8ad } :root:not([data-theme="dark"]) .paper-burst .pb.g { background: #8f8a82 }
 /* sitting on a pop-up's top edge */
@@ -983,8 +1043,8 @@ html { touch-action: pan-x pan-y }
 .mr:has(> .bk-when-m) { display: none } .mr:has(> .bk-when-m) + .mr { margin-left: 0 }
 .bk-when { color: var(--muted); font-variant-numeric: tabular-nums }
 .bk-media { justify-content: flex-start }
-.md.ok { color: var(--ok); background: none; border-color: color-mix(in srgb, var(--ok) 40%, transparent) }
-.md.no { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: color-mix(in srgb, var(--danger) 55%, transparent) }
+.mt.ok { color: var(--ok); background: none; border-color: color-mix(in srgb, var(--ok) 40%, transparent) }
+.mt.no { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: color-mix(in srgb, var(--danger) 55%, transparent) }
 .bk-drv { align-items: center; flex-wrap: nowrap }
 .bk-drv a:not(.bk-link) { border: 0; padding: 2px 0 2px 6px; color: var(--fg); font-weight: 600; font-size: 13px }
 .bk-drv a:not(.bk-link):hover { color: var(--accent-text); text-decoration: underline }
@@ -1030,3 +1090,165 @@ html { touch-action: pan-x pan-y }
 }
 /* phone, scrolled down: 小M sits on the tab bar's top edge */
 .mbtn.docked { position: fixed; left: auto; top: auto; right: 14px; z-index: 26 }
+/* profile = Team, from the avatar; log out sits right next to it */
+.top .top-out { display: none }
+@media (max-width: 899px) { .top .top-me { margin-left: auto } .top .top-out { display: grid; width: 36px; height: 36px; margin-left: 4px } }
+.logout svg { width: 18px; height: 18px }
+
+.avatar { cursor: pointer; transition: transform .3s var(--spring), box-shadow .25s, background .2s }
+.avatar:hover { transform: scale(1.06) }
+body.on-team .avatar { background: var(--accent); color: var(--accent-ink); box-shadow: 0 0 0 4px var(--accent-soft) }
+.side-me { gap: 6px } .side-me .ibtn { width: 34px; height: 34px } .side-me .ibtn svg { width: 17px; height: 17px } .side-me .side-name { min-width: 3ch }
+
+/* ==== 0.8.14 Team: each card holds its own settings, folded away until Edit ==== */
+.team-grid { align-items: start }
+.tm-h { position: relative } .tm-h > div { flex: 1 }
+.tm-ed { flex: none; width: 36px; height: 36px; align-self: flex-start; margin: -4px -6px 0 0; transition: transform .45s var(--spring), background .2s, border-color .2s, color .2s }
+.tm-ed svg { width: 17px; height: 17px }
+.tm.editing .tm-ed { background: var(--fg); color: var(--bg); border-color: var(--fg); transform: rotate(-12deg) }
+.tm-av.r-boss { box-shadow: 0 0 0 3px var(--surface), 0 0 0 4.5px var(--fg) }
+.tm-av.r-xiaom { background: radial-gradient(circle at 35% 30%, #fff, #e9e9e9 55%, #bdbdbd); color: #141414 }
+.tm-av.r-admin { background: color-mix(in srgb, var(--fg) 72%, var(--bg)) }
+.tm.me .tm-av { background: var(--accent); color: var(--accent-ink) }
+/* the fold: rows 0fr -> 1fr, so it opens to exactly its own height */
+.tm-edit { display: grid; grid-template-rows: 0fr; margin-top: -14px; opacity: 0; filter: blur(4px); transition: grid-template-rows .5s cubic-bezier(.2, .9, .25, 1), margin-top .5s cubic-bezier(.2, .9, .25, 1), opacity .3s, filter .4s }
+.tm-edit-in { min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 12px }
+.tm.editing .tm-edit { grid-template-rows: 1fr; margin-top: 0; opacity: 1; filter: none }
+.tm.editing .tm-edit-in { padding-top: 14px; border-top: 1px solid var(--line-soft, var(--line)); overflow: visible }
+.tm:not(.editing) .tm-edit { visibility: hidden; transition: grid-template-rows .4s cubic-bezier(.4, 0, .2, 1), margin-top .4s cubic-bezier(.4, 0, .2, 1), opacity .2s, filter .3s, visibility 0s .4s }
+.te-row { display: flex; flex-direction: column; gap: 6px; margin: 0 }
+.te-l { font-size: 12px; color: var(--muted) }
+.te-bd { display: grid; grid-template-columns: 1.2fr 1fr 1.2fr; gap: 6px } .te-bd select { padding: 8px 10px; font-size: 14px }
+.te-role { align-self: flex-start }
+.te-pin { display: flex; gap: 8px } .te-pin input { flex: 1; min-width: 0; padding: 8px 12px; font-size: 15px; letter-spacing: .2em } .te-pin input::placeholder { letter-spacing: normal }
+.te-mail { margin: 0 }
+.te-foot { display: flex; justify-content: flex-end; padding-top: 2px }
+.te-foot .rm { color: var(--danger) } .te-foot .rm.armed { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent) }
+.tm.bot .tm-next { font-size: 13px; line-height: 1.55 }
+.tm-add { flex-direction: row; align-items: center; gap: 12px; border-style: dashed; background: transparent; box-shadow: none; padding: 14px 16px }
+.tm-add .tm-av { width: 40px; height: 40px; font-size: 20px; font-weight: 400; background: transparent; color: var(--muted); box-shadow: inset 0 0 0 1.5px var(--line) }
+.tm-add input { flex: 1; min-width: 0; padding: 9px 12px; font-size: 14px }
+#memMsg { margin: -6px 0 0 }
+
+/* ==== 0.9.1 texture: finer colour steps, a little film grain, softer focus, blur in every entrance, bouncier presses ==== */
+/* 3) micro-contrast: each layer a hair apart, with a trace of warmth so the greys don't go dead */
+:root { --bg: #fbfbfa; --surface: #f4f4f2; --surface-2: #ebebe8; --line: #d9d9d4; --muted: #5f5f5b; --panel: #f4f4f2;
+  --grain-o: .028; --vignette: radial-gradient(120% 90% at 50% 40%, transparent 60%, rgba(60, 40, 20, .05)) }
+:root[data-theme="dark"] { --bg: #0d0d0d; --surface: #161616; --surface-2: #1e1e1d; --line: #343432; --muted: #a0a09b; --panel: #121212;
+  --grain-o: .045; --vignette: radial-gradient(120% 90% at 50% 40%, transparent 60%, rgba(0, 0, 0, .3)) }
+body::after { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: var(--grain-o);
+  background-image: var(--vignette), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 100% 100%, 160px 160px }
+:root[data-theme="dark"] body::after { opacity: 1; background-image: var(--vignette), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .045 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E") }
+
+/* 4) focus that settles in: no hard ring, the field sinks a little and the shadow deepens */
+input, select, textarea { transition: border-color .35s ease, box-shadow .45s cubic-bezier(.2, .8, .2, 1), background-color .35s ease }
+input:focus, select:focus, textarea:focus, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none;
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+  background-color: color-mix(in srgb, var(--surface-2) 70%, var(--bg));
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, .14), 0 0 0 4px color-mix(in srgb, var(--accent) 7%, transparent), 0 10px 26px -14px rgba(0, 0, 0, .45) }
+:root[data-theme="dark"] :is(input, select, textarea):focus { box-shadow: inset 0 1px 3px rgba(0, 0, 0, .55), 0 0 0 4px color-mix(in srgb, var(--accent) 9%, transparent), 0 12px 30px -14px rgba(0, 0, 0, .85) }
+input::placeholder, textarea::placeholder { transition: opacity .3s, transform .35s var(--ease) }
+input:focus::placeholder, textarea:focus::placeholder { opacity: .45; transform: translateX(3px) }
+
+/* 5) numbers never shift as they change */
+body { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1 }
+
+/* 6) body text: an easy measure, room between lines, no lonely last words */
+p, li, dd, .cm, .md { text-wrap: pretty }
+h1, h2, h3, .tm-name b { text-wrap: balance }
+.page p:not(.small):not(.msg):not(.tm-next), .md p, .cm p, .sent-card p { line-height: 1.65; max-width: 68ch }
+.md p + p, .cm p + p { margin-top: .7em }
+.small, .muted.small { line-height: 1.5 }
+.card > p.muted.small, .setup-card > p.muted { letter-spacing: .005em }
+
+/* 2) every entrance comes into focus as it arrives */
+@keyframes rise { from { opacity: 0; transform: translateY(8px); filter: blur(6px) } }
+@keyframes pop { from { opacity: 0; transform: scale(.94); filter: blur(8px) } }
+@keyframes cardIn { from { opacity: 0; transform: translateY(-8px) scale(.96); filter: blur(8px) } }
+@keyframes vtOut { to { opacity: 0; transform: translateX(-14px); filter: blur(6px) } }
+@keyframes vtIn { from { opacity: 0; transform: translateX(18px); filter: blur(8px) } }
+@keyframes wzin { from { opacity: 0; transform: translateX(28px); filter: blur(6px) } } @keyframes wzback { from { opacity: 0; transform: translateX(-28px); filter: blur(6px) } }
+@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 12px) scale(.96); filter: blur(6px) } }
+@keyframes fade { from { opacity: 0; filter: blur(4px) } }
+/* long lists: only the rows you can see blur in (the rest just fade), so a 300-row list opens as fast as before */
+@keyframes riseLite { from { opacity: 0; transform: translateY(8px) } }
+:is(#listRows, .rows, .bk-rows) > :nth-child(n+25) { animation-name: riseLite }
+
+/* 1) a card that opens pushes the grid smoothly; anything sized auto can animate */
+:root { interpolate-size: allow-keywords }
+.team-grid, .hub-list { transition: grid-template-columns .5s cubic-bezier(.2, .9, .25, 1) }
+
+/* 7) presses: a quick squash, then a happy bounce back */
+:root { --bounce: linear(0, .32 7%, .78 16%, 1.1 26%, 1.16 31%, 1.1 38%, .98 50%, .96 58%, 1.01 72%, 1) }
+.btn, .ibtn, .seg button, .chips button, .fchip, .pad button, .avatar, .link, .sugg button, .tm-ed, .tm-stats a, .chip, .find {
+  transition: transform .62s var(--bounce), background .2s, border-color .2s, opacity .2s, color .2s, box-shadow .25s }
+:is(.btn, .ibtn, .seg button, .chips button, .fchip, .avatar, .link, .sugg button, .tm-ed, .chip, .find):active { transform: scale(.9); transition: transform .09s cubic-bezier(.4, 0, .6, 1) }
+.pad button:active { transform: scale(.88); transition: transform .08s ease-in }
+.tm.editing .tm-ed:active { transform: rotate(-12deg) scale(.9) }
+/* turning something on gives it a little jelly wobble */
+@keyframes jelly { 0% { transform: scale(1) } 30% { transform: scale(1.12, .9) } 50% { transform: scale(.94, 1.06) } 70% { transform: scale(1.03, .98) } 100% { transform: scale(1) } }
+.jel { animation: jelly .5s cubic-bezier(.3, .7, .4, 1) }
+.dots i.on { transition: background .15s, border-color .15s, transform .5s var(--bounce) }
+@media (prefers-reduced-motion: reduce) { .jel { animation: none } body::after { display: none } }
+/* 小M stands on top of a team card: the rows leave room for him so he never covers the card above */
+.team-grid { row-gap: 40px }
+/* the chat box is one field: the textarea inside stays bare, the box around it takes the gentle focus */
+.composer textarea, .composer textarea:focus, .composer textarea:focus-visible, :root .composer #aiIn:focus { border: 0; background: none; box-shadow: none; outline: none; scrollbar-width: none }
+.composer textarea::-webkit-scrollbar { display: none }
+.composer textarea:focus::placeholder { transform: none }
+.composer { border-color: var(--line-soft, var(--line)); transition: border-color .35s ease, box-shadow .45s cubic-bezier(.2, .8, .2, 1), background-color .35s ease }
+.composer:focus-within { border-color: color-mix(in srgb, var(--accent) 38%, var(--line)); background-color: color-mix(in srgb, var(--surface-2) 70%, var(--bg));
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, .14), 0 0 0 4px color-mix(in srgb, var(--accent) 7%, transparent), 0 10px 26px -14px rgba(0, 0, 0, .45) }
+:root[data-theme="dark"] .composer:focus-within { box-shadow: inset 0 1px 3px rgba(0, 0, 0, .55), 0 0 0 4px color-mix(in srgb, var(--accent) 9%, transparent), 0 12px 30px -14px rgba(0, 0, 0, .85) }
+
+/* ==== 0.9.2 real light: a warm key light from the top right, a lamp that follows the pointer (or flashes where a finger
+   lands), panels that catch it on their top edge, a lit active tab, light that blooms where you press, and 小M lit
+   from behind with light bouncing off the floor under him ==== */
+:root { --key: rgba(255, 196, 140, .5); --lamp: rgba(255, 214, 170, .55); --bloom: rgba(255, 150, 60, .55) }
+:root[data-theme="dark"] { --key: rgba(255, 170, 100, .55); --lamp: rgba(255, 200, 150, .5); --bloom: rgba(255, 140, 50, .7);
+  --hi: inset 0 1px 0 rgba(255, 236, 214, .14), inset 0 -1px 0 rgba(0, 0, 0, .45);
+  --sheen: linear-gradient(180deg, rgba(255, 240, 225, .085), rgba(255, 255, 255, 0) 48%) }
+/* the light layer sits over the whole app and only brightens (soft light): blacks stay black, lit things glow */
+.light { position: fixed; inset: 0; z-index: 27; pointer-events: none; mix-blend-mode: soft-light; overflow: hidden; contain: strict }
+.light .key { position: absolute; inset: 0; background: radial-gradient(75% 60% at 88% -6%, var(--key), transparent 70%), radial-gradient(60% 45% at 10% 108%, rgba(120, 150, 220, .22), transparent 70%) }
+.light .lamp { position: absolute; left: 0; top: 0; width: 300px; height: 300px; margin: -150px 0 0 -150px; border-radius: 50%;
+  background: radial-gradient(closest-side, var(--lamp), rgba(255, 200, 150, .18) 45%, transparent 100%); opacity: 0; transition: opacity .6s ease;
+  transform: translate3d(var(--mx, 50vw), var(--my, 40vh), 0); will-change: transform }
+body.lamp-on .light .lamp { opacity: 1 }
+body.lamp-tap .light .lamp { width: 420px; height: 420px; margin: -210px 0 0 -210px; opacity: 1; transition: opacity .08s }
+body.lamp-tap.lamp-off .light .lamp { opacity: 0; transition: opacity .7s ease-out }
+:root:not([data-theme="dark"]) .light { opacity: .7 }
+
+/* the bars catch light on their top edge */
+.tabs { box-shadow: inset 0 1px 0 color-mix(in srgb, var(--fg) 7%, transparent), 0 -10px 30px -18px rgba(0, 0, 0, .5) !important }
+.top { position: relative }
+/* the tab you're on is lit from above: a thin neon strip on the bar's edge and a cone of light falling on it */
+.tabs a::before { content: ""; position: absolute; inset: -6px 6px 0; pointer-events: none; opacity: 0; transform: scaleY(.4); transform-origin: 50% 0;
+  background: radial-gradient(70% 90% at 50% 0%, var(--bloom), transparent 72%); transition: opacity .35s ease, transform .55s var(--bounce, ease) }
+.tabs a::after { content: ""; position: absolute; top: -6px; left: 50%; width: 30px; height: 2px; margin-left: -15px; border-radius: 2px; pointer-events: none;
+  background: #ffd2a6; box-shadow: 0 0 6px 1px rgba(255, 150, 60, .9), 0 0 18px 2px rgba(244, 128, 32, .55); opacity: 0; transform: scaleX(.2); transition: opacity .3s, transform .5s var(--bounce, ease) }
+.tabs a.on::before { opacity: .55; transform: none } .tabs a.on::after { opacity: 1; transform: none }
+:root:not([data-theme="dark"]) .tabs a.on::before { opacity: .3 }
+.tabs a.on svg { filter: drop-shadow(0 0 6px rgba(244, 128, 32, .6)) }
+.tabs a > * { position: relative; z-index: 1 }
+/* the sidebar's current page is a lit pill: lighter where the key light hits it, glowing onto the bar around it */
+.nav-ind { background: linear-gradient(180deg, #ffa75a, var(--accent) 55%, #e2700f); border-radius: 10px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), inset 0 -1px 0 rgba(120, 50, 0, .35), 0 6px 18px -6px rgba(244, 128, 32, .8), 0 0 28px -4px rgba(244, 128, 32, .45) }
+.nav-i { border-radius: 10px }
+/* pressing a bar item: light blooms from your finger instead of a grey ripple */
+:is(.tabs a, .nav-i, .ibtn, .avatar) > .fx-ripple { background: radial-gradient(closest-side, var(--bloom), rgba(255, 170, 90, .15) 55%, transparent); mix-blend-mode: plus-lighter }
+:root:not([data-theme="dark"]) :is(.tabs a, .nav-i, .ibtn, .avatar) > .fx-ripple { mix-blend-mode: normal; background: radial-gradient(closest-side, rgba(244, 128, 32, .28), transparent) }
+
+/* 小M in the scene: a warm back light behind him and light bouncing off the floor, with a soft contact shadow */
+.mbtn::before { content: ""; position: absolute; inset: -38%; z-index: -1; pointer-events: none; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 150, 60, .34), rgba(255, 120, 40, .12) 50%, transparent 72%); animation: mGlow 4.6s ease-in-out infinite }
+.mbtn::after { content: ""; position: absolute; left: 6%; right: 6%; bottom: -9%; height: 22%; z-index: -1; pointer-events: none; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(0, 0, 0, .55), rgba(0, 0, 0, .18) 45%, transparent 70%), radial-gradient(closest-side, rgba(255, 150, 60, .45), transparent 80%);
+  background-size: 62% 62%, 100% 100%; background-position: center, center; background-repeat: no-repeat; filter: blur(1.5px) }
+:root:not([data-theme="dark"]) .mbtn::before { background: radial-gradient(closest-side, rgba(255, 160, 80, .26), transparent 70%) }
+:root:not([data-theme="dark"]) .mbtn::after { background: radial-gradient(closest-side, rgba(60, 30, 10, .32), transparent 70%); background-size: 70% 60%; background-position: center; background-repeat: no-repeat }
+.mbtn.space::after { opacity: .25; transform: translateY(40%) scale(.8) }
+.mbtn.space::before { inset: -55% }
+@keyframes mGlow { 50% { opacity: .7; transform: scale(.94) } }
+@media (prefers-reduced-motion: reduce) { .mbtn::before { animation: none } }

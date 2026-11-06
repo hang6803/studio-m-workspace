@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.0";
+const APP_VER = "0.9.4";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
@@ -15,6 +15,40 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
 };
 const STILL = matchMedia("(prefers-reduced-motion: reduce)").matches;
+// a toggle you just turned on gives one jelly wobble (only the one you pressed, not on every redraw)
+document.addEventListener("click", e => { const b = e.target.closest(".seg button, .chips button, .fchip, .te-role button"); if (!b || STILL) return;
+  requestAnimationFrame(() => { const el = b.isConnected ? b : null; if (!el || !el.classList.contains("on")) return; el.classList.remove("jel"); void el.offsetWidth; el.classList.add("jel"); el.addEventListener("animationend", () => el.classList.remove("jel"), { once: true }); }); });
+// The lamp: with a mouse it follows the pointer and lights whatever is under it; with a finger it flashes where you
+// touch and fades. Only the layer's position changes (a transform), so it costs nothing to repaint.
+(() => {
+  const R = document.documentElement.style; let q = 0, x = 0, y = 0, off = 0;
+  const put = () => { q = 0; R.setProperty("--mx", x + "px"); R.setProperty("--my", y + "px"); };
+  addEventListener("pointermove", e => { if (e.pointerType !== "mouse") return; x = e.clientX; y = e.clientY; document.body.classList.add("lamp-on"); if (!q) q = requestAnimationFrame(put); }, { passive: true });
+  document.addEventListener("mouseleave", () => document.body.classList.remove("lamp-on"));
+  addEventListener("pointerdown", e => { if (e.pointerType === "mouse" || STILL) return; x = e.clientX; y = e.clientY; put();
+    const b = document.body.classList; b.remove("lamp-off"); b.add("lamp-tap"); clearTimeout(off);
+    off = setTimeout(() => { b.add("lamp-off"); off = setTimeout(() => b.remove("lamp-tap", "lamp-off"), 700); }, 140); }, { passive: true });
+})();
+// a firm spring for things that snap into place: fast in, one small overshoot, settled
+const SNAP = "linear(0, .25 6%, .68 15%, 1.04 26%, 1.09 32%, 1.05 40%, .995 52%, .99 62%, 1)";
+// Grids that re-flow (a column more or less when the window changes, a card that opens) glide to their new places
+// instead of jumping: each card remembers where it was and slides from there (only jumps of 24px or more, so a
+// card opening frame by frame doesn't fight it).
+function flipGrid(el) {
+  if (STILL || !window.ResizeObserver) return;
+  const at = new Map(), key = c => c.dataset.n || c.dataset.d || c.getAttribute("href") || c;
+  const look = () => { const out = new Map(); for (const c of el.children) { const r = c.getBoundingClientRect(); out.set(key(c), [r.left, r.top, c]); } return out; };
+  let last = look();
+  const ro = new ResizeObserver(() => {
+    const now = look();
+    now.forEach(([x, y, c], k) => { const was = last.get(k); if (!was || !c.isConnected || c.classList.contains("editing")) return;
+      const dx = was[0] - x, dy = was[1] - y; if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return;
+      c.animate([{ translate: `${dx}px ${dy}px`, filter: "blur(1.5px)" }, { translate: "0 0", filter: "blur(0)" }], { duration: 520, easing: SNAP, composite: "add" }); });
+    last = now; now.forEach(([, , c]) => ro.observe(c));
+  });
+  ro.observe(el); for (const c of el.children) ro.observe(c);
+  new MutationObserver(() => { for (const c of el.children) ro.observe(c); }).observe(el, { childList: true });
+}
 // the phone keyboard: pop-ups size themselves to the part of the screen above it
 if (window.visualViewport) { const vv = visualViewport, fit = () => { const r = document.documentElement.style; r.setProperty("--vvh", vv.height + "px"); r.setProperty("--vvtop", vv.offsetTop + "px"); };
   vv.addEventListener("resize", fit); vv.addEventListener("scroll", fit); fit();
@@ -28,11 +62,22 @@ let session = null;   // { name, token } — kept only in memory, so closing the
 // Inside the Mac app, requests go out through Tauri's HTTP plugin (no browser CORS rules, so local servers like
 // Hermes Agent work without opening CORS); in a plain browser (tests, demo) the normal fetch is used.
 const net = (window.__TAURI__ && window.__TAURI__.http && window.__TAURI__.http.fetch) || window.fetch.bind(window);
+// The Team page's log says where a sign-in or a change came from. Apps Script can't see the caller's address, so the
+// app asks ipify once for its public IP and sends it along with a short device name (both reported, not proven).
+const DEV = (() => { const u = navigator.userAgent;
+  const os = /iPhone/.test(u) ? "iPhone" : /iPad/.test(u) || (/Mac/.test(u) && navigator.maxTouchPoints > 1) ? "iPad" : /Android/.test(u) ? "Android" : /Mac/.test(u) ? "Mac" : /Windows/.test(u) ? "Windows" : /Linux/.test(u) ? "Linux" : "Other";
+  const app = window.__TAURI__ ? "app" : matchMedia("(display-mode: standalone)").matches ? "home screen app" : /Edg\//.test(u) ? "Edge" : /Chrome\//.test(u) ? "Chrome" : /Firefox\//.test(u) ? "Firefox" : /Safari\//.test(u) ? "Safari" : "browser";
+  return os + " " + app; })();
+let myIp = "";
+const ipReady = DEMO ? Promise.resolve() : Promise.race([
+  window.fetch("https://api.ipify.org?format=json").then(r => r.json()).then(j => { myIp = String(j.ip || ""); }).catch(() => {}),
+  new Promise(r => setTimeout(r, 1500))]);
 M.api = async function (fn, args = []) {
   if (DEMO) return demo(fn, args);
+  if (!myIp) await ipReady;
   const res = await net(CFG.apiUrl, {
     method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },   // text/plain: no CORS preflight
-    body: JSON.stringify({ key: CFG.apiKey, token: session && session.token, fn, args })
+    body: JSON.stringify({ key: CFG.apiKey, token: session && session.token, fn, args, ip: myIp, dev: DEV })
   });
   const out = await res.json();
   if (out.error) {
@@ -42,7 +87,7 @@ M.api = async function (fn, args = []) {
   return out.result;
 };
 
-// Demo data (no server): PINs Hang 1111, Mun 2222, Michael 3333; studio PIN 0000
+// Demo data (no server): PINs Hang (boss) 111111, Mun (admin) 222222, Michael 3333 (an old 4-digit one), 小M 999999; studio PIN 0000
 function demoRows() {
   const y = new Date().getFullYear(), at = y + "-01-01T00:00:00Z", out = [];
   // [year offset, section, name, MM-DD, drive, editor, video backed up?, photo row: undefined = none, true/false = backed up?]
@@ -66,8 +111,11 @@ function demoRows() {
   return out;
 }
 function demo(fn, args) {
-  const db = store.get("mDemo4", null) || { rev: 1, shoots: [], settings: {}, team: ["Hang", "Mun", "Michael"],
-    pins: { Hang: "1111", Mun: "2222", Michael: "3333" }, rows: demoRows() };
+  const db = store.get("mDemo6", null) || { rev: 1, shoots: [], settings: {}, team: ["Hang", "Mun", "Michael"],
+    pins: { Hang: "111111", Mun: "222222", Michael: "3333", "M": "999999" }, roles: { Mun: "admin" }, gmail: { Mun: "mun.studiom@gmail.com" }, rows: demoRows(),
+    pending: [{ id: "p1", name: "Aina", gmail: "aina.films@gmail.com", birthday: "1998-05-02", pin: "444444", at: new Date(Date.now() - 36e5).toISOString(), ip: "175.139.20.11" }],
+    log: [{ at: new Date(Date.now() - 36e5).toISOString(), who: "Aina", action: "signed up", target: "Aina", detail: "aina.films@gmail.com", ip: "175.139.20.11", device: "iPhone Safari" },
+      { at: new Date(Date.now() - 864e5).toISOString(), who: "Mun", action: "signed in", target: "Mun", detail: "", ip: "60.53.12.4", device: "Mac Chrome" }] };
   if (!db.shoots.length && !db.seeded) {   // two upcoming shoots so Home has something to show
     const d = n => { const t = new Date(); t.setDate(t.getDate() + n); return ymd(t); };
     db.shoots = [{ id: "s_demo1", name: "Lim Wedding", dates: d(3), location: "Ipoh", type: "both", crew: "Hang,Mun", notes: "", jobId: "" },
@@ -77,24 +125,72 @@ function demo(fn, args) {
     db.birthdays = { Hang: "1990-03-12", Mun: "1994-08-21" };
     db.seeded = true;
   }
-  const save = () => { db.rev++; store.set("mDemo4", db); };
-  if (!store.get("mDemo4", null)) store.set("mDemo4", db);
-  const ok = v => new Promise(r => setTimeout(() => r(v), 120));
+  const save = () => { db.rev++; store.set("mDemo6", db); };
+  if (!store.get("mDemo6", null)) store.set("mDemo6", db);
+  const ok = v => new Promise(r => setTimeout(() => r(v), 120)), no = m => Promise.reject(new Error(m));
+  db.pending = db.pending || []; db.log = db.log || []; db.roles = db.roles || {}; db.gmail = db.gmail || {};
+  let me = session ? session.name : "";
+  const roleD = n => n === "M" ? "xiaom" : n === db.team[0] ? "boss" : db.roles[n] === "admin" ? "admin" : "member", rankD = n => ({ member: 1, admin: 2, xiaom: 3, boss: 4 })[roleD(n)];
+  const signersD = () => db.team.concat(db.pins["M"] ? ["M"] : []);
+  const logD = (action, target, detail, who) => { db.log.push({ at: new Date().toISOString(), who: who || me, action, target: target || "", detail: detail || "", ip: "203.106.88.17", device: DEV }); if (db.log.length > 300) db.log.shift(); };
+  const peopleD = () => ({ me: { name: me, role: roleD(me) }, people: signersD().map(n => ({ name: n, role: roleD(n), hasPin: !!db.pins[n], gmail: rankD(me) >= 2 ? db.gmail[n] || "" : "" })),
+    pending: rankD(me) >= 2 ? db.pending.map(({ pin, ...p }) => p) : [] });
   switch (fn) {
-    case "team": return ok({ members: db.team.map(n => ({ name: n, hasPin: !!db.pins[n] })), studioPin: true });
-    case "login": { const n = db.team.find(x => db.pins[x] === args[0]); return n ? ok({ name: n, token: "demo" }) : Promise.reject(new Error("Wrong PIN")); }
+    case "team": return ok({ members: db.team.map(n => ({ name: n, hasPin: !!db.pins[n] })), xiaom: !!db.pins["M"], studioPin: true, pinLength: 6 });
+    case "login": {
+      const [pin, nm] = args, n = nm ? (db.pins[nm] === pin ? nm : "") : signersD().find(x => db.pins[x] === pin);
+      if (nm && db.pending.some(p => p.name === nm)) return no("Your sign-up is waiting for approval");
+      if (!n) { logD("sign-in failed", nm, "", nm || "?"); save(); return no("Wrong PIN"); }
+      me = n; logD("signed in", n, "", n); save(); return ok({ name: n, token: "demo", role: roleD(n), upgrade: pin.length !== 6 });
+    }
     case "setMyPin": {
       const [n, auth, pin] = args;
-      if (db.pins[n] ? auth !== db.pins[n] : auth !== "0000") return Promise.reject(new Error(db.pins[n] ? "Current PIN is wrong" : "Studio PIN is wrong"));
-      if (db.team.some(x => x !== n && db.pins[x] === pin)) return Promise.reject(new Error("That PIN is taken. Pick another."));
-      db.pins[n] = pin; save(); return ok({ name: n, token: "demo" });
+      if (db.pins[n] ? auth !== db.pins[n] : auth !== "0000") return no(db.pins[n] ? "Current PIN is wrong" : "Studio PIN is wrong");
+      logD(db.pins[n] ? "changed PIN" : "set first PIN", n, "", n); db.pins[n] = pin; save(); me = n; return ok({ name: n, token: "demo", role: roleD(n) });
     }
-    case "getAll": return ok({ rev: db.rev, rows: db.rows, team: db.team, birthdays: db.birthdays || {}, settings: db.settings, pinRequired: false });
+    case "resetPin": {
+      const [n, pin, by, byPin] = args;
+      if (db.pins[by] !== byPin) { logD("PIN reset refused", n, "wrong PIN for " + by, by); save(); return no("That admin PIN is wrong"); }
+      if (rankD(by) < 2) return no(by + " can't reset PINs (admin, M or boss only)");
+      if (rankD(n) > rankD(by)) return no(by + " can't reset the PIN of a " + roleD(n));
+      db.pins[n] = pin; logD("reset PIN", n, "vouched by " + by, by); save(); me = n; return ok({ name: n, token: "demo", role: roleD(n) });
+    }
+    case "register": {
+      const [n, gmail, bd, pin] = args;
+      if (db.team.some(x => x.toLowerCase() === n.toLowerCase())) return no("That name is already on the team. Use First time or Forgot PIN.");
+      db.pending.push({ id: "p" + Date.now(), name: n, gmail, birthday: bd, pin, at: new Date().toISOString(), ip: "" }); logD("signed up", n, gmail, n); save(); return ok({ waiting: true });
+    }
+    case "people": return ok(peopleD());
+    case "approve": case "reject": {
+      if (rankD(me) < 2) return no("Only admins and above can do that");
+      const i = db.pending.findIndex(p => p.id === args[0]); if (i < 0) return no("That sign-up is gone (someone else handled it)");
+      const p = db.pending.splice(i, 1)[0];
+      if (fn === "approve") { db.team.push(p.name); db.birthdays[p.name] = p.birthday; db.pins[p.name] = p.pin; db.gmail[p.name] = p.gmail; }
+      logD(fn === "approve" ? "approved" : "rejected", p.name, p.gmail); save(); return ok(peopleD());
+    }
+    case "setRole": if (rankD(me) < 3) return no("Only xiaoms and above can do that"); db.roles[args[0]] = args[1]; logD("role " + args[1], args[0]); save(); return ok(peopleD());
+    case "removeMember": {
+      const n = args[0];
+      if (n === me) return no("You can't remove yourself");
+      if (roleD(n) === "boss") return no("Nobody can remove the boss");
+      if (rankD(n) >= rankD(me)) return no("You can't remove a " + roleD(n));
+      if (n === "M") delete db.pins["M"]; else { db.team = db.team.filter(x => x !== n); delete db.birthdays[n]; delete db.pins[n]; delete db.roles[n]; }
+      logD("removed", n); save(); return ok(peopleD());
+    }
+    case "setPinFor": {
+      const [n, pin] = args;
+      if (rankD(me) < 2) return no("Only admins and above can do that");
+      if (n === me) return no("Change your own PIN below");
+      if (rankD(n) > rankD(me)) return no("You can't reset the PIN of a " + roleD(n));
+      db.pins[n] = pin; logD("reset PIN", n, "on the Team page"); save(); return ok(peopleD());
+    }
+    case "auditLog": if (rankD(me) < 2) return no("Only admins and above can do that"); logD("opened the log", ""); save(); return ok(db.log.slice().reverse());
+    case "getAll": return ok({ rev: db.rev, rows: db.rows, team: db.team, birthdays: db.birthdays || {}, settings: db.settings, pinRequired: false, me: { name: me, role: roleD(me) } });
     case "getRev": return ok(db.rev);
     case "getJob": return ok(db.rows.find(r => r.id === args[0]) || null);
     case "saveJob": { const j = args[1], i = db.rows.findIndex(r => r.id === j.id); if (i < 0) db.rows.push(j); else db.rows[i] = j; save(); return ok(true); }
     case "deleteJob": db.rows = db.rows.filter(r => r.id !== args[1]); save(); return ok(true);
-    case "setTeam": db.team = args[1]; if (args[2]) db.birthdays = args[2]; save(); return ok(true);
+    case "setTeam": { const add = args[1].filter(n => !db.team.includes(n)); if (add.length && rankD(me) < 2) return no("Only admins and above can do that"); if (add.length) logD("added", add.join(", ")); db.team = args[1]; if (args[2]) db.birthdays = args[2]; save(); return ok(true); }
     case "setSetting": db.settings[args[1]] = args[2]; save(); return ok(true);
     case "addFeedback": return ok(true);
     case "getShoots": return ok(db.shoots);
@@ -251,58 +347,131 @@ function useCopy(c) { data = c.all; team = c.all.team || []; shoots = c.sh || []
 addEventListener("online", () => { if (session && session.offline) lock("Back online. Enter your PIN to sync."); });
 
 // ---------------------------------------------------------------- PIN lock
-let entered = "", team = [];
+// Just the 6-digit PIN: the PIN says who you are. An old 4-digit PIN still opens once (press OK, or it goes by itself on
+// a device that used it before), and then asks for a new 6-digit one. First time / Register / Forgot PIN sit below the pad.
+const PIN_LEN = 6;
+let entered = "", team = [], who = null, legacyT = 0;
 function lock(msg) {
-  session = null; entered = "";
+  session = null; entered = ""; clearTimeout(legacyT);
   $("shell").hidden = true; $("setup").hidden = true; $("lock").hidden = false;
   $("lockMsg").textContent = msg || ""; drawDots();
   $("backupFrame").removeAttribute("src"); backupLoaded = false; scenes(false); festKey = "";
   closeM(true); MBTN.hidden = true; if (graph) graph.stop();
   closeShoot(); if (streaming) streaming.abort(); gKey = ""; teamOk = false; closeJob(true);
+  ppl = null; logRows = null; pplAt = 0; editOpen = null; if (data) data.me = null; shownView = "";
+  loadWho();
 }
-function drawDots() { [...$("dots").children].forEach((d, i) => d.classList.toggle("on", i < entered.length)); lockTurn(entered.length > 0); }
-async function key(k) {
-  if (k === "del") entered = entered.slice(0, -1);
-  else if (entered.length < 4 && /\d/.test(k)) entered += k;
-  drawDots();
-  if (entered.length === 4) {
-    const pin = entered;
-    try { session = await slow(M.api("login", [pin])); keepPin(pin, session.name); entered = ""; drawDots(); setTimeout(() => lockMood("yay"), 300); setTimeout(unlock, 900); }
-    catch (e) {
-      const off = isNetErr(e) && await offlineName(pin);
-      if (off) { session = { name: off, token: "", offline: true }; entered = ""; drawDots(); setTimeout(() => lockMood("yay"), 300); setTimeout(unlock, 900); return; }
-      if (isNetErr(e) && !DEMO) e = new Error(store.get("mPins", null) ? "No connection, and that PIN doesn't match. Try again." : "No connection. Sign in once with internet, then it opens offline too.");
-      $("dots").classList.remove("shake"); void $("dots").offsetWidth; $("dots").classList.add("shake");
-      $("lockMsg").textContent = e.message; entered = ""; drawDots(); setTimeout(() => lockMood("no"), 300);
-    }
+// who can sign in: everyone on the team with a PIN, and 小M when it has one (kept on the device for offline)
+async function loadWho() {
+  try { who = await M.api("team"); store.set("mWho", who); } catch (e) { who = store.get("mWho", null); }
+  drawWho();
+}
+const signers = () => who ? who.members.filter(m => m.hasPin).map(m => m.name).concat(who.xiaom ? ["M"] : []) : [];
+function drawWho() { $("lockTitle").textContent = "Enter your PIN"; }
+function drawDots() {
+  [...$("dots").children].forEach((d, i) => d.classList.toggle("on", i < entered.length));
+  $("dots").classList.toggle("old", entered.length === 4);
+  $("padOk").classList.toggle("on", entered.length === 4);
+  lockTurn(entered.length > 0);
+}
+async function signIn(pin) {
+  clearTimeout(legacyT);
+  try {
+    session = await slow(M.api("login", [pin]));
+    keepPin(pin, session.name); store.set("mUser", session.name);
+    store.set("mLen4", pin.length === 4);
+    entered = ""; drawDots(); setTimeout(() => lockMood("yay"), 300);
+    if (session.upgrade) { setTimeout(() => openUpgrade(pin), 700); return; }
+    setTimeout(unlock, 900);
+  } catch (e) {
+    const off = isNetErr(e) && await offlineName(pin);
+    if (off) { session = { name: off, token: "", offline: true }; entered = ""; drawDots(); setTimeout(() => lockMood("yay"), 300); setTimeout(unlock, 900); return; }
+    if (isNetErr(e) && !DEMO) e = new Error(store.get("mPins", null) ? "No connection, and that PIN doesn't match. Try again." : "No connection. Sign in once with internet, then it opens offline too.");
+    $("dots").classList.remove("shake"); void $("dots").offsetWidth; $("dots").classList.add("shake");
+    $("lockMsg").textContent = e.message; entered = ""; drawDots(); setTimeout(() => lockMood("no"), 300);
   }
+}
+function key(k) {
+  clearTimeout(legacyT);
+  if (k === "del") entered = entered.slice(0, -1);
+  else if (k === "ok") { if (entered.length === 4) signIn(entered); return; }
+  else if (entered.length < PIN_LEN && /\d/.test(k)) entered += k;
+  drawDots();
+  if (entered.length === PIN_LEN) signIn(entered);
+  else if (entered.length === 4 && store.get("mLen4", false)) { const p = entered; legacyT = setTimeout(() => { if (entered === p) signIn(p); }, 1100); }
 }
 $("pad").addEventListener("click", e => { const b = e.target.closest("button"); if (b) key(b.dataset.k); });
 document.addEventListener("keydown", e => {
   if ($("lock").hidden) return;
-  if (/^\d$/.test(e.key)) key(e.key); else if (e.key === "Backspace") key("del");
+  if (/^\d$/.test(e.key)) key(e.key); else if (e.key === "Backspace") key("del"); else if (e.key === "Enter") key("ok");
 });
 $("lockBtn").addEventListener("click", () => lock());
 
-// First-time setup: pick your name (only people without a PIN), studio PIN, new PIN twice
-$("setupBtn").addEventListener("click", async () => {
-  $("lock").hidden = true; $("setup").hidden = false; $("suMsg").textContent = "";
-  try {
-    const t = await M.api("team");
-    const free = t.members.filter(m => !m.hasPin);
-    $("suName").innerHTML = free.length ? free.map(m => `<option>${esc(m.name)}</option>`).join("") : `<option value="">Everyone has a PIN</option>`;
-    $("suStudioRow").hidden = !t.studioPin;
-  } catch (e) { $("suMsg").textContent = e.message; }
-});
-$("suCancel").addEventListener("click", () => lock());
+// the cards under the PIN pad: one at a time, Back returns to the pad
+function showForm(id) {
+  $("lock").hidden = true; $("setup").hidden = false;
+  [...$("setup").children].forEach(c => { c.hidden = c.id !== id; });
+  const f = $(id); f.querySelectorAll(".msg").forEach(m => { m.textContent = ""; });
+  const first = f.querySelector("input:not([hidden]), select"); if (first && window.innerWidth >= 900) setTimeout(() => first.focus(), 60);
+  fx("open"); return f;
+}
+document.querySelectorAll("[data-form]").forEach(b => b.addEventListener("click", () => openForm(b.dataset.form)));
+$("setup").addEventListener("click", e => { if (e.target.closest("[data-back]")) { fx("close"); lock(); } });
+const sixOk = (a, b, msg) => { if (!/^\d{6}$/.test(a)) { msg.textContent = "PIN is 6 digits"; return false; } if (a !== b) { msg.textContent = "The two PINs are different"; return false; } return true; };
+const opts = (list, pick) => list.map(n => `<option${n === pick ? " selected" : ""}>${esc(n)}</option>`).join("");
+async function openForm(id) {
+  const f = showForm(id);
+  if (id === "regForm") return;
+  try { who = await M.api("team"); store.set("mWho", who); } catch (e) { f.querySelector(".msg").textContent = e.message; return; }
+  const me = store.get("mUser", "");
+  if (id === "setupForm") {
+    f.dataset.mode = "first"; $("suTitle").textContent = "Set up your PIN"; $("suHint").textContent = "You're on the team but haven't picked a PIN yet.";
+    $("suNameRow").hidden = false; $("suName").required = true;
+    const free = who.members.filter(m => !m.hasPin).map(m => m.name);
+    $("suName").innerHTML = free.length ? opts(free, me) : `<option value="">Everyone has a PIN. Use Forgot PIN.</option>`;
+    $("suStudioRow").hidden = !who.studioPin; $("suStudioRow").firstChild.textContent = "Studio PIN";
+  }
+  if (id === "forgotForm") {
+    const has = who.members.filter(m => m.hasPin).map(m => m.name);
+    $("fgName").innerHTML = opts(has, me);
+    $("fgBy").innerHTML = `<option value="">Pick who approves</option>` + opts(has.concat(who.xiaom ? ["M"] : []));
+  }
+}
+// an old 4-digit PIN worked: pick the new 6-digit one now (the old one is the "current PIN")
+function openUpgrade(old) {
+  const f = showForm("setupForm"); f.dataset.mode = "upgrade"; f.dataset.old = old;
+  $("suTitle").textContent = "Pick a new 6-digit PIN"; $("suHint").textContent = `PINs are 6 digits now, ${session.name}. Your old one worked this last time.`;
+  $("suNameRow").hidden = true; $("suName").required = false; $("suStudioRow").hidden = true;
+}
 $("setupForm").addEventListener("submit", async e => {
-  e.preventDefault();
-  const pin = $("suPin").value, name = $("suName").value;
+  e.preventDefault(); const f = e.target, msg = $("suMsg"), pin = $("suPin").value;
+  if (!sixOk(pin, $("suPin2").value, msg)) return;
+  const up = f.dataset.mode === "upgrade", name = up ? session.name : $("suName").value;
   if (!name) return;
-  if (!/^\d{4}$/.test(pin)) { $("suMsg").textContent = "PIN is 4 digits"; return; }
-  if (pin !== $("suPin2").value) { $("suMsg").textContent = "The two PINs are different"; return; }
-  try { session = await slow(M.api("setMyPin", [name, $("suStudio").value, pin])); e.target.reset(); unlock(); }
-  catch (err) { $("suMsg").textContent = err.message; }
+  try { session = await slow(M.api("setMyPin", [name, up ? f.dataset.old : $("suStudio").value, pin])); }
+  catch (err) { msg.textContent = err.message; fx("err"); return; }
+  keepPin(pin, session.name); store.set("mUser", session.name); store.set("mLen4", false);
+  f.reset(); delete f.dataset.old; fx("ok"); unlock();
+});
+$("regForm").addEventListener("submit", async e => {
+  e.preventDefault(); const msg = $("rgMsg"), pin = $("rgPin").value, mail = $("rgMail").value.trim().toLowerCase(), name = $("rgName").value.trim().replace(/\s+/g, " ");
+  if (!/^[^@\s]+@(gmail|googlemail)\.com$/.test(mail)) { msg.textContent = "Use a Gmail address"; return; }
+  if (!$("rgBday").value) { msg.textContent = "Birthday is needed"; return; }
+  if (!sixOk(pin, $("rgPin2").value, msg)) return;
+  try { await slow(M.api("register", [name, mail, $("rgBday").value, pin])); }
+  catch (err) { msg.textContent = err.message; fx("err"); return; }
+  e.target.reset(); store.set("mUser", name);
+  $("regSentText").textContent = `Thanks, ${name}. An admin sees your request on the Team page. Once it's approved, sign in with your name and PIN.`;
+  showForm("regSent"); fx("ok");
+});
+$("forgotForm").addEventListener("submit", async e => {
+  e.preventDefault(); const msg = $("fgMsg"), pin = $("fgPin").value, by = $("fgBy").value;
+  if (!sixOk(pin, $("fgPin2").value, msg)) return;
+  if (!by) { msg.textContent = "Pick who approves"; return; }
+  try { session = await slow(M.api("resetPin", [$("fgName").value, pin, by, $("fgByPin").value])); }
+  catch (err) { msg.textContent = err.message; fx("err"); return; }
+  keepPin(pin, session.name); store.set("mUser", session.name); store.set("mLen4", false);
+  e.target.reset(); fx("ok"); toast("PIN reset"); unlock();
 });
 
 // ---------------------------------------------------------------- shell + routes
@@ -353,9 +522,9 @@ function paint() {
   if (v === "calendar") { if (route.key && parseYmd(route.key)) { selDay = route.key; const d = parseYmd(route.key); calY = d.getFullYear(); calM = d.getMonth(); } drawCal(); }
   if (v === "backup") drawBackup(true);
   if (v === "classic") loadBackup(); else if (v === "backup" && !backupLoaded) (window.requestIdleCallback || (g => setTimeout(g, 600)))(() => { if (session) loadBackup(); }, { timeout: 1500 });   // after the list has drawn   // Backup saves through Classic Backup, kept ready in the background
-  if (v === "team") drawTeam();
+  if (v === "team") { if (shownView !== "team") { $("teamLog").hidden = true; loadPeople(true).then(loadLog); } drawTeam(); }
   shownView = v;
-  if (v === "settings") { drawTheme(); drawAI(); drawVoice(); drawFx(); drawFest(); }
+  if (v === "settings") { drawTheme(); drawAI(); drawVoice(); drawFx(); drawFest(); drawLearn(); }
 }
 function markNav() {
   const key = route.name === "drive" || route.name === "editor" ? route.name + ":" + route.key : route.name === "job" ? "" : route.name === "classic" ? "backup" : route.name;
@@ -364,6 +533,7 @@ function markNav() {
   const ind = $("navInd");
   if (on) { ind.style.transform = `translateY(${on.offsetTop}px)`; ind.style.height = on.offsetHeight + "px"; ind.style.opacity = 1; } else ind.style.opacity = 0;
   const tab = { home: "home", calendar: "calendar", backup: "backup", classic: "backup", team: "team", drives: "drives", drive: "drives" }[route.name];
+  document.body.classList.toggle("on-team", route.name === "team");
   document.querySelectorAll("#tabs [data-r]").forEach(a => a.classList.toggle("on", a.dataset.r === tab));
 }
 document.addEventListener("click", e => {
@@ -371,8 +541,10 @@ document.addEventListener("click", e => {
   if (!e.target.closest("#meMenu, #meBtn, #meBtn2")) $("meMenu").hidden = true;
 });
 $("backBtn").addEventListener("click", () => { if (history.length > 1) history.back(); else location.hash = "#/home"; });
-const toggleMenu = () => { $("meMenu").hidden = !$("meMenu").hidden; };
-$("meBtn").addEventListener("click", toggleMenu); $("meBtn2").addEventListener("click", toggleMenu);
+// your profile is the Team page (you, then everyone); log out is right next to it
+const toProfile = () => { if (location.hash !== "#/team") location.hash = "#/team"; };
+$("meBtn").addEventListener("click", toProfile); $("meBtn2").addEventListener("click", toProfile);
+document.querySelectorAll(".logout").forEach(b => b.addEventListener("click", () => { fx("close"); lock("Logged out."); }));
 
 async function refresh() {
   if (session && session.offline) { const c = offlineCopy(); if (c) useCopy(c); drawAll(); festAfterData(); return; }
@@ -755,8 +927,14 @@ const calDrag = { s: null, moved: false };
   const end = e => {
     clearTimeout(hold); if (!st || e.pointerId !== st.id) return;
     const was = st; st = null; if (!ghost) return;
-    ghost.remove(); ghost = null; document.body.classList.remove("cal-dragging"); over && over.classList.remove("drop");
-    const to = over && e.type === "pointerup" ? over.dataset.d : null; over = null;
+    const to = over && e.type === "pointerup" ? over.dataset.d : null, cell = over, g = ghost; ghost = null;
+    document.body.classList.remove("cal-dragging"); over && over.classList.remove("drop"); over = null;
+    if (to && to !== was.from && !STILL) {   // it snaps into the day, and the day takes it with a bounce
+      const r = cell.getBoundingClientRect(), gr = g.getBoundingClientRect();
+      g.animate([{ transform: g.style.transform, opacity: 1 }, { transform: `translate(${r.left + r.width / 2 - gr.width * .3}px, ${r.top + r.height / 2 - gr.height * .3}px) scale(.6)`, opacity: 0 }], { duration: 170, easing: "cubic-bezier(.5, 0, .2, 1)" }).onfinish = () => g.remove();
+      cell.animate([{ transform: "scale(1)" }, { transform: "scale(.9)", offset: .25 }, { transform: "scale(1.06)", offset: .6 }, { transform: "scale(1)" }], { duration: 420, delay: 120, easing: "cubic-bezier(.3, 1.5, .5, 1)" });
+      fx("drag");
+    } else g.remove();
     const s = calDrag.s; calDrag.s = null; setTimeout(() => { calDrag.moved = false; }, 0);
     if (to && to !== was.from) moveShoot(s, Math.round((parseYmd(to) - parseYmd(was.from)) / 864e5));
   };
@@ -882,7 +1060,7 @@ function hl(text, ts) {
 function jobCard(j, i, o) {
   o = o || {}; const ts = o.ts || [], num = o.num || numbers();
   const r = j.main, w = whenOf(r), t = splitJob(r).title, no = num.get(r.id);
-    const st = k => j[k] ? `<span class="md ${selfUnbacked(j[k]) ? "no" : "ok"}" title="${k === "video" ? "Video" : "Photo"}: ${!j[k].backupDate && !j[k].backedUp ? "not backed up" : "backed up" + (j[k].backupDate ? " " + esc(fmtDates([j[k].backupDate])) : "")}">${k === "video" ? "Video" : "Photo"}</span>` : "";
+    const st = k => j[k] ? `<span class="mt ${selfUnbacked(j[k]) ? "no" : "ok"}" title="${k === "video" ? "Video" : "Photo"}: ${!j[k].backupDate && !j[k].backedUp ? "not backed up" : "backed up" + (j[k].backupDate ? " " + esc(fmtDates([j[k].backupDate])) : "")}">${k === "video" ? "Video" : "Photo"}</span>` : "";
     const drives = [...new Set(j.rows.flatMap(drivesOf))];
     const meta = [w.when && `<span class="bk-when-m">${hl(w.when, ts)}</span>`, w.place && hl(w.place, ts), o.hide !== "editor" && r.editor && `<a href="#/editor/${encodeURIComponent(r.editor)}">${hl(r.editor, ts)}</a>`, r.notes && `<span class="bk-notes">${hl(r.notes, ts)}</span>`].filter(Boolean).map(x => `<span class="mr">${x}</span>`).join("");
     const open = bkOpen.has(r.id);
@@ -913,14 +1091,20 @@ function jobLinks(j) {
 const linkA = (l, cls) => `<a class="${cls}" href="${esc(l.u)}" target="_blank" rel="noopener" title="${esc(l.name)}: ${esc(l.u)}">${LINK_SVG}${l.tag ? `<span>${esc(l.tag)}</span>` : ""}</a>`;
 // a job opened in place, as the Apps Script Backup does it: one quiet line under the name (where, who, what's backed up,
 // what its twin is missing, notes, the last change), its days with their links, and Edit / Back up
+// a row's change log: a list, or (straight from the Sheet) the same list as JSON text
+function histOf(r) {
+  const h = r && r.history; if (Array.isArray(h)) return h;
+  if (typeof h === "string" && h.trim().startsWith("[")) { try { const a = JSON.parse(h); return Array.isArray(a) ? a : []; } catch (e) {} }
+  return [];
+}
 function bkDetail(id) {
   const r = (data.rows || []).find(x => x.id === id); if (!r) return "";
   const j = jobsOf([r, twinOf(r)].filter(Boolean))[0], w = whenOf(r), links = jobLinks({ ...j, main: r }), many = w.parts.length > 1;
   const half = (k, x) => !x ? "" : selfUnbacked(x) ? `<span class="dx-no">${k} not backed up</span>` : `<span class="dx-ok">${k} backed up${x.backupDate ? " " + esc(fmtDates([x.backupDate])) : ""}</span>`;
   const notes = [...new Set(j.rows.map(x => x.notes).filter(Boolean))];
-  const last = j.rows.flatMap(x => x.history || []).filter(h => h && h.at).sort((a, b) => String(a.at).localeCompare(String(b.at))).at(-1);
+  const last = j.rows.flatMap(histOf).filter(h => h && typeof h === "object" && h.at).sort((a, b) => String(a.at).localeCompare(String(b.at))).at(-1);
   const made = j.rows.map(x => x.createdAt).filter(Boolean).sort()[0];
-  const line = metaRow(w.place && esc(w.place), r.editor && `<a href="#/editor/${encodeURIComponent(r.editor)}">${esc(r.editor)}</a>`, half("Video", j.video), half("Photo", j.photo),
+  const line = metaRow(half("Video", j.video), half("Photo", j.photo),
     ...notes.map(n => `<span class="dx-note">${esc(n)}</span>`),
     last ? `<span class="dx-by"><b>${esc(last.by || "Someone")}</b> ${esc((ACT[last.action] || last.action || "").toLowerCase())} <time title="${esc(String(last.at).slice(0, 16).replace("T", " "))}">${esc(relAt(last.at))}</time></span>`
       : made ? `<span class="dx-by">Added ${esc(relAt(made))}</span>` : "");
@@ -969,7 +1153,7 @@ document.querySelectorAll(".scrim > .sheet").forEach(sh => {
     if (e.cancelable) e.preventDefault(); dy = y - y0; sh.style.transform = dy ? pull(dy) : ""; };
   const end = () => { if (y0 == null) return; y0 = null; if (!on) return; on = false; const sc = sh.parentElement, fast = dy > 30 && dy / Math.max(1, performance.now() - t0) > .6;
     if (dy > 90 || fast) { SHEET_CLOSE[sc.id] && SHEET_CLOSE[sc.id](); requestAnimationFrame(() => { sh.style.transform = ""; }); return; }
-    if (dy) { const from = pull(dy); sh.style.transform = ""; sh.animate([{ transform: from }, { transform: "none" }], { duration: dy < 0 ? 520 : 420, easing: "cubic-bezier(.34,1.56,.64,1)" }); } };
+    if (dy) { const from = pull(dy); sh.style.transform = ""; sh.animate([{ transform: from }, { transform: "none" }], { duration: dy < 0 ? 440 : 340, easing: SNAP }); fx("drag"); } };
   sh.addEventListener("touchstart", e => start(e.touches[0].clientY, e.target), { passive: true });
   sh.addEventListener("touchmove", e => move(e.touches[0].clientY, e), { passive: false });
   sh.addEventListener("touchend", end); sh.addEventListener("touchcancel", end);
@@ -1205,7 +1389,7 @@ function jfFill(r, tw, no, pre, sig) {
   $("jfTeam").innerHTML = team.map(n => `<option value="${esc(n)}">`).join("");
   $("jfNotes").value = r ? r.notes || "" : ""; jfNotes();
   $("jfLinks").value = r ? String(r.link || "") : "";
-  const hist = r ? (r.history || []).filter(h => h && h.at) : [];
+  const hist = r ? histOf(r).filter(h => h && typeof h === "object" && h.at) : [];
   $("jfHist").hidden = !hist.length;
   $("jfHist").innerHTML = hist.length ? `<summary>History, ${hist.length} ${hist.length === 1 ? "change" : "changes"}</summary><ol>${hist.slice().reverse().map(h => `<li><b>${esc(h.by || "")}</b> ${esc(ACT[h.action] || h.action || "")}<span>${esc(fmtShort(h.at))} ${esc(String(h.at).slice(11, 16))}</span></li>`).join("")}</ol>` : "";
   document.querySelectorAll("[data-jf-edit]").forEach(el => { el.hidden = !r; });   // as in Backup: editor, notes and links come with the backup
@@ -1366,74 +1550,165 @@ $("bkExport").addEventListener("click", () => {
 });
 
 // ---------------------------------------------------------------- team
-// One card per person: this year's jobs and what isn't backed up, the next shoot, the birthday. Below: members and
-// birthdays (the same list Backup uses) and changing your own PIN.
-let birthdays = {}, memArmed = null, teamOk = false;
+// One card per person: this year's jobs and what isn't backed up, the next shoot, the birthday. Below: sign-up requests
+// (admins and above), everyone grouped by role with birthdays, role and Remove where you're allowed, changing your
+// own PIN, and the activity log (admins and above).
+// Roles: boss > 小M > admin > member. The server checks every one of these; the buttons only show what will work.
+let birthdays = {}, memArmed = null, teamOk = false, ppl = null, pplAt = 0, pplOld = false, logRows = null;
+const RANK = { member: 1, admin: 2, xiaom: 3, boss: 4 }, ROLE_NAME = { boss: "Boss", xiaom: "M", admin: "Admin", member: "Member" };
+const myRank = () => RANK[(ppl && ppl.me.role) || (data.me && data.me.role) || "member"] || 1;
+const roleOf = n => { const p = ppl && ppl.people.find(x => x.name === n); return p ? p.role : "member"; };
+const canRemove = n => n !== session.name && (pplOld || (roleOf(n) !== "boss" && myRank() >= 2 && RANK[roleOf(n)] < myRank()));
+const canReset = n => !pplOld && myRank() >= 2 && n !== session.name && RANK[roleOf(n)] <= myRank();
+const canRole = n => !pplOld && myRank() >= 3 && n !== session.name && !["boss", "xiaom"].includes(roleOf(n));
 const bdayText = v => { const m = /^(\d{4}|-{0,4})-?(\d{2})-(\d{2})$/.exec(v || ""); return m ? `${+m[3]} ${MON[+m[2] - 1]}` : ""; };
+async function loadPeople(force) {
+  if (!session || session.offline || pplOld || (!force && Date.now() - pplAt < 30000)) return;
+  if (!force && !ppl && pplAt) return;   // the first load is still on its way
+  pplAt = Date.now();
+  try { ppl = await M.api("people"); }
+  catch (e) { if (/Unknown call/.test(e.message)) pplOld = true; else { pplAt = 0; return; } }   // an older MApp.gs: the plain list, as before
+  if (route.name === "team") drawTeam();
+  if (myRank() < 2) $("teamLog").hidden = true;
+}
+async function loadLog() {
+  if (!session || myRank() < 2 || pplOld || session.offline) { $("teamLog").hidden = true; return; }
+  $("teamLog").hidden = false; $("logList").innerHTML = logRows ? $("logList").innerHTML : '<p class="muted small">Loading…</p>';
+  try { logRows = await M.api("auditLog", [150]); drawLog(); } catch (e) { $("logList").innerHTML = `<p class="msg">${esc(e.message)}</p>`; }
+}
+$("logMore").addEventListener("click", () => { fx("tap"); loadLog(); });
+const when = iso => { const d = new Date(iso); if (isNaN(d)) return esc(iso); const t = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return ymd(d) === ymd(new Date()) ? `Today ${t}` : `${d.getDate()} ${MON[d.getMonth()]}${d.getFullYear() !== new Date().getFullYear() ? " " + d.getFullYear() : ""} ${t}`; };
+const LOG_KIND = a => /fail|refused|rejected|removed/.test(a) ? "bad" : /approved|added|signed up|role/.test(a) ? "key" : "";
+function drawLog() {
+  const rs = logRows || [];
+  $("logList").innerHTML = rs.length ? rs.map(r => `<div class="lg ${LOG_KIND(r.action)}">
+    <time>${when(r.at)}</time>
+    <p><b>${esc(r.who || "Someone")}</b> ${esc(r.action)}${r.target && r.target !== r.who ? ` <b>${esc(r.target)}</b>` : ""}${r.detail ? `<span class="muted"> ${esc(r.detail)}</span>` : ""}</p>
+    <span class="lg-from">${esc(r.ip || "no IP")}${r.device ? `<br>${esc(r.device)}` : ""}</span></div>`).join("") : '<p class="muted small">Nothing recorded yet.</p>';
+}
+function drawReq() {
+  const pend = (ppl && ppl.pending) || [];
+  $("teamReq").hidden = !pend.length || myRank() < 2;
+  $("reqN").textContent = pend.length;
+  $("reqList").innerHTML = pend.map(p => `<div class="rq" data-id="${esc(p.id)}"><span class="hub ed">${esc(initials(p.name))}</span>
+    <div class="rq-who"><b>${esc(p.name)}</b><span class="muted small">${esc(p.gmail)}</span><span class="muted small">Birthday ${esc(bdayText(p.birthday) || "?")}, asked ${when(p.at)}${p.ip ? ", from " + esc(p.ip) : ""}</span></div>
+    <div class="rq-act"><button type="button" class="btn ghost sm" data-rq="reject">Reject</button><button type="button" class="btn sm" data-rq="approve">Approve</button></div></div>`).join("");
+}
+$("reqList").addEventListener("click", async e => {
+  const b = e.target.closest("[data-rq]"); if (!b || b.disabled) return;
+  const row = b.closest(".rq"), p = ppl.pending.find(x => x.id === row.dataset.id), yes = b.dataset.rq === "approve";
+  row.querySelectorAll("button").forEach(x => { x.disabled = true; }); $("reqMsg").textContent = "";
+  try { ppl = await M.api(b.dataset.rq, [row.dataset.id]); fx(yes ? "ok" : "off"); toast(`${p.name} ${yes ? "approved. They can sign in now." : "rejected"}`);
+    drawReq(); if (yes) refresh(); else drawMembers(true); if (logRows) loadLog(); }
+  catch (err) { $("reqMsg").textContent = err.message; fx("err"); row.querySelectorAll("button").forEach(x => { x.disabled = false; }); }
+});
+// one card per person, highest role first. Edit opens the card's own settings: birthday, role, a new PIN, Remove.
+let editOpen = null;
+const PEN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>';
+const canEdit = n => n === session.name ? n !== "M" : (canRole(n) || canReset(n) || canRemove(n) || myRank() >= 2);
+function cardEditor(p) {
+  const n = p.name, bot = p.role === "xiaom", v = birthdays[n] || "", m = /(\d{2})-(\d{2})$/.exec(v), yy = /^(\d{4})-/.exec(v);
+  const y0 = new Date().getFullYear(), years = Array.from({ length: 67 }, (_, i) => y0 - 14 - i);
+  const bd = bot ? "" : `<div class="te-row"><span class="te-l">Birthday</span><div class="te-bd"><select data-bd="m" aria-label="Month"><option value="">Month</option>${MON.map((x, i) => `<option value="${String(i + 1).padStart(2, "0")}"${m && +m[1] === i + 1 ? " selected" : ""}>${x}</option>`).join("")}</select>
+    <select data-bd="d" aria-label="Day"><option value="">Day</option>${Array.from({ length: 31 }, (_, i) => `<option value="${String(i + 1).padStart(2, "0")}"${m && +m[2] === i + 1 ? " selected" : ""}>${i + 1}</option>`).join("")}</select>
+    <select data-bd="y" aria-label="Year"><option value="">Year</option>${years.map(x => `<option${yy && +yy[1] === x ? " selected" : ""}>${x}</option>`).join("")}</select></div></div>`;
+  const role = canRole(n) ? `<div class="te-row"><span class="te-l">Role</span><div class="seg te-role" data-role="${esc(n)}"><button type="button" data-v="member" class="${p.role === "member" ? "on" : ""}">Member</button><button type="button" data-v="admin" class="${p.role === "admin" ? "on" : ""}">Admin</button></div></div>` : "";
+  const pin = canReset(n) ? `<form class="te-row rp-form" data-for="${esc(n)}"><span class="te-l">New PIN</span><div class="te-pin"><input type="password" inputmode="numeric" maxlength="6" pattern="\\d{6}" placeholder="6 digits" aria-label="New PIN for ${esc(n)}" autocomplete="new-password" required><button class="btn ghost sm">Set PIN</button></div></form>` : "";
+  const rm = canRemove(n) ? `<button type="button" class="btn ghost sm rm${memArmed === n ? " armed" : ""}" data-rm="${esc(n)}">${memArmed === n ? `Remove ${esc(n)}?` : "Remove from team"}</button>` : "";
+  const meta = p.gmail ? `<p class="muted small te-mail">${esc(p.gmail)}</p>` : "";
+  return `<div class="tm-edit"><div class="tm-edit-in">${meta}${bd}${role}${pin}${rm ? `<div class="te-foot">${rm}</div>` : ""}</div></div>`;
+}
 function drawTeam() {
   if (!session) return;
+  loadPeople();
+  const g = $("teamGrid");
+  // a half-picked birthday or a PIN being typed stays as it is through the minute refresh
+  if (g.querySelector(".tm-edit :focus") || [...g.querySelectorAll(".te-bd")].some(r => { const v = [...r.querySelectorAll("select")].map(x => !!x.value); return v.some(Boolean) && !v.every(Boolean); })) return;
   birthdays = Object.assign({}, data.birthdays || {});
   const y = String(new Date().getFullYear()), today = ymd(new Date());
-  $("teamGrid").innerHTML = team.map((n, i) => {
+  const people = ppl && !pplOld ? ppl.people.slice() : team.map(n => ({ name: n, role: "member" }));
+  people.sort((a, b) => (RANK[b.role] || 0) - (RANK[a.role] || 0));
+  g.innerHTML = people.map((p, i) => {
+    const n = p.name, ro = p.role, bot = ro === "xiaom", open = editOpen === n && canEdit(n);
     const rs = rowsOf(y).filter(r => r.editor === n), un = rs.filter(unbacked).length, ok = rs.length - un;
     const next = shoots.filter(s => crewOf(s).includes(n)).map(s => ({ s, d: datesOf(s).sort().find(d => d >= today) })).filter(x => x.d).sort((a, b) => a.d < b.d ? -1 : 1)[0];
     const bd = bdayText(birthdays[n]);
-    return `<article class="tm${n === session.name ? " me" : ""}" style="--i:${i}">
-      <div class="tm-h"><span class="tm-av">${esc(initials(n))}</span><div><span class="tm-name"><b>${esc(n)}</b>${n === session.name ? '<span class="tag">You</span>' : ""}</span><span class="muted small">${bd ? "Birthday " + esc(bd) : "No birthday yet"}</span></div></div>
-      <div class="tm-stats"><a href="#/editor/${encodeURIComponent(n)}"><b>${rs.length}</b><span>${rs.length === 1 ? "job" : "jobs"} in ${y}</span></a>
+    const body = bot ? `<p class="tm-next muted">Signs in like everyone else. It can approve sign-ups, change roles and remove admins and members.</p>`
+      : `<div class="tm-stats"><a href="#/editor/${encodeURIComponent(n)}"><b>${rs.length}</b><span>${rs.length === 1 ? "job" : "jobs"} in ${y}</span></a>
         <a href="#/editor/${encodeURIComponent(n)}" class="${un ? "red" : ""}"><b>${un}</b><span>not backed up</span></a></div>
       <div class="bar" aria-hidden="true"><i class="ok" style="flex-grow:${ok}"></i><i class="no" style="flex-grow:${un}"></i>${rs.length ? "" : '<i style="flex-grow:1"></i>'}</div>
-      <p class="tm-next">${next ? `Next shoot <a href="#/calendar/${esc(encodeURIComponent(next.d))}">${esc(fmtDay(next.d))}</a>, ${esc(next.s.name)}.` : '<span class="muted">No shoots coming up.</span>'}</p>
+      <p class="tm-next">${next ? `Next shoot <a href="#/calendar/${esc(encodeURIComponent(next.d))}">${esc(fmtDay(next.d))}</a>, ${esc(next.s.name)}.` : '<span class="muted">No shoots coming up.</span>'}</p>`;
+    return `<article class="tm${n === session.name ? " me" : ""}${bot ? " bot" : ""}${open ? " editing" : ""}" data-n="${esc(n)}" style="--i:${i}">
+      <div class="tm-h"><span class="tm-av r-${ro}">${bot ? "M" : esc(initials(n))}</span><div><span class="tm-name"><b>${esc(n)}</b>${n === session.name ? '<span class="tag">You</span>' : ""}${ro !== "member" && !bot ? `<span class="role r-${ro}">${ROLE_NAME[ro]}</span>` : ""}</span><span class="muted small">${bot ? "Studio assistant" : bd ? "Birthday " + esc(bd) : "No birthday yet"}${!bot && p.hasPin === false ? ", no PIN yet" : ""}</span></div>
+        ${canEdit(n) ? `<button type="button" class="ibtn tm-ed" data-ed="${esc(n)}" aria-expanded="${open}" aria-label="Edit ${esc(n)}" title="Edit">${PEN}</button>` : ""}</div>
+      ${body}${canEdit(n) ? cardEditor(p) : ""}
     </article>`;
-  }).join("");
-  drawMembers();
+  }).join("") + (pplOld || myRank() >= 2 ? `<form class="tm tm-add" style="--i:${people.length}"><span class="tm-av r-member" aria-hidden="true">+</span><input maxlength="40" placeholder="Add someone by name" aria-label="New member's name" autocomplete="off"><button class="btn ghost sm">Add</button></form>` : "");
+  drawReq();
 }
-function drawMembers() {
-  // a half-picked birthday or an open select stays as it is through the minute refresh
-  const ml = $("memList");
-  if (ml.contains(document.activeElement) || [...ml.querySelectorAll(".mem")].some(r => { const v = [...r.querySelectorAll("select")].map(x => !!x.value); return v.some(Boolean) && !v.every(Boolean); })) return;
-  const y0 = new Date().getFullYear(), years = Array.from({ length: 67 }, (_, i) => y0 - 14 - i);
-  ml.innerHTML = team.map(n => {
-    const v = birthdays[n] || "", m = /(\d{2})-(\d{2})$/.exec(v), yy = /^(\d{4})-/.exec(v);
-    return `<div class="mem" data-n="${esc(n)}"><span class="hub ed">${esc(initials(n))}</span><b>${esc(n)}</b>
-      <label class="bd"><span class="sr">Birthday of ${esc(n)}</span><select data-bd="m" aria-label="Month"><option value="">Month</option>${MON.map((x, i) => `<option value="${String(i + 1).padStart(2, "0")}"${m && +m[1] === i + 1 ? " selected" : ""}>${x}</option>`).join("")}</select>
-      <select data-bd="d" aria-label="Day"><option value="">Day</option>${Array.from({ length: 31 }, (_, i) => `<option value="${String(i + 1).padStart(2, "0")}"${m && +m[2] === i + 1 ? " selected" : ""}>${i + 1}</option>`).join("")}</select>
-      <select data-bd="y" aria-label="Year"><option value="">Year</option>${years.map(x => `<option${yy && +yy[1] === x ? " selected" : ""}>${x}</option>`).join("")}</select></label>
-      ${n === session.name ? '<span class="rm-sp"></span>' : `<button type="button" class="btn ghost sm rm${memArmed === n ? " armed" : ""}" data-rm="${esc(n)}">${memArmed === n ? "Remove?" : "Remove"}</button>`}</div>`;
-  }).join("");
-}
+const drawMembers = () => drawTeam();
 async function saveTeam(members, bd, msg) {
   // never write a team list that didn't come from a good load, or one without you in it: that would wipe the list in Backup too
-  if (!teamOk || !members.includes(session.name)) { $("memMsg").textContent = "The team list hasn't loaded yet. Try again in a moment."; return; }
+  if (!teamOk || !(members.includes(session.name) || session.name === "M")) { $("memMsg").textContent = "The team list hasn't loaded yet. Try again in a moment."; return; }
   const prevT = team, prevB = birthdays;
   team = members; birthdays = bd; data.team = members; data.birthdays = bd; drawTeam(); drawSide();
-  try { await M.api("setTeam", ["", members, bd]); toast(msg); buzz(); }
+  try { await M.api("setTeam", ["", members, bd]); toast(msg); buzz(); pplAt = 0; loadPeople(); }
   catch (err) { team = prevT; birthdays = prevB; data.team = prevT; data.birthdays = prevB; drawTeam(); $("memMsg").textContent = err.message; }
 }
-$("memList").addEventListener("change", e => {
-  const row = e.target.closest(".mem"); if (!row) return;
-  const n = row.dataset.n, m = row.querySelector('[data-bd="m"]').value, d = row.querySelector('[data-bd="d"]').value, y = row.querySelector('[data-bd="y"]').value;
+flipGrid($("teamGrid"));
+$("teamGrid").addEventListener("change", e => {
+  const row = e.target.closest(".te-bd"); if (!row) return;
+  const n = e.target.closest(".tm").dataset.n, m = row.querySelector('[data-bd="m"]').value, d = row.querySelector('[data-bd="d"]').value, y = row.querySelector('[data-bd="y"]').value;
   if (!(m && d && y) && (m || d || y)) return;   // wait for all three (Backup keeps the year for the zodiac hat)
   const bd = Object.assign({}, birthdays);
   if (m) bd[n] = `${y}-${m}-${d}`; else delete bd[n];
   if (m && !parseYmd(bd[n])) { $("memMsg").textContent = "That day doesn't exist."; return; }
-  $("memMsg").textContent = ""; saveTeam(team, bd, m ? `Birthday saved for ${n}` : `Birthday cleared for ${n}`);
+  $("memMsg").textContent = ""; document.activeElement.blur(); saveTeam(team, bd, m ? `Birthday saved for ${n}` : `Birthday cleared for ${n}`);
 });
-$("memList").addEventListener("click", e => {
+$("teamGrid").addEventListener("submit", async e => {
+  e.preventDefault();
+  const add = e.target.closest(".tm-add");
+  if (add) {
+    const inp = add.querySelector("input"), n = inp.value.trim().replace(/\s+/g, " ");
+    if (!n) return;
+    if (team.some(x => x.toLowerCase() === n.toLowerCase())) { $("memMsg").textContent = `${n} is already on the team.`; return; }
+    if (/[,<>"]/.test(n) || n === "M") { $("memMsg").textContent = "Use letters and spaces only."; return; }
+    inp.value = ""; inp.blur(); $("memMsg").textContent = "";
+    saveTeam([...team, n], birthdays, `${n} added. They pick a PIN with First time.`); return;
+  }
+  const f = e.target.closest(".rp-form"); if (!f) return;
+  const n = f.dataset.for, v = f.querySelector("input").value;
+  if (!/^\d{6}$/.test(v)) { $("memMsg").textContent = "PIN is 6 digits"; return; }
+  f.querySelector("button").disabled = true; $("memMsg").textContent = "";
+  try { ppl = await M.api("setPinFor", [n, v]); fx("ok"); toast(`New PIN set for ${n}. Tell them in person.`); if (logRows) loadLog(); f.querySelector("input").value = ""; f.querySelector("input").blur(); }
+  catch (err) { $("memMsg").textContent = err.message; fx("err"); }
+  f.querySelector("button").disabled = false;
+});
+$("teamGrid").addEventListener("click", async e => {
+  const ed = e.target.closest("[data-ed]");
+  if (ed) {
+    const n = ed.dataset.ed, card = ed.closest(".tm"); editOpen = editOpen === n ? null : n; memArmed = null;
+    $("teamGrid").querySelectorAll(".tm.editing").forEach(c => { if (c !== card) { c.classList.remove("editing"); c.querySelector("[data-ed]").setAttribute("aria-expanded", "false"); } });
+    card.classList.toggle("editing", editOpen === n); ed.setAttribute("aria-expanded", String(editOpen === n)); fx(editOpen === n ? "open" : "close"); return;
+  }
+  const rb = e.target.closest(".te-role button");
+  if (rb) {
+    const seg = rb.parentElement, n = seg.dataset.role, v = rb.dataset.v; if (rb.classList.contains("on")) return;
+    seg.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === rb)); $("memMsg").textContent = "";
+    try { ppl = await M.api("setRole", [n, v]); fx("ok"); toast(`${n} is now ${v === "admin" ? "an admin" : "a member"}`); if (logRows) loadLog(); }
+    catch (err) { $("memMsg").textContent = err.message; fx("err"); }
+    drawTeam(); return;
+  }
   const b = e.target.closest("[data-rm]"); if (!b) return;
   const n = b.dataset.rm;
-  if (memArmed !== n) { memArmed = n; drawMembers(); setTimeout(() => { if (memArmed === n) { memArmed = null; drawMembers(); } }, 3000); return; }
-  memArmed = null; const bd = Object.assign({}, birthdays); delete bd[n];
-  saveTeam(team.filter(x => x !== n), bd, `${n} removed`);
-});
-$("memAdd").addEventListener("submit", e => {
-  e.preventDefault();
-  const n = $("memNew").value.trim().replace(/\s+/g, " ");
-  if (!n) return;
-  if (team.some(x => x.toLowerCase() === n.toLowerCase())) { $("memMsg").textContent = `${n} is already on the team.`; return; }
-  if (/[,<>"]/.test(n)) { $("memMsg").textContent = "Use letters and spaces only."; return; }
-  $("memNew").value = ""; $("memMsg").textContent = "";
-  saveTeam([...team, n], birthdays, `${n} added`);
+  if (memArmed !== n) { memArmed = n; fx("tap"); b.classList.add("armed"); b.textContent = `Remove ${n}?`; setTimeout(() => { if (memArmed === n) { memArmed = null; b.classList.remove("armed"); b.textContent = "Remove from team"; } }, 3000); return; }
+  memArmed = null; editOpen = null;
+  if (pplOld) { const bd = Object.assign({}, birthdays); delete bd[n]; saveTeam(team.filter(x => x !== n), bd, `${n} removed`); return; }
+  b.disabled = true; $("memMsg").textContent = "";
+  try { ppl = await M.api("removeMember", [n]); fx("off"); toast(`${n} removed`); refresh(); if (logRows) loadLog(); }
+  catch (err) { $("memMsg").textContent = err.message; fx("err"); b.disabled = false; }
+  drawTeam();
 });
 
 // ---------------------------------------------------------------- shoot form
@@ -1485,8 +1760,9 @@ $("sfDel").addEventListener("click", async () => {
 // ---------------------------------------------------------------- Ask M (AI)
 // Any OpenAI-compatible chat server. Default: Hermes Agent on this Mac (its API server: `hermes gateway` with
 // API_SERVER_ENABLED=true, port 8642, Bearer API_SERVER_KEY). Others: Ollama / LM Studio, or a cloud API with a key.
-// (DeepSeek through MApp.gs comes in a later step.)
+// Default on the phone and the web: DeepSeek through the studio's own server (MApp.gs keeps the key; nothing to fill in).
 const AI_PROVIDERS = {
+  studio: { label: "DeepSeek (Studio M)", url: "", model: "deepseek-chat", hint: "Uses the studio's DeepSeek key, kept on the Studio M server. Nothing to fill in here." },
   hermes: { label: "Hermes Agent (this Mac)", url: "http://127.0.0.1:8642/v1", model: "hermes-agent",
     hint: "In ~/.hermes/.env set API_SERVER_ENABLED=true and API_SERVER_KEY, run `hermes gateway`, and paste that key below." },
   ollama: { label: "Ollama (this Mac)", url: "http://127.0.0.1:11434/v1", model: "hermes3", hint: "No key needed. Model = a name from `ollama list`." },
@@ -1496,7 +1772,12 @@ const AI_PROVIDERS = {
   openrouter: { label: "OpenRouter", url: "https://openrouter.ai/api/v1", model: "nousresearch/hermes-4-70b", hint: "Paste an OpenRouter API key." },
   custom: { label: "Other (OpenAI-compatible)", url: "", model: "", hint: "Any server with /v1/chat/completions." }
 };
-const aiCfg = () => store.get("mAI", { prov: "hermes", url: AI_PROVIDERS.hermes.url, model: AI_PROVIDERS.hermes.model, key: "" });
+const aiCfg = () => {
+  const c = store.get("mAI", null);
+  // nothing chosen yet, or the Mac-only Hermes default on a phone / the web: the studio's DeepSeek
+  if (!c || (!window.__TAURI__ && c.prov === "hermes" && !c.key)) return { prov: "studio", url: "", model: AI_PROVIDERS.studio.model, key: "" };
+  return c;
+};
 const jobLine = r => [r.name, r.date || r.year, sectionOf(r), "drive " + (r.drive || "-"), "editor " + (r.editor || "-"),
   unbacked(r) ? "NOT backed up" : `backed up${r.backedUp && r.backedUp !== true ? " (" + r.backedUp + ")" : ""}${r.backupDate ? " " + r.backupDate : ""}`,
   r.link ? "link " + r.link : ""].filter(Boolean).join(" | ");
@@ -1535,38 +1816,24 @@ ${found.join("\n") || "none matched; ask them for the event name, couple's name,
 // Streams the reply (Server-Sent Events) and calls onText with the text so far; falls back to one plain reply
 async function callModel(messages, onText, signal) {
   if (!DEMO) return callServer(messages, onText, signal);
-  try { return await callServer(messages, onText, signal); } catch (e) { if (signal && signal.aborted) throw e; return fakeModel(messages, onText, signal); }
+  try { return await callServer(messages, onText, signal); } catch (e) { if (signal && signal.aborted) throw e; throw Object.assign(new Error("demo"), { local: false }); }
 }
-// Demo only: when no model server is reachable, M answers from a few canned replies so the app can be tried anywhere
-async function fakeModel(messages, onText, signal) {
-  const q = String(messages[messages.length - 1].content || ""), zh = /[一-鿿]/.test(q), d = new Date();
-  d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7 || 7));
-  const day = ymd(d), found = findJobs(q, 3);
-  let out;
-  if (/shoot|wedding|拍|婚|活动|event/i.test(q) && !/where|哪/i.test(q)) {
-    const name = (q.match(/(?:shoot[:：]?|拍)\s*([^,，。\n]{2,40})/i) || [])[1] || (zh ? "婚礼拍摄" : "Wedding shoot");
-    out = (zh ? "好，帮你排好了，确认一下：\n" : "Got it. Check this and tap Add:\n") + "```shoot\n" +
-      JSON.stringify({ name: name.trim(), dates: [day], location: zh ? "吉隆坡" : "Kuala Lumpur", type: "both", crew: [session.name], notes: "" }) + "\n```";
-  } else if (found.length) {
-    const r = found[0];
-    out = (zh ? `**${r.name}** 在 ${r.drive || "（没写硬盘）"}，${r.editor || "没人"} 剪的。` : `**${r.name}** is on ${r.drive || "no drive yet"}, edited by ${r.editor || "nobody yet"}. `) +
-      (unbacked(r) ? (zh ? "还没备份。" : "It is not backed up yet.") : (zh ? "已经备份了。" : "It is backed up."));
-  } else if (/back|备份/i.test(q)) {
-    const lines = rowsOf(String(new Date().getFullYear())).filter(unbacked).slice(0, 6).map(r => `- ${r.name} (${sectionOf(r)}, ${r.editor || "-"}, ${r.drive || "-"})`);
-    out = lines.length ? (zh ? "还没备份的：\n" : "Not backed up yet:\n") + lines.join("\n") : (zh ? "全部都备份好了 👍" : "Everything is backed up 👍");
-  } else {
-    out = zh ? `嗨 ${session.name}！这是 **demo 模式**，我是模拟回复。\n- 说「拍 Tan & Lim 婚礼」试试加 shoot\n- 问「Rinjani 在哪个硬盘？」` :
-      `Hi ${session.name}! This is **demo mode**, so my replies are canned.\n- Try "Add a shoot: Tan & Lim wedding"\n- Or ask "Where is Rinjani?"`;
-  }
-  let text = "";
-  for (const ch of Array.from(out)) {
+// DeepSeek through MApp.gs: one reply, written out quickly so it still reads as M typing
+async function callStudio(messages, onText, signal) {
+  if (DEMO) throw new Error("demo");
+  const out = await M.api("ask", [messages]); const full = String(out && out.text || "");
+  if (signal && signal.aborted) throw new DOMException("Aborted", "AbortError");
+  const chars = Array.from(full), step = Math.max(2, Math.ceil(chars.length / 90));
+  for (let k = step; k < chars.length; k += step) {
     if (signal && signal.aborted) throw new DOMException("Aborted", "AbortError");
-    text += ch; onText(text); await new Promise(r => setTimeout(r, 18));
+    onText(chars.slice(0, k).join("")); await new Promise(r => setTimeout(r, 16));
   }
-  return text;
+  onText(full); return full;
 }
 async function callServer(messages, onText, signal) {
-  const c = aiCfg(), url = c.url.replace(/\/+$/, "") + "/chat/completions";
+  const c = aiCfg();
+  if (c.prov === "studio") return callStudio(messages, onText, signal);
+  const url = c.url.replace(/\/+$/, "") + "/chat/completions";
   const headers = { "Content-Type": "application/json" }; if (c.key) headers.Authorization = "Bearer " + c.key;
   const res = await net(url, { method: "POST", headers, signal, body: JSON.stringify({ model: c.model, messages, temperature: 0.4, stream: true }) });
   if (!res.ok) throw new Error(`Model server said ${res.status}`);
@@ -1591,12 +1858,144 @@ async function callServer(messages, onText, signal) {
   }
   return text;
 }
+// ---------------------------------------------------------------- M offline: learns from every AI answer
+// Each time the AI handles a request, M keeps (on this device) what kind of request it was and the words that went
+// with it: places from the shoots it set up, names people use. With no internet, or when the AI can't be reached,
+// M answers from that and from the data already on the phone: what isn't backed up, upcoming shoots, where a job
+// is, and a shoot card to add (saving it still needs the server). Answers are always worked out from today's data,
+// never replayed from old replies.
+const LEARN_KEY = "mLearn";
+const learnDb = () => { const d = store.get(LEARN_KEY, null) || {}; d.ex = d.ex || []; d.loc = d.loc || []; d.nick = d.nick || {}; return d; };
+const normQ = t => String(t || "").toLowerCase().replace(/\d{4}-\d{2}-\d{2}|\d+/g, "#").replace(/[^\p{L}#& ]+/gu, " ").replace(/\s+/g, " ").trim();
+const grams = t => { const s = normQ(t).replace(/ /g, ""), g = new Set(); for (let i = 0; i < s.length - 1; i++) g.add(s.slice(i, i + 2)); return g; };
+const dice = (a, b) => { if (!a.size || !b.size) return 0; let n = 0; a.forEach(x => { if (b.has(x)) n++; }); return 2 * n / (a.size + b.size); };
+const isZh = t => /[一-鿿]/.test(t);
+const RULES = [
+  ["add", /\b(add|book|schedule|new shoot|set up a shoot)\b|加(个|一个)?(shoot|拍摄|行程)|安排|排(个|一个)|帮我(加|排)|要拍|去拍|新(的)?(shoot|拍摄)/i],
+  ["unbacked", /not backed|n'?t backed|unbacked|haven'?t backed|backup|back up|没(有)?备份|未备份|还没备|备份/i],
+  ["shoots", /shoots?\b|schedule|calendar|this week|next week|tomorrow|today|拍摄|行程|日程|这周|本周|下周|明天|今天|后天|几号拍/i],
+  ["find", /where|which drive|find|哪(个|里|颗)|在哪|硬盘|找/i]
+];
+function learnFrom(q, reply) {
+  if (!q || !reply) return;
+  const d = learnDb(), sm = reply.match(SHOOT_RE); let intent = "";
+  if (sm) {
+    intent = "add";
+    try { const o = JSON.parse(sm[1]); if (o.location && !d.loc.includes(o.location)) d.loc.unshift(o.location);
+      (o.crew || []).forEach(n => { const m = q.match(new RegExp("([\\p{L}]{1,6})" + "(?=[,，、和 ]|$)", "gu")) || []; m.forEach(w => { if (w !== n && !team.includes(w) && w.length <= 4 && q.includes(w) && /^阿|^小|仔$/.test(w)) d.nick[w] = n; }); });
+    } catch (e) {}
+  } else {
+    const year = String(new Date().getFullYear()), low = reply.toLowerCase();
+    const unb = rowsOf(year).filter(unbacked).filter(r => low.includes(String(r.name).toLowerCase())).length;
+    const sh = shoots.filter(s => low.includes(String(s.name).toLowerCase())).length;
+    const fj = findJobs(q, 5).filter(r => low.includes(String(r.name).toLowerCase())).length;
+    intent = unb >= 2 ? "unbacked" : sh ? "shoots" : fj ? "find" : "";
+  }
+  if (!intent) return;
+  d.ex = [{ t: q.slice(0, 160), i: intent, at: Date.now() }, ...d.ex.filter(x => normQ(x.t) !== normQ(q))].slice(0, 400);
+  d.loc = d.loc.slice(0, 60);
+  store.set(LEARN_KEY, d); drawLearn();
+}
+function intentOf(q) {
+  const d = learnDb(), g = grams(q); let best = null, sim = 0;
+  d.ex.forEach(x => { const s = dice(g, grams(x.t)); if (s > sim) { sim = s; best = x; } });
+  if (best && sim >= .62) return best.i;   // said like something the AI handled before
+  if (datesIn(q).length && /拍|shoot|婚礼|wedding|活动|发布会|gala|event|launch|dinner|party|晚宴/i.test(q) && !/[?？]|什么|哪|几|where|which|what|when|any/i.test(q)) return "add";
+  for (const [k, re] of RULES) if (re.test(q)) return k;
+  if (best && sim >= .45) return best.i;
+  return findJobs(q, 1).length ? "find" : "help";
+}
+// people named in the text: team names, learned nicknames, and "me / 我"
+function namesIn(q) {
+  const d = learnDb(), low = q.toLowerCase(), out = team.filter(n => low.includes(n.toLowerCase()));
+  Object.entries(d.nick).forEach(([w, n]) => { if (q.includes(w) && team.includes(n) && !out.includes(n)) out.push(n); });
+  if (/\b(me|my|mine|i)\b|我/i.test(q) && session && !out.includes(session.name)) out.push(session.name);
+  return out;
+}
+// dates in plain words: today, tomorrow, next Saturday, 下周六, 12月5日, 5 Dec, 2026-12-05, "5 to 7 Dec", 5号到7号
+const WDX = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 }, ZWD = { 日: 0, 天: 0, 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6 };
+function datesIn(q) {
+  const t0 = new Date(); t0.setHours(12, 0, 0, 0);
+  const at = (y, m, d) => { const x = new Date(y, m, d, 12); return x.getMonth() === m ? x : null; };
+  const fut = (m, d) => { const y = t0.getFullYear(); let x = at(y, m, d); if (x && x < new Date(t0.getTime() - 864e5 * 30)) x = at(y + 1, m, d); return x; };
+  const plus = n => { const x = new Date(t0); x.setDate(x.getDate() + n); return x; };
+  const range = (a, b) => { const out = []; if (!a || !b || b < a) return a ? [a] : []; for (let x = new Date(a); x <= b && out.length < 14; x.setDate(x.getDate() + 1)) out.push(new Date(x)); return out; };
+  const low = q.toLowerCase(); let m;
+  if ((m = low.match(/(\d{4})-(\d{1,2})-(\d{1,2})(?:\s*(?:to|-|–|到|至|~)\s*(\d{4})-(\d{1,2})-(\d{1,2}))?/))) return range(at(+m[1], m[2] - 1, +m[3]), m[4] ? at(+m[4], m[5] - 1, +m[6]) : at(+m[1], m[2] - 1, +m[3]));
+  if ((m = q.match(/(\d{1,2})月(\d{1,2})[日号]?(?:\s*(?:到|至|-|–|~)\s*(?:(\d{1,2})月)?(\d{1,2})[日号]?)?/))) { const a = fut(m[1] - 1, +m[2]); return range(a, m[4] ? fut((m[3] || m[1]) - 1, +m[4]) : a); }
+  const MM = "jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec";
+  if ((m = low.match(new RegExp(`(\\d{1,2})(?:\\s*(?:-|–|to)\\s*(\\d{1,2}))?\\s*(${MM})[a-z]*`)))) { const mo = MM.split("|").indexOf(m[3]), a = fut(mo, +m[1]); return range(a, m[2] ? fut(mo, +m[2]) : a); }
+  if ((m = low.match(new RegExp(`(${MM})[a-z]*\\s*(\\d{1,2})(?:\\s*(?:-|–|to)\\s*(\\d{1,2}))?`)))) { const mo = MM.split("|").indexOf(m[1]), a = fut(mo, +m[2]); return range(a, m[3] ? fut(mo, +m[3]) : a); }
+  if ((m = q.match(/(\d{1,2})[号日](?:\s*(?:到|至|-|~)\s*(\d{1,2})[号日]?)?/))) { const dd = +m[1], mo = dd < t0.getDate() ? t0.getMonth() + 1 : t0.getMonth(), a = at(t0.getFullYear() + (mo > 11 ? 1 : 0), mo % 12, dd); return range(a, m[2] ? at(a.getFullYear(), a.getMonth(), +m[2]) : a); }
+  if (/day after tomorrow|后天/.test(low)) return [plus(2)];
+  if (/tomorrow|明天/.test(low)) return [plus(1)];
+  if (/today|今天/.test(low)) return [plus(0)];
+  const wk = (w, next) => { let n = (w - t0.getDay() + 7) % 7; if (next) n += n === 0 ? 7 : (7 - ((t0.getDay() + 6) % 7)) <= n ? 0 : 7; if (!next && n === 0) n = 0; return plus(n); };
+  if ((m = low.match(/(next|this)?\s*(sun|mon|tue|wed|thu|fri|sat)[a-z]*/))) return [wk(WDX[m[2]], m[1] === "next")];
+  if ((m = q.match(/(下|这|本)?(?:周|星期|礼拜)([日天一二三四五六])/))) return [wk(ZWD[m[2]], m[1] === "下")];
+  return [];
+}
+// the span someone asks about: this week, next week, this month, or the next two weeks
+function spanIn(q) {
+  const t = new Date(), mon = new Date(t); mon.setDate(t.getDate() - (t.getDay() + 6) % 7);
+  const add = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+  if (/next week|下(个)?(周|星期|礼拜)/i.test(q)) return [add(mon, 7), add(mon, 13), isZh(q) ? "下周" : "next week"];
+  if (/this week|这(个)?(周|星期|礼拜)|本周/i.test(q)) return [t, add(mon, 6), isZh(q) ? "这周" : "this week"];
+  if (/this month|这个月|本月/i.test(q)) return [t, new Date(t.getFullYear(), t.getMonth() + 1, 0), isZh(q) ? "这个月" : "this month"];
+  const ds = datesIn(q); if (ds.length) return [ds[0], ds[ds.length - 1], ds.length > 1 ? `${fmtDay(ymd(ds[0]))}–${fmtDay(ymd(ds[ds.length - 1]))}` : fmtDay(ymd(ds[0]))];
+  return [t, add(t, 13), isZh(q) ? "接下来两周" : "the next two weeks"];
+}
+const jobLink = r => `[${r.name}](#/job/${encodeURIComponent(r.id)})`;
+function localM(q) {
+  const zh = isZh(q), who = namesIn(q), it = intentOf(q), year = (q.match(/\b(20\d\d)\b/) || [])[1] || String(new Date().getFullYear());
+  if (it === "unbacked") {
+    let rs = rowsOf(year).filter(unbacked); const drv = (q.match(/\bm\s?(\d)\b/i) || [])[1];
+    if (who.length) rs = rs.filter(r => who.includes(r.editor)); if (drv) rs = rs.filter(r => new RegExp("^M" + drv + "\\b", "i").test(r.drive || ""));
+    const head = who.length ? who.join(", ") + " " : "";
+    if (!rs.length) return zh ? `${head}${year} 年都备份好了 👍` : `${head ? head + "has" : "Everything in " + year + " is"} backed up 👍`;
+    return (zh ? `${head}${year} 年还有 ${rs.length} 个没备份：\n` : `${rs.length} not backed up in ${year}${head ? " for " + head.trim() : ""}:\n`) +
+      rs.slice(0, 12).map(r => `- ${jobLink(r)} (${sectionOf(r)}, ${r.editor || "-"}, ${r.drive || (zh ? "没写硬盘" : "no drive")})`).join("\n") + (rs.length > 12 ? (zh ? `\n…还有 ${rs.length - 12} 个，在 [Not backed up](#/unbacked) 看全部。` : `\n…and ${rs.length - 12} more in [Not backed up](#/unbacked).`) : "");
+  }
+  if (it === "shoots") {
+    const [a, b, label] = spanIn(q), A = ymd(a), B = ymd(b);
+    let ss = shoots.filter(s => datesOf(s).some(d => d >= A && d <= B)); if (who.length) ss = ss.filter(s => crewOf(s).some(n => who.includes(n)));
+    ss.sort((x, y) => (datesOf(x).find(d => d >= A) || "").localeCompare(datesOf(y).find(d => d >= A) || ""));
+    if (!ss.length) return zh ? `${label}没有拍摄${who.length ? "（" + who.join("、") + "）" : ""}。` : `No shoots ${label}${who.length ? " for " + who.join(", ") : ""}.`;
+    return (zh ? `${label}的拍摄：\n` : `Shoots ${label}:\n`) + ss.map(s => { const d = datesOf(s).filter(x => x >= A && x <= B);
+      return `- [${fmtDay(d[0])}](#/calendar/${d[0]})${d.length > 1 ? "–" + fmtDay(d[d.length - 1]) : ""} **${s.name}**${s.location ? ", " + s.location : ""} (${crewOf(s).join(", ") || "-"})`; }).join("\n");
+  }
+  if (it === "find") {
+    const rs = findJobs(q, 6);
+    if (!rs.length) return zh ? "没找到。告诉我活动名、新人名字、硬盘或剪辑师，我再找。" : "Nothing matched. Tell me the event, the couple's names, the drive or the editor.";
+    return rs.map(r => `- ${jobLink(r)}: ${r.drive || (zh ? "没写硬盘" : "no drive yet")}, ${r.editor || "-"}, ${unbacked(r) ? (zh ? "**还没备份**" : "**not backed up**") : (zh ? "已备份" : "backed up")}`).join("\n");
+  }
+  if (it === "add") {
+    const d = learnDb(), ds = datesIn(q).map(ymd);
+    const locM = q.match(/(?:\bat\b|\bin\b|在)\s*([^\s,，。.;；]{2,30}(?:\s[A-Z][^\s,，。]*)?)/), loc = (locM && locM[1]) || d.loc.find(l => q.toLowerCase().includes(l.toLowerCase())) || "";
+    const type = /video|录像|视频|摄像/i.test(q) && !/photo|照片|拍照|摄影/i.test(q) ? "video" : /photo|照片|拍照/i.test(q) && !/video|视频|录像/i.test(q) ? "photo" : "both";
+    let name = q.replace(/(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}月\d{1,2}[日号]?|\d{1,2}[号日]|(下|这|本)?(周|星期|礼拜)[日天一二三四五六]|明天|后天|今天|tomorrow|today|(next|this)\s*\w+day|\d{1,2}\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*)/gi, " ")
+      .replace(/\b(add|book|schedule|a|an|the|shoot|new|please|on|for|with|and|to)\b|帮我|帮忙|加(个|一个)?|安排|排(个|一个)?|要拍|去拍|拍摄|行程|一个|个|和|跟|到|至|拍/gi, " ");
+    if (loc) name = name.replace(loc, " ").replace(/\bat\b|\bin\b|在/g, " ");
+    who.forEach(n => { name = name.replace(new RegExp(n, "ig"), " "); }); Object.keys(d.nick).forEach(w => { name = name.replace(w, " "); });
+    name = name.replace(/\b(video|photo|me|my|i)\b|视频|录像|照片|拍照|我/gi, " ").replace(/[,，。.:：;；]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 50);
+    const card = { name: name || (zh ? "新拍摄" : "New shoot"), dates: ds, location: loc, type, crew: who.length ? who : [session.name], notes: "" };
+    return (zh ? (ds.length ? "好，帮你排好了，确认一下：" : "日期没听清楚，点 Edit 选日期：") : (ds.length ? "Got it. Check this and tap Add:" : "I couldn't catch the date. Tap Edit to pick it:")) + "\n```shoot\n" + JSON.stringify(card) + "\n```";
+  }
+  const hits = findJobs(q, 4);
+  if (hits.length) return (zh ? "可能是这些：\n" : "Maybe one of these:\n") + hits.map(r => `- ${jobLink(r)} (${r.drive || "-"})`).join("\n");
+  return zh ? "我现在离线，可以帮你：\n- 看还没备份的（「Mun 还有哪些没备份」）\n- 看拍摄（「下周拍什么」）\n- 找资料在哪个硬盘（「Rinjani 在哪」）\n- 加拍摄（「12月5日 在 Ipoh 拍 Lim 婚礼」）"
+    : "I'm offline right now, but I can still:\n- list what isn't backed up (\"what has Mun not backed up?\")\n- show shoots (\"shoots next week\")\n- find a job's drive (\"where is Rinjani?\")\n- set up a shoot (\"Lim wedding on 5 Dec at Ipoh\")";
+}
+function drawLearn() { const el = $("learnN"); if (!el) return; const n = learnDb().ex.length;
+  el.textContent = n ? `M has learned from ${n} of your requests, so it can still answer offline or when the AI is down.` : "M learns from each request you make, so it can still answer offline or when the AI is down."; }
+
 // Small Markdown: code blocks, inline code, bold, italic, headings, lists, links. Everything is escaped first.
 function md(src) {
   const blocks = [];
   let t = esc(src).replace(/```(\w*)\n?([\s\S]*?)(```|$)/g, (m, lang, code) => { blocks.push(`<pre><code>${code.replace(/\n$/, "")}</code></pre>`); return `\u0000${blocks.length - 1}\u0000`; });
   const inline = x => x.replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<i>$2</i>")
-    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/\[([^\]]+)\]\((#\/[^)\s]+)\)/g, '<a href="$2">$1</a>');
   const out = []; let list = null;
   const close = () => { if (list) { out.push(`</${list}>`); list = null; } };
   for (const line of t.split("\n")) {
@@ -1766,8 +2165,27 @@ function perchWant() {
   if (perch.st > 0) { const els = stationEls(); if (els[perch.st]) return [els[perch.st], true, true]; perch.st = 0; }
   const w = PERCH[shownView]; return w && [document.querySelector(w[0]), w[1]];
 }
+// Sitting on a card, 小M lives inside the scrolling page, so a jump above the page's top edge was cut off under the top
+// bar. While he jumps (any one-off move of his), he is lifted out to the top layer on the same spot, then set back.
+let liftT = 0;
+function unliftM() { clearTimeout(liftT); if (!MBTN.classList.contains("lifted")) return; MBTN.classList.remove("lifted"); ["position", "left", "top", "right", "bottom", "width", "height", "zIndex"].forEach(k => { MBTN.style[k] = ""; }); }
+function liftM(ms) {
+  if (!MBTN.classList.contains("perched") || MBTN.hidden) return;
+  if (!MBTN.classList.contains("lifted")) {
+    const r = MBTN.getBoundingClientRect(); if (!r.width) return;
+    Object.assign(MBTN.style, { position: "fixed", left: r.left + "px", top: r.top + "px", right: "auto", bottom: "auto", width: r.width + "px", height: r.height + "px", zIndex: 31 });
+    MBTN.classList.add("lifted");
+    const v = $("views"), back = () => unliftM(); v.addEventListener("scroll", back, { once: true, passive: true });   // scrolling: back on his card at once
+  }
+  clearTimeout(liftT); liftT = setTimeout(unliftM, Math.min(4000, (ms || 1200) + 120));
+}
+MBTN.addEventListener("animationstart", e => { const cs = getComputedStyle(e.target); if (cs.animationIterationCount.includes("infinite")) return;
+  liftM(Math.max(...cs.animationDuration.split(",").map(x => parseFloat(x) * (x.includes("ms") ? 1 : 1000))) || 1200); });
+{ const an = MBTN.animate.bind(MBTN); MBTN.animate = (k, o) => { const a = an(k, o); const ms = typeof o === "number" ? o : o && (o.duration || 0) + (o.delay || 0);
+  requestAnimationFrame(() => { if (MBTN.classList.contains("perched")) liftM(ms); }); return a; }; }
 function perch(from, how) {
   const b = MBTN; if (!b.isConnected) document.body.appendChild(b);
+  unliftM();
   if (b.hidden || mOpen) return;
   if (b.getAnimations().some(a => a.playState === "running") && !from) return;   // mid-jump: a redraw doesn't move him
   // a pop-up is open: he sits on its top edge
@@ -1902,7 +2320,7 @@ function fitPerch(b, inside, station) {
     const host = seat.parentElement;
     if (host.matches(".bk-row, .row")) {
       const prev = host.previousElementSibling, hr = host.getBoundingClientRect();
-      const things = prev && !prev.classList.contains("bk-th") ? [...prev.querySelectorAll("b, .mr, .md, .bk-drv > *, .bk-more, .bk-when, .bk-no, .bk-parts li, span, a, button")].filter(x => x.offsetParent && !x.children.length || x.matches("button, a, .md"))
+      const things = prev && !prev.classList.contains("bk-th") ? [...prev.querySelectorAll("b, .mr, .mt, .bk-drv > *, .bk-more, .bk-when, .bk-no, .bk-parts li, span, a, button")].filter(x => x.offsetParent && !x.children.length || x.matches("button, a, .mt"))
         .map(x => x.getBoundingClientRect()).filter(q => q.width && q.bottom > hr.top - b.offsetHeight) : [];
       const cover = () => { const r = b.getBoundingClientRect(), L = r.left + 8, R = r.right - 8, T = r.top + 6, B = r.bottom - 4;
         return things.reduce((a, q) => a + Math.max(0, Math.min(R, q.right) - Math.max(L, q.left)) * Math.max(0, Math.min(B, q.bottom) - Math.max(T, q.top)), 0); };
@@ -1940,30 +2358,27 @@ const want1Row = el => el && /grid|flex/.test(getComputedStyle(el).display) && e
 // 闪现, the blink: at the old spot he jumps, spins and bursts into paper letters and is gone; at the new spot paper letters
 // burst, he springs out of them and lands with a bounce. The old spot is played by a copy of him, so the page never waits.
 function blink(b, from, to) {
-  const ghost = b.cloneNode(true); ghost.removeAttribute("id"); ghost.querySelectorAll("[id]").forEach(e => e.removeAttribute("id"));
-  ghost.className = "mbtn m-ghost"; ghost.setAttribute("aria-hidden", "true"); ghost.tabIndex = -1;
-  Object.assign(ghost.style, { position: "fixed", left: from.left + "px", top: from.top + "px", width: from.width + "px", height: from.height + "px", right: "auto", bottom: "auto", margin: 0, zIndex: 40, pointerEvents: "none", viewTransitionName: "none" });
-  document.body.appendChild(ghost);
-  ghost.animate([
-    { transform: "none" },
-    { transform: "translateY(4px) scale(1.12, .86)", offset: .14 },
-    { transform: "translateY(-34px) scale(.92, 1.1) rotate(0)", offset: .42 },
-    { transform: "translateY(-40px) scale(.6) rotate(320deg)", opacity: 1, offset: .74 },
-    { transform: "translateY(-42px) scale(0) rotate(540deg)", opacity: 0 }
-  ], { duration: 520, easing: "cubic-bezier(.3,.6,.4,1)", fill: "forwards" }).onfinish = () => ghost.remove();
-  setTimeout(() => paperBurst(from.left + from.width / 2, from.top + from.height / 2 - 38), 360);
-  // the new spot: a burst, then he springs out and lands
-  const IN = 470;
-  b.animate([{ opacity: 0 }, { opacity: 0 }], { duration: IN, fill: "backwards" });
-  setTimeout(() => { const r = b.getBoundingClientRect(); paperBurst(r.left + r.width / 2, r.top + r.height / 2 - 10, true); }, IN - 120);
+  // one 小M, one continuous motion (no copy of him: a copy is hundreds of 3D slices more for the phone to draw). He starts
+  // where he was (shifted back there), crouches, leaps and spins away into the burst; a beat later he pops out of the
+  // burst at the new spot, arcs up, falls and lands with a squash and two small bounces. Each step has its own easing,
+  // so rising slows down and falling speeds up like a real jump.
+  const dx = from.left - to.left, dy = from.top - to.top, at = (x, y) => `translate3d(${(dx + x).toFixed(1)}px, ${(dy + y).toFixed(1)}px, 0)`;
+  const OUT = 400, GAP = 70, IN = 660, T = OUT + GAP + IN, o = x => +(x / T).toFixed(4);
+  const up = "cubic-bezier(.2,.7,.35,1)", down = "cubic-bezier(.55,0,.85,.4)", soft = "cubic-bezier(.3,.6,.4,1)";
   b.animate([
-    { transform: "translateY(-46px) scale(0) rotate(-200deg)", opacity: 0 },
-    { transform: "translateY(-58px) scale(1.08, 1.12) rotate(0)", opacity: 1, offset: .38 },
-    { transform: "translateY(0) scale(1.24, .76)", offset: .66 },
-    { transform: "translateY(-12px) scale(.94, 1.08)", offset: .8 },
-    { transform: "translateY(0) scale(1.06, .95)", offset: .92 },
-    { transform: "none", opacity: 1 }
-  ], { duration: 640, delay: IN, easing: "cubic-bezier(.3,.7,.3,1)", fill: "backwards" }).onfinish = () => { act($("mSvg"), "land", 450); fx("drag"); };
+    { transform: at(0, 0) + " scale(1)", opacity: 1, easing: "cubic-bezier(.3,0,.6,1)" },
+    { transform: at(0, 5) + " scale(1.14, .84)", offset: o(90), easing: up },
+    { transform: at(0, -44) + " rotate(200deg) scale(.82, 1.08)", offset: o(280), easing: "cubic-bezier(.4,0,.8,.6)" },
+    { transform: at(0, -52) + " rotate(420deg) scale(0)", opacity: 0, offset: o(OUT) },
+    { transform: "translate3d(0, -40px, 0) rotate(-180deg) scale(0)", opacity: 0, offset: o(OUT + GAP), easing: up },
+    { transform: "translate3d(0, -64px, 0) rotate(0deg) scale(1.06, 1.1)", opacity: 1, offset: o(OUT + GAP + 260), easing: down },
+    { transform: "translate3d(0, 0, 0) scale(1.22, .78)", offset: o(OUT + GAP + 420), easing: up },
+    { transform: "translate3d(0, -14px, 0) scale(.95, 1.06)", offset: o(OUT + GAP + 520), easing: down },
+    { transform: "translate3d(0, 0, 0) scale(1.06, .95)", offset: o(OUT + GAP + 590), easing: soft },
+    { transform: "translate3d(0, 0, 0) scale(1)", opacity: 1 }
+  ], { duration: T }).onfinish = () => { act($("mSvg"), "land", 450); fx("drag"); };
+  setTimeout(() => paperBurst(from.left + from.width / 2, from.top + from.height / 2 - 48), OUT - 70);
+  setTimeout(() => { const r = b.getBoundingClientRect(); paperBurst(r.left + r.width / 2, r.top + r.height / 2 - 30, true); }, OUT + GAP - 40);
   fx("pin");
 }
 // shredded paper: torn scraps of every shape, thrown out (or sucked in), then fluttering down and turning over as they fall
@@ -1971,7 +2386,7 @@ const SHRED = ["polygon(0 8%,100% 0,92% 100%,6% 88%)", "polygon(10% 0,100% 18%,8
   "polygon(0 0,100% 0,100% 40%,85% 55%,100% 70%,100% 100%,0 100%)", "polygon(5% 10%,95% 0,100% 90%,0 100%)"];
 function paperBurst(x, y, inward) {
   const wrap = document.createElement("div"); wrap.className = "paper-burst"; wrap.style.left = x + "px"; wrap.style.top = y + "px"; document.body.appendChild(wrap);
-  const n = 30;
+  const n = 22;
   for (let i = 0; i < n; i++) {
     const p = document.createElement("i"), a = (i / n) * Math.PI * 2 + Math.random() * .5, d = 26 + Math.random() * 62;
     const w = 3 + Math.random() * 8, h = w * (.6 + Math.random() * 1.8);   // strips and flakes
@@ -2022,7 +2437,15 @@ $("mClose").addEventListener("click", () => closeM());
     p.style.left = clamp(e.clientX - st.dx, 8, innerWidth - p.offsetWidth - 8) + "px"; p.style.top = clamp(e.clientY - st.dy, 8, innerHeight - p.offsetHeight - 8) + "px";
   });
   const end = e => { if (!st || e.pointerId !== st.id) return; const was = st.on; st = null; if (!was) return; p.classList.remove("moving");
-    h._moved = true; setTimeout(() => { h._moved = false; }, 300); const r = p.getBoundingClientRect(); mpPos = { x: r.left / innerWidth, y: r.top / innerHeight }; store.set("mpPos", mpPos); fx("drag"); };
+    h._moved = true; setTimeout(() => { h._moved = false; }, 300);
+    // within 72px of an edge it snaps flush to the 12px margin, in one firm spring
+    const r = p.getBoundingClientRect(), M = 12, Z = 72;
+    let x = r.left, y = r.top;
+    if (x < Z) x = M; else if (innerWidth - r.right < Z) x = innerWidth - r.width - M;
+    if (y < Z) y = M; else if (innerHeight - r.bottom < Z) y = innerHeight - r.height - M;
+    if ((x !== r.left || y !== r.top) && !STILL) { p.style.left = x + "px"; p.style.top = y + "px"; p.animate([{ translate: `${r.left - x}px ${r.top - y}px` }, { translate: "0 0" }], { duration: 380, easing: SNAP }); }
+    else { p.style.left = x + "px"; p.style.top = y + "px"; }
+    mpPos = { x: x / innerWidth, y: y / innerHeight }; store.set("mpPos", mpPos); fx("drag"); };
   h.addEventListener("pointerup", end); h.addEventListener("pointercancel", end);
   h.addEventListener("click", e => { if (h._moved) { h._moved = false; e.stopPropagation(); e.preventDefault(); } }, true);   // a drag that started on a button doesn't press it
   h.addEventListener("dblclick", e => { if (e.target.closest("button")) return; mpPos = null; store.set("mpPos", null); anchorPanel(); });   // double-click the bar: back to its usual place
@@ -2111,14 +2534,19 @@ async function ask(text) {
   const ctl = new AbortController(); streaming = ctl;
   try {
     const history = cur.msgs.slice(0, -1).slice(-12).map(m => ({ role: m.role, content: m.content }));
+    if (navigator.onLine === false || (session && session.offline)) throw Object.assign(new Error("offline"), { local: true });
     await callModel([{ role: "system", content: aiSystem(text) }, ...history], t => {
       bot.content = t; fillBot(d, bot, i, true);
       const th = $("thread"); if (th.scrollHeight - th.scrollTop - th.clientHeight < 160) th.scrollTop = th.scrollHeight;
     }, ctl.signal);
-    mood("happy");
+    mood("happy"); if (!DEMO) learnFrom(text, bot.content);
   } catch (e) {
     if (e.name === "AbortError") { if (!bot.content) bot.content = "_Stopped._"; }
-    else { bot.error = `Couldn't reach ${(AI_PROVIDERS[aiCfg().prov] || AI_PROVIDERS.custom).label} (${e.message}).`; mood("huh"); }
+    else {   // no internet, or the AI is down: M answers from what it has learned and the data on this device
+      const zh = isZh(text);
+      bot.content = localM(text) + "\n\n_" + (e.local ? (zh ? "离线回答，用的是手机里的资料。" : "Offline answer, from the data on this phone.") : DEMO ? (zh ? "Demo 模式：这是 M 自己的离线回答。" : "Demo mode: this is M's own offline answer.") : (zh ? "AI 暂时连不上，这是我自己学过的回答。" : "The AI can't be reached right now, so this is M's own answer.")) + "_";
+      bot.local = true; fillBot(d, bot, i, false); mood("happy");
+    }
   }
   streaming = null; setSending(false);
   fillBot(d, bot, i, false); saveChats(); drawChats(); scrollEnd();
@@ -2283,21 +2711,22 @@ function drawVoice() { document.querySelectorAll("#voiceSeg button").forEach(b =
 $("voiceSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { store.set("mVoice", b.dataset.l); drawVoice(); } });
 $("pinForm").addEventListener("submit", async e => {
   e.preventDefault(); const n = $("pfNew").value;
-  if (!/^\d{4}$/.test(n)) { $("pfMsg").textContent = "PIN is 4 digits"; return; }
-  if (n !== $("pfNew2").value) { $("pfMsg").textContent = "The two PINs are different"; return; }
-  try { session = await M.api("setMyPin", [session.name, $("pfOld").value, n]); e.target.reset(); $("pfMsg").textContent = ""; toast("PIN changed"); }
+  if (!sixOk(n, $("pfNew2").value, $("pfMsg"))) return;
+  try { session = await M.api("setMyPin", [session.name, $("pfOld").value, n]); keepPin(n, session.name); store.set("mLen4", false); e.target.reset(); $("pfMsg").textContent = ""; fx("ok"); toast("PIN changed"); }
   catch (err) { $("pfMsg").textContent = err.message; }
 });
 $("aiProv").innerHTML = Object.entries(AI_PROVIDERS).map(([k, p]) => `<option value="${k}">${esc(p.label)}</option>`).join("");
 function drawAI() {
   const c = aiCfg(); $("aiProv").value = c.prov || "custom"; $("aiHint").textContent = (AI_PROVIDERS[c.prov] || AI_PROVIDERS.custom).hint;
-  $("aiUrl").value = c.url; $("aiName").value = c.model; $("aiKey").value = c.key;
+  $("aiUrl").value = c.url; $("aiName").value = c.model; $("aiKey").value = c.key; aiFields();
   $("modelChip").textContent = (AI_PROVIDERS[c.prov] || AI_PROVIDERS.custom).label.replace(/ \(.*\)$/, "") + (c.model ? " · " + c.model : "");
 }
 $("aiProv").addEventListener("change", () => {   // a preset fills address + model; the key field is cleared
   const p = AI_PROVIDERS[$("aiProv").value]; $("aiHint").textContent = p.hint;
-  if (p.url) $("aiUrl").value = p.url; $("aiName").value = p.model; $("aiKey").value = "";
+  if (p.url) $("aiUrl").value = p.url; $("aiName").value = p.model; $("aiKey").value = ""; aiFields();
 });
+// the studio's DeepSeek needs no address, model or key: those fields step aside
+function aiFields() { const st = $("aiProv").value === "studio"; ["aiUrl", "aiName", "aiKey"].forEach(id => { const l = $(id).closest("label"); if (l) l.hidden = st; $(id).required = !st && id !== "aiKey"; }); }
 const aiForm = () => ({ prov: $("aiProv").value, url: $("aiUrl").value.trim(), model: $("aiName").value.trim(), key: $("aiKey").value.trim() });
 $("aiSet").addEventListener("submit", e => {
   e.preventDefault(); store.set("mAI", aiForm());
