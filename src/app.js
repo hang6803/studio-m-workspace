@@ -3045,14 +3045,22 @@ function dlDrawFoot() {
 }
 
 // ---- 探测 ----------------------------------------------------------
+// 红字是否可见由 data-bad 决定（CSS 里按表单状态显示/隐藏）
+function dlBad(bad, text) {
+  const form = $("dlForm");
+  if (bad) bad.textContent = text || "";
+  if (form) form.setAttribute("data-bad", text ? "true" : "false");
+}
+
 function dlProbe() {
   const input = $("dlUrl"), bad = $("dlBad"), hint = $("dlHint");
   const url = (input && input.value || "").trim();
+  dlBad(null, "");
   if (bad) bad.textContent = "";
   if (hint) { hint.className = "dl-hint ok"; hint.textContent = ""; }
-  if (!url) { if (bad) bad.textContent = "Paste a link first."; input.focus(); return; }
+  if (!url) { dlBad(bad, "Paste a link first."); input.focus(); return; }
   if (!/^https?:\/\//i.test(url)) {
-    if (bad) bad.textContent = "That is not a link. Paste the whole address, starting with https://";
+    dlBad(bad, "That is not a link. Paste the whole address, starting with https://");
     fx("err");
     input.focus();
     return;
@@ -3062,10 +3070,11 @@ function dlProbe() {
   dlSetState("probing");
   fx("tap");
   dlFetch("/api/probe", { method: "POST", body: JSON.stringify({ url }) }, 90000).then(d => {
+    dlBad($("dlBad"), "");
     DL.probe = d;
     DL.pick = (d.formats || []).length ? d.formats[0].height : null;
     DL.audioOnly = !(d.formats || []).length;
-    DL.jobs = [];
+    // 任务列表不清：下载中再贴一条链接，前面那行（含 Play/Finder/Copy）必须还在
     fx("ok");
     dlSetState((d.source === "spotify") ? "spotify" : "result");
     drawDownloads();

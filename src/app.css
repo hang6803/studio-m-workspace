@@ -1460,7 +1460,9 @@ a, [role="tab"] { -webkit-tap-highlight-color: transparent }   /* no blue box on
 #v-downloads[data-dl-state="offline"] .dl-state[data-s="offline"] { display: flex; animation: rise .4s var(--ease) both }
 #v-downloads[data-dl-state="offline"] .dl-form { display: none }
 #v-downloads[data-dl-state="offline"] .page-head p { display: none }
-body:not([data-state="error"]) .dl-hint.err { display: none }
+/* 红字由表单自己管：有 data-bad="true" 才显示（之前用页面状态判断，恒为真，红字永远看不到） */
+#v-downloads .dl-form[data-bad="false"] .dl-hint.err { display: none }
+#v-downloads .dl-form[data-bad="true"] .dl-hint.err { display: block }
 #v-downloads[data-dl-state="error"] .dl-hint.ok { display: none }
 
 /* --- phone (matches the app's 899px breakpoint) --- */
