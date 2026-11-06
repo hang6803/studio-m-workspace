@@ -915,14 +915,20 @@ function jobLinks(j) {
 const linkA = (l, cls) => `<a class="${cls}" href="${esc(l.u)}" target="_blank" rel="noopener" title="${esc(l.name)}: ${esc(l.u)}">${LINK_SVG}${l.tag ? `<span>${esc(l.tag)}</span>` : ""}</a>`;
 // a job opened in place, as the Apps Script Backup does it: one quiet line under the name (where, who, what's backed up,
 // what its twin is missing, notes, the last change), its days with their links, and Edit / Back up
+// a row's change log: a list, or (straight from the Sheet) the same list as JSON text
+function histOf(r) {
+  const h = r && r.history; if (Array.isArray(h)) return h;
+  if (typeof h === "string" && h.trim().startsWith("[")) { try { const a = JSON.parse(h); return Array.isArray(a) ? a : []; } catch (e) {} }
+  return [];
+}
 function bkDetail(id) {
   const r = (data.rows || []).find(x => x.id === id); if (!r) return "";
   const j = jobsOf([r, twinOf(r)].filter(Boolean))[0], w = whenOf(r), links = jobLinks({ ...j, main: r }), many = w.parts.length > 1;
   const half = (k, x) => !x ? "" : selfUnbacked(x) ? `<span class="dx-no">${k} not backed up</span>` : `<span class="dx-ok">${k} backed up${x.backupDate ? " " + esc(fmtDates([x.backupDate])) : ""}</span>`;
   const notes = [...new Set(j.rows.map(x => x.notes).filter(Boolean))];
-  const last = j.rows.flatMap(x => x.history || []).filter(h => h && h.at).sort((a, b) => String(a.at).localeCompare(String(b.at))).at(-1);
+  const last = j.rows.flatMap(histOf).filter(h => h && typeof h === "object" && h.at).sort((a, b) => String(a.at).localeCompare(String(b.at))).at(-1);
   const made = j.rows.map(x => x.createdAt).filter(Boolean).sort()[0];
-  const line = metaRow(w.place && esc(w.place), r.editor && `<a href="#/editor/${encodeURIComponent(r.editor)}">${esc(r.editor)}</a>`, half("Video", j.video), half("Photo", j.photo),
+  const line = metaRow(half("Video", j.video), half("Photo", j.photo),
     ...notes.map(n => `<span class="dx-note">${esc(n)}</span>`),
     last ? `<span class="dx-by"><b>${esc(last.by || "Someone")}</b> ${esc((ACT[last.action] || last.action || "").toLowerCase())} <time title="${esc(String(last.at).slice(0, 16).replace("T", " "))}">${esc(relAt(last.at))}</time></span>`
       : made ? `<span class="dx-by">Added ${esc(relAt(made))}</span>` : "");
@@ -1207,7 +1213,7 @@ function jfFill(r, tw, no, pre, sig) {
   $("jfTeam").innerHTML = team.map(n => `<option value="${esc(n)}">`).join("");
   $("jfNotes").value = r ? r.notes || "" : ""; jfNotes();
   $("jfLinks").value = r ? String(r.link || "") : "";
-  const hist = r ? (r.history || []).filter(h => h && h.at) : [];
+  const hist = r ? histOf(r).filter(h => h && typeof h === "object" && h.at) : [];
   $("jfHist").hidden = !hist.length;
   $("jfHist").innerHTML = hist.length ? `<summary>History, ${hist.length} ${hist.length === 1 ? "change" : "changes"}</summary><ol>${hist.slice().reverse().map(h => `<li><b>${esc(h.by || "")}</b> ${esc(ACT[h.action] || h.action || "")}<span>${esc(fmtShort(h.at))} ${esc(String(h.at).slice(11, 16))}</span></li>`).join("")}</ol>` : "";
   document.querySelectorAll("[data-jf-edit]").forEach(el => { el.hidden = !r; });   // as in Backup: editor, notes and links come with the backup
