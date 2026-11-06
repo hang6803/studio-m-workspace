@@ -224,9 +224,14 @@
           <p class="msg" id="aiMsg"></p><div class="actions"><button type="button" class="btn ghost" id="aiTest">Test</button><button class="btn">Save</button></div></form>
 
 
+        <div class="card" id="festCard"><h3>Festivals &amp; birthdays</h3>
+          <p class="muted small" id="festNow"></p>
+          <label>Simulate date<input type="date" id="simDate"></label>
+          <p class="muted small">Pretend today is another day to preview a festival or a birthday. Only on this device. Greeting sounds follow Sound above.</p>
+          <div class="actions"><button type="button" class="btn ghost" id="simClear">Use real date</button><button type="button" class="btn ghost" id="festReplay">Play today again</button></div></div>
         <div class="card"><h3>Classic Backup</h3><p class="muted small">The old Backup page. Adding, editing and backing up jobs still happens there until the new Backup page can write.</p>
           <div class="actions" style="justify-content:flex-start"><a class="btn ghost" href="#/classic">Open Classic Backup</a></div></div>
-        <div class="card" id="demoCard" hidden><h3>Demo</h3><p class="muted small">See the birthday scene: makes today your birthday in the demo data.</p>
+        <div class="card" id="demoCard" hidden><h3>Demo</h3><p class="muted small">See your birthday scene: makes today your birthday in the demo data.</p>
           <div class="actions"><button type="button" class="btn ghost" id="demoBday">Try a birthday</button></div></div>
         <p class="ver" id="ver"></p>
       </section>
@@ -322,8 +327,13 @@
 </div>
 
 <div class="toast" id="toast" role="status" hidden></div>
+<div class="cele" id="cele" hidden role="dialog" aria-label="Celebration"><div class="cele-card"><div class="cele-stage" id="celeStage"></div><p class="cele-t" id="celeT"></p><p class="cele-s" id="celeS"></p></div></div>
 <script src="fx.js"></script>
 <script src="xiaom.js"></script>
+<script src="festivals.js"></script>
+<script src="festival-theme.js"></script>
+<script src="celebrate.js"></script>
+<script src="sfx.js"></script>
 <script src="graph.js"></script>
 <script src="app.js"></script>
 </body>

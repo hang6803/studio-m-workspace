@@ -1,6 +1,6 @@
 [package]
 name = "m-app"
-version = "0.8.13"
+version = "0.9.1"
 edition = "2021"
 
 [lib]
