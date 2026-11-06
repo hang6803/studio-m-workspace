@@ -5,7 +5,8 @@
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
 const APP_VER = "0.9.0";
-const $ = id => document.getElementById(id);
+const MBTN = document.getElementById("mBtn");   
+const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
 const DEMO = !CFG.apiUrl;
 const M = window.M = {};
@@ -14,6 +15,13 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
 };
 const STILL = matchMedia("(prefers-reduced-motion: reduce)").matches;
+// the phone keyboard: pop-ups size themselves to the part of the screen above it
+if (window.visualViewport) { const vv = visualViewport, fit = () => { const r = document.documentElement.style; r.setProperty("--vvh", vv.height + "px"); r.setProperty("--vvtop", vv.offsetTop + "px"); };
+  vv.addEventListener("resize", fit); vv.addEventListener("scroll", fit); fit();
+  // the field being typed in, and the pop-up's Next / Save under it, stay above the keyboard
+  addEventListener("focusin", e => { const el = e.target; if (!el.matches || !el.matches("input, textarea, select") || !el.closest(".sheet")) return;
+    setTimeout(() => { el.scrollIntoView({ block: "center", behavior: "smooth" }); }, 320); });
+  document.addEventListener("gesturestart", e => e.preventDefault()); }
 let session = null;   // { name, token } — kept only in memory, so closing the app always asks for the PIN again
 
 // ---------------------------------------------------------------- API
@@ -110,18 +118,21 @@ const crewOf = s => String(s.crew || "").split(",").map(x => x.trim()).filter(Bo
 function toast(text, label, fn) {
   const t = $("toast"); t.textContent = text;
   if (label) { const b = document.createElement("button"); b.type = "button"; b.className = "toast-act"; b.textContent = label; b.onclick = () => { t.hidden = true; fn(); }; t.append(b); }
+  if (/^(Couldn't|Can't|Failed|Error|No connection)|failed|not saved/i.test(text)) fx("err");
   t.hidden = false; t.classList.remove("in"); void t.offsetWidth; t.classList.add("in"); clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, label ? 5000 : 2400); }
 function range(from, to) {   // every day from..to (max 31), as YYYY-MM-DD
   const a = parseYmd(from), b = parseYmd(to || from); if (!a || !b || b < a) return a ? [from] : [];
   const out = []; for (const d = new Date(a); d <= b && out.length < 31; d.setDate(d.getDate() + 1)) out.push(ymd(d));
   return out;
 }
-const buzz = () => { if (navigator.vibrate) try { navigator.vibrate(8); } catch (x) {} };
+const fx = k => { if (window.UIFx) UIFx(k); else if (navigator.vibrate) try { navigator.vibrate(8); } catch (x) {} };   // sound + haptic, see fx.js
+const buzz = k => fx(k || "toggle");
 
 // ---------------------------------------------------------------- Backup rules (the same as the Backup page)
 // Video and Photo of one job are two rows ("Wedding" and "Wedding · Photo", same year and name). A row counts as
 // backed up only when it AND its twin are; FullHD / link don't change the colour.
 const drivesOf = r => String(r.drive || "").split(/\s*,\s*/).filter(Boolean);
+const dName = d => d === "未知" ? "Unknown" : d;   // the Sheet's placeholder drive, shown in English
 const sectionOf = r => r.section || "Event";
 const baseOf = sec => String(sec).replace(/ · Photo$/, "");
 const isPhotoSec = sec => / · Photo$/.test(String(sec));
@@ -169,6 +180,26 @@ function act(host, name, ms) {
   void m.offsetWidth; m.classList.add(name); host._actName = name;
   host._act = setTimeout(() => { m.classList.remove(name); host._actName = ""; }, ms || 1300);
 }
+// 小M is built from a few hundred stacked slices, 2 model px apart; at button size on a phone that is a fraction of a screen
+// pixel, and every slice is one more 3D layer the phone re-sorts on every frame of his breathing and blinking. So on a touch
+// screen, a small 小M keeps every second plain slice (front, back, outlined and other distinct slices always stay): the same
+// picture, half the layers. The big 小M of festival scenes is never touched.
+const THIN = matchMedia("(pointer: coarse)").matches;
+function thinM(root) {
+  if (!THIN) return;
+  root.querySelectorAll(".m25:not([data-thin])").forEach(m => {
+    const w = m.getBoundingClientRect().width; if (!w || w > 100) return;
+    m.dataset.thin = "1";
+    const groups = new Set(); m.querySelectorAll(".slice").forEach(sl => groups.add(sl.parentElement));
+    groups.forEach(g => {
+      const sl = [...g.children].filter(c => c.classList.contains("slice")); if (sl.length < 5) return;
+      const key = e => e.innerHTML + "|" + (e.style.background || e.style.backgroundColor) + "|" + e.style.borderRadius + "|" + e.style.width + "|" + e.style.height;
+      const ks = sl.map(key), last = sl.length - 1;
+      sl.forEach((e, k) => { if (k === 0 || k === last || k % 2 === 0) return; if (ks[k] !== ks[k - 1] || ks[k] !== ks[k + 1]) return; e.remove(); });
+    });
+  });
+}
+if (THIN) { let q = 0; new MutationObserver(() => { if (!q) q = requestAnimationFrame(() => { q = 0; thinM(document.body); }); }).observe(document.body, { childList: true, subtree: true }); }
 $("mSvg").innerHTML = face(false);
 $("mpAv").innerHTML = face(false);
 $("lockM").innerHTML = X ? face(false) : mSVG(true);
@@ -226,7 +257,7 @@ function lock(msg) {
   $("shell").hidden = true; $("setup").hidden = true; $("lock").hidden = false;
   $("lockMsg").textContent = msg || ""; drawDots();
   $("backupFrame").removeAttribute("src"); backupLoaded = false; scenes(false); festKey = "";
-  closeM(true); $("mBtn").hidden = true; if (graph) graph.stop();
+  closeM(true); MBTN.hidden = true; if (graph) graph.stop();
   closeShoot(); if (streaming) streaming.abort(); gKey = ""; teamOk = false; closeJob(true);
 }
 function drawDots() { [...$("dots").children].forEach((d, i) => d.classList.toggle("on", i < entered.length)); lockTurn(entered.length > 0); }
@@ -295,12 +326,15 @@ function parse(h) {
 const hrefOf = n => n.kind === "drive" ? "#/drive/" + encodeURIComponent(n.key) : n.kind === "editor" ? "#/editor/" + encodeURIComponent(n.key)
   : n.kind === "shoot" ? "#/calendar/" + encodeURIComponent(n.date || "") : "#/job/" + encodeURIComponent(n.key);
 const TITLES = { calendar: "Calendar", team: "Team", unbacked: "Not backed up", drives: "Drives", settings: "Settings", backup: "Backup", classic: "Classic Backup" };
-addEventListener("hashchange", () => { if (session) render(false); });
+addEventListener("hashchange", () => { if (session) { fx("nav"); render(false); } });
 // Page changes cross-fade and slide (View Transitions where the system has them); the sidebar marker glides to the new place
 function render(first) {
   const next = parse(location.hash);
-  const apply = () => { route = next; paint(); };
-  if (!first && !STILL && document.startViewTransition) document.startViewTransition(apply); else apply();
+  const b = MBTN, from = b.hidden ? null : b.getBoundingClientRect();
+  // with a page transition, 小M is his own layer in it: he isn't cross-faded with the page (that was the flash), he hops to his new spot
+  const vt = !first && !STILL && document.startViewTransition;
+  const apply = () => { route = next; paint(); perch.st = 0; perch.dock = false; perch(from); };
+  if (vt) document.startViewTransition(apply); else apply();
   if (window.innerWidth < 900 && !$("mPanel").hidden) closeM();
 }
 let shownView = "";
@@ -310,18 +344,18 @@ function paint() {
   document.querySelectorAll(".view").forEach(s => { s.hidden = s.id !== "v-" + v; });
   $("main").scrollTop = 0; $("views").scrollTop = 0;
   $("meMenu").hidden = true;
-  $("topTitle").textContent = route.name === "drive" || route.name === "editor" ? route.key : route.name === "job" ? "Job" : TITLES[route.name] || "";
+  $("topTitle").textContent = route.name === "drive" ? dName(route.key) : route.name === "editor" ? route.key : route.name === "job" ? "Job" : TITLES[route.name] || "";
   document.body.dataset.route = route.name;
   markNav();
   if (v === "home") { graph.start(); graph.theme(); graph.reset(); } else if (graph) graph.stop();
-  if (v === "list") drawList();
+  if (v === "list") { const lk = route.name + ":" + route.key; if (lk !== drawList.key) { drawList.key = lk; listUn = false; } drawList(); }
   if (v === "job") drawJob();
   if (v === "calendar") { if (route.key && parseYmd(route.key)) { selDay = route.key; const d = parseYmd(route.key); calY = d.getFullYear(); calM = d.getMonth(); } drawCal(); }
   if (v === "backup") drawBackup(true);
-  if (v === "classic" || v === "backup") loadBackup();   // Backup saves through Classic Backup, kept ready in the background
+  if (v === "classic") loadBackup(); else if (v === "backup" && !backupLoaded) (window.requestIdleCallback || (g => setTimeout(g, 600)))(() => { if (session) loadBackup(); }, { timeout: 1500 });   // after the list has drawn   // Backup saves through Classic Backup, kept ready in the background
   if (v === "team") drawTeam();
   shownView = v;
-  if (v === "settings") { drawTheme(); drawAI(); drawVoice(); drawFest(); }
+  if (v === "settings") { drawTheme(); drawAI(); drawVoice(); drawFx(); drawFest(); }
 }
 function markNav() {
   const key = route.name === "drive" || route.name === "editor" ? route.name + ":" + route.key : route.name === "job" ? "" : route.name === "classic" ? "backup" : route.name;
@@ -360,6 +394,7 @@ function drawAll() {
   if (["drive", "editor", "unbacked", "drives"].includes(route.name)) drawList();
   if (route.name === "job") drawJob();
   if (route.name === "team") drawTeam();
+  if (typeof perch === "function" && session) requestAnimationFrame(() => perch());   // a redraw can take 小M's spot away
   if (route.name === "backup") drawBackup();
 }
 
@@ -377,7 +412,7 @@ function editorsIn(y) {
 function drawSide() {
   const un = rowsOf(gYear).filter(unbacked).length;
   $("nUn").textContent = un || ""; $("nUn").hidden = !un;
-  $("sideDrives").innerHTML = drivesIn(gYear).map(d => `<a class="nav-i sub" href="#/drive/${encodeURIComponent(d.name)}" data-r="drive:${esc(d.name)}"><span class="hub drive" aria-hidden="true"></span><span>${esc(d.name)}</span>
+  $("sideDrives").innerHTML = drivesIn(gYear).map(d => `<a class="nav-i sub" href="#/drive/${encodeURIComponent(d.name)}" data-r="drive:${esc(d.name)}"><span class="hub drive" aria-hidden="true"></span><span>${esc(dName(d.name))}</span>
     <span class="mini" aria-hidden="true"><i class="ok" style="height:${Math.round(14 * (d.n - d.un) / Math.max(1, d.n))}px"></i><i class="no" style="height:${Math.round(14 * d.un / Math.max(1, d.n))}px"></i></span><em>${d.n}</em></a>`).join("")
     || `<p class="side-empty">No drives in ${esc(gYear)}</p>`;
   $("sideEds").innerHTML = editorsIn(gYear).map(e => `<a class="nav-i sub" href="#/editor/${encodeURIComponent(e.name)}" data-r="editor:${esc(e.name)}"><span class="hub ed" aria-hidden="true">${esc(initials(e.name))}</span><span>${esc(e.name)}</span>${e.un ? `<em class="red">${e.un}</em>` : ""}</a>`).join("");
@@ -411,7 +446,7 @@ function graphData(y) {
   rowsOf(y).forEach(r => {
     const j = { id: "j:" + r.id, key: r.id, kind: "job", label: r.name + (isPhotoSec(sectionOf(r)) ? " · Photo" : ""), status: unbacked(r) ? "no" : "ok" };
     add(j);
-    drivesOf(r).forEach(d => { add({ id: "d:" + d, key: d, kind: "drive", label: d }); links.push({ a: j.id, b: "d:" + d }); });
+    drivesOf(r).forEach(d => { add({ id: "d:" + d, key: d, kind: "drive", label: dName(d) }); links.push({ a: j.id, b: "d:" + d }); });
     if (r.editor) { add({ id: "e:" + r.editor, key: r.editor, kind: "editor", label: r.editor, short: initials(r.editor) }); links.push({ a: j.id, b: "e:" + r.editor }); }
   });
   shoots.filter(s => !s.jobId && datesOf(s).some(d => d >= today && d.slice(0, 4) === y)).forEach(s => {
@@ -486,45 +521,97 @@ function jobRow(r, hide) {
   const un = unbacked(r);
   return `<div class="row" data-job="${esc(r.id)}"><i class="dot ${un ? "red" : "green"}" title="${un ? "Not backed up" : "Backed up"}"></i>
     <a class="r-name" href="#/job/${encodeURIComponent(r.id)}">${esc(r.name)}<small>${esc(sectionOf(r))}</small></a>
-    <span class="r-links">${hide !== "drive" ? drivesOf(r).map(d => `<a href="#/drive/${encodeURIComponent(d)}">${esc(d)}</a>`).join("") : ""}${hide !== "editor" && r.editor ? `<a href="#/editor/${encodeURIComponent(r.editor)}">${esc(r.editor)}</a>` : ""}</span>
+    <span class="r-links">${hide !== "drive" ? drivesOf(r).map(d => `<a href="#/drive/${encodeURIComponent(d)}">${esc(dName(d))}</a>`).join("") : ""}${hide !== "editor" && r.editor ? `<a href="#/editor/${encodeURIComponent(r.editor)}">${esc(r.editor)}</a>` : ""}</span>
     <span class="r-date">${esc(fmtShort(r.date))}</span></div>`;
 }
 function hubRow(kind, o) {
   return `<a class="row hubrow" href="#/${kind}/${encodeURIComponent(o.name)}"><span class="hub ${kind === "drive" ? "drive" : "ed"}">${kind === "editor" ? esc(initials(o.name)) : ""}</span>
-    <span class="r-name">${esc(o.name)}<small>${o.n} ${o.n === 1 ? "job" : "jobs"}</small></span><span class="r-links">${o.un ? `<em class="red">${o.un} not backed up</em>` : `<em>All backed up</em>`}</span></a>`;
+    <span class="r-name">${esc(kind === "drive" ? dName(o.name) : o.name)}<small>${o.n} ${o.n === 1 ? "job" : "jobs"}</small></span><span class="r-links">${o.un ? `<em class="red">${o.un} not backed up</em>` : `<em>All backed up</em>`}</span></a>`;
 }
 function setBar(n, un) {
   const b = $("listBar"); b.hidden = !n; if (!n) return;
   const [ok, no] = b.children; ok.style.flexGrow = n - un; no.style.flexGrow = un;
 }
+// A drive's page is its label: what's on it, from when to when, who edited, what still needs backing up, and a list to copy.
+// A person's page is the same for their jobs. Jobs show once (Video + Photo together), newest first, grouped by month or year.
+let listUn = false;
+function spanOf(rs) {
+  const ds = rs.map(r => String(r.date || "").slice(0, 10)).filter(d => parseYmd(d)).sort();
+  if (!ds.length) return "";
+  const a = parseYmd(ds[0]), z = parseYmd(ds[ds.length - 1]);
+  return ds[0].slice(0, 7) === ds[ds.length - 1].slice(0, 7) ? `${MON[a.getMonth()]} ${a.getFullYear()}` : `${MON[a.getMonth()]}${a.getFullYear() !== z.getFullYear() ? " " + a.getFullYear() : ""} – ${MON[z.getMonth()]} ${z.getFullYear()}`;
+}
+function monthOf(r) { const d = parseYmd(String(r.date || "").slice(0, 10)); return d ? `${MON[d.getMonth()]} ${d.getFullYear()}` : "No date"; }
+function listText(title, js) {   // plain text for the drive's label or a message
+  return [title, ...js.map(j => { const r = j.main; return [fmtShort(r.date), splitJob(r).title, ["video", "photo"].filter(k => j[k]).map(k => (k === "video" ? "Video" : "Photo") + (selfUnbacked(j[k]) ? " (not backed up)" : "")).join(" + "), r.editor].filter(Boolean).join(" — "); })].join("\n");
+}
 function drawList() {
-  const k = route.key; let title = "", sub = "", ico = "", html = "", n = 0, un = 0;
+  const k = route.key; let title = "", sub = "", ico = "", html = "", n = 0, un = 0, tools = "";
   if (route.name === "drive" || route.name === "editor") {
-    const rs = (data.rows || []).filter(r => route.name === "drive" ? drivesOf(r).includes(k) : r.editor === k).sort(byDate);
-    n = rs.length; un = rs.filter(unbacked).length;
-    title = k; ico = route.name === "drive" ? ICON.drive : `<span class="hub ed big">${esc(initials(k))}</span>`;
-    sub = n ? `${n} ${n === 1 ? "job" : "jobs"}, ${un ? un + " not backed up" : "all backed up"}` : "No jobs yet";
-    // grouped by year, newest first: one drive is one year, an editor spans years
-    const ys = [...new Set(rs.map(r => String(r.year)))].sort().reverse();
-    html = ys.map(y => (ys.length > 1 ? `<h3 class="grp">${esc(y)}</h3>` : "") + rs.filter(r => String(r.year) === y).map(r => jobRow(r, route.name)).join("")).join("");
+    const drive = route.name === "drive";
+    const rs = (data.rows || []).filter(r => drive ? drivesOf(r).includes(k) : r.editor === k).sort(byDate);
+    const all = jobsOf(rs), js = listUn ? all.filter(j => j.un) : all;
+    n = all.length; un = all.filter(j => j.un).length;
+    title = drive ? dName(k) : k; ico = drive ? ICON.drive : `<span class="hub ed big">${esc(initials(k))}</span>`;
+    const eds = drive ? [...new Set(rs.map(r => r.editor).filter(Boolean))] : [], drvs = drive ? [] : [...new Set(rs.flatMap(drivesOf))];
+    sub = n ? metaRow(`${n} ${n === 1 ? "job" : "jobs"}`, un ? `<b class="red">${un} not backed up</b>` : `<span class="green">all backed up</span>`, spanOf(rs)) : "No jobs yet";
+    const who = drive ? (eds.length ? `<span class="muted small">Edited by</span>${eds.map(e => `<a class="fchip" href="#/editor/${encodeURIComponent(e)}">${esc(e)}</a>`).join("")}` : "")
+      : (drvs.length ? `<span class="muted small">On</span>${drvs.slice(0, 8).map(d => `<a class="fchip" href="#/drive/${encodeURIComponent(d)}">${esc(dName(d))}</a>`).join("")}` : "");
+    tools = `<div class="list-tools">${who}<span class="spacer"></span>${un ? `<button type="button" class="fchip${listUn ? " on" : ""}" id="listUn" aria-pressed="${listUn}"><i class="dot red"></i>Not backed up</button>` : ""}<button type="button" class="fchip" id="listCopy" data-title="${esc(title)}"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>Copy list</button></div>`;
+    // a drive: by month (one drive is about one year); a person: by year
+    const keyOf = drive ? monthOf : (j => String(j.year || "No year"));
+    const groups = []; js.forEach(j => { const g = keyOf(j.main), last = groups[groups.length - 1]; if (last && last[0] === g) last[1].push(j); else groups.push([g, [j]]); });
+    const num = numbers();
+    html = groups.map(([g, l]) => `<section class="bk-group"><h3 class="bk-gh">${esc(g)}<span>${l.length} ${l.length === 1 ? "job" : "jobs"}</span></h3><div class="bk-rows">${l.map((j, i) => jobCard(j, i, { num, hide: route.name })).join("")}</div></section>`).join("")
+      || `<p class="muted">${listUn ? "Everything here is backed up." : "Nothing here yet."}</p>`;
+    drawList.copy = () => listText(title + (spanOf(rs) ? " (" + spanOf(rs) + ")" : ""), all);
   } else if (route.name === "unbacked") {
-    const rs = rowsOf(gYear).filter(unbacked).sort(byDate);
-    n = un = rs.length; title = "Not backed up"; ico = ICON.unbacked;
-    sub = n ? `${n} in ${gYear}. Each one turns green once it and its Video or Photo twin are backed up.` : `Everything in ${gYear} is backed up.`;
-    html = rs.map(r => jobRow(r)).join(""); setBar(0, 0); n = 0;
+    const js = jobsOf(rowsOf(gYear).sort(byDate)).filter(j => j.un);
+    title = "Not backed up"; ico = ICON.unbacked;
+    sub = js.length ? `${js.length} in ${gYear}. A job turns green once its Video and Photo are both backed up.` : `Everything in ${gYear} is backed up.`;
+    const num = numbers();
+    html = js.length ? `<div class="bk-rows">${js.map((j, i) => jobCard(j, i, { num })).join("")}</div>` : "";
   } else if (route.name === "drives") {
-    const ds = drivesIn(gYear); title = "Drives"; ico = ICON.drives; sub = `${ds.length} in ${gYear}`;
-    html = ds.map(d => hubRow("drive", d)).join("");
+    // every year, newest first: a jump strip on top, then each year's drives as cards
+    const ys = bkYears().filter(y => rowsOf(y).length); title = "Drives"; ico = ICON.drives;
+    let total = 0;
+    html = ys.map(y => {
+      const ds = drivesIn(y); total += ds.length;
+      const none = jobsOf(rowsOf(y).filter(r => !drivesOf(r).length)), nu = none.filter(j => j.un).length, un = jobsOf(rowsOf(y)).filter(j => j.un).length;
+      return `<section class="bk-group dv-year" id="dy-${y}"><h3 class="bk-gh"><i class="yr">${y.slice(0, 2)}<em>${y.slice(2)}</em></i><span>${ds.length} ${ds.length === 1 ? "drive" : "drives"}</span>${un ? `<span><b class="red">${un} not backed up</b></span>` : ""}</h3>
+        <div class="hub-list">${ds.map((d, i) => driveCard(d, y, i)).join("")}${none.length ? `<a class="row hubrow" href="#/backup"><span class="hub drive none"></span><span class="r-name">No drive<small>${none.length} ${none.length === 1 ? "job" : "jobs"} without a drive yet</small></span><span class="r-links">${nu ? `<em class="red">${nu} not backed up</em>` : `<em>All backed up</em>`}</span></a>` : ""}</div></section>`;
+    }).join("");
+    sub = `${total} drives, ${ys[ys.length - 1] || ""}–${ys[0] || ""}. Open one to see its jobs.`;
+    tools = ys.length > 1 ? `<div class="list-tools dv-years">${ys.map(y => `<button type="button" class="fchip" data-dy="${y}">${y}${jobsOf(rowsOf(y)).some(j => j.un) ? '<i class="dot red"></i>' : ""}</button>`).join("")}</div>` : "";
   } else {
     const es = editorsIn(gYear); title = "Team"; ico = ICON.team; sub = `${team.length} people. Jobs counted for ${gYear}.`;
     html = es.map(e => hubRow("editor", e)).join("");
   }
-  $("listTitle").textContent = title; $("listSub").textContent = sub; $("listIco").innerHTML = ico;
+  $("listTitle").textContent = title; $("listSub").innerHTML = sub; $("listIco").innerHTML = ico;
   setBar(n, un);
-  $("listRows").innerHTML = html || `<p class="muted">Nothing here yet.</p>`;
+  setHTML($("listTools"), tools);
+  setHTML($("listRows"), html || `<p class="muted">Nothing here yet.</p>`);
 }
+// a drive in the Drives list: its jobs, how far it's backed up, the months it covers, who edited
+function driveCard(d, y, i) {
+  const rs = rowsOf(y).filter(r => drivesOf(r).includes(d.name)), js = jobsOf(rs), u = js.filter(j => j.un).length, eds = [...new Set(rs.map(r => r.editor).filter(Boolean))];
+  const pct = js.length ? Math.round(100 * (js.length - u) / js.length) : 100;
+  return `<a class="drive-card${u ? " has-un" : ""}" style="--i:${i || 0}" href="#/drive/${encodeURIComponent(d.name)}"><span class="hub drive"></span>
+    <span class="dc-main"><b>${esc(dName(d.name))}</b><small>${metaRow(`${js.length} ${js.length === 1 ? "job" : "jobs"}`, esc(spanOf(rs) || ""), esc(eds.join(", ")))}</small>
+    <span class="dc-bar" aria-hidden="true"><i style="width:${pct}%"></i></span></span>
+    <span class="dc-st">${u ? `<em class="red">${u}</em><small>not backed up</small>` : `<em class="green">✓</em><small>all backed up</small>`}</span></a>`;
+}
+$("v-list").addEventListener("click", e => {
+  if (e.target.closest("#listUn")) { listUn = !listUn; buzz(); drawList(); return; }
+  const dy = e.target.closest("[data-dy]"); if (dy) { const sec = $("dy-" + dy.dataset.dy); if (sec) sec.scrollIntoView({ behavior: STILL ? "auto" : "smooth", block: "start" }); return; }
+  const c = e.target.closest("#listCopy");
+  if (c && drawList.copy) { const t = drawList.copy(); (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast("List copied. Paste it on the drive's label or in a message."), () => toast("Couldn't copy here.")); buzz(); }
+});
 document.addEventListener("click", e => {   // a whole job row opens the job; its own links still go where they point
-  const r = e.target.closest(".row[data-job]"); if (!r || e.target.closest("a")) return;
+  if (e.target.closest(".bk-det")) return;
+  const k = e.target.closest(".bk-row[data-job]");
+  if (k) { if (!e.target.closest("a, button:not(.bk-more)")) bkToggle(k); return; }
+  const r = e.target.closest(".row[data-job]"); if (!r || e.target.closest("a, button")) return;
   location.hash = "#/job/" + encodeURIComponent(r.dataset.job);
 });
 
@@ -534,14 +621,14 @@ function drawJob() {
   if (!r) { v.innerHTML = `<div class="page-head"><div><h1>Job not found</h1><p class="muted">It may have been deleted. <a href="#/home">Back to Home</a></p></div></div>`; return; }
   const un = unbacked(r), tw = twinOf(r), drives = drivesOf(r);
   const fact = (k, val) => val ? `<dt>${k}</dt><dd>${val}</dd>` : "";
-  const sameDrive = (data.rows || []).filter(x => x.id !== r.id && (!tw || x.id !== tw.id) && drivesOf(x).some(d => drives.includes(d))).sort(byDate).slice(0, 8);
+  const sameDrive = (data.rows || []).filter(x => x.id !== r.id && (!tw || x.id !== tw.id) && drivesOf(x).some(d => drives.includes(d))).sort(byDate).slice(0, 16);
   const sameEd = r.editor ? (data.rows || []).filter(x => x.id !== r.id && (!tw || x.id !== tw.id) && x.editor === r.editor && String(x.year) === String(r.year)).sort(byDate).slice(0, 8) : [];
   const safeUrl = u => /^https?:\/\//i.test(String(u || "")) ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>` : esc(u);
   v.innerHTML = `<div class="page-head"><span class="page-ico"><span class="hub ${un ? "red" : "green"} big"></span></span><div><h1>${esc(r.name)}</h1>
       <p class="muted">${esc(sectionOf(r))}, ${esc(r.year)}. <span class="${un ? "red" : "green"}">${un ? "Not backed up" : "Backed up"}</span></p></div></div>
     <dl class="facts">
       ${fact("Date", esc(fmtShort(r.date)))}
-      ${fact("Drive", drives.map(d => `<a href="#/drive/${encodeURIComponent(d)}">${esc(d)}</a>`).join(", ") || "—")}
+      ${fact("Drive", drives.map(d => `<a href="#/drive/${encodeURIComponent(d)}">${esc(dName(d))}</a>`).join(", ") || "—")}
       ${fact("Editor", r.editor ? `<a href="#/editor/${encodeURIComponent(r.editor)}">${esc(r.editor)}</a>` : "—")}
       ${fact("Backed up", selfUnbacked(r) ? "Not yet" : esc([r.backedUp && r.backedUp !== true ? r.backedUp : "", r.backupDate ? fmtShort(r.backupDate) : ""].filter(Boolean).join(", ") || "Yes"))}
       ${tw ? fact(kindLabel(tw), `<a href="#/job/${encodeURIComponent(tw.id)}">${esc(tw.name)} · ${kindLabel(tw)}</a> <span class="${selfUnbacked(tw) ? "red" : "green"}">${selfUnbacked(tw) ? "not backed up" : "backed up"}</span>`) : ""}
@@ -549,8 +636,8 @@ function drawJob() {
       ${fact("Link", r.link ? safeUrl(r.link) : "")}
     </dl>
     <div class="actions" style="justify-content:flex-start"><button type="button" class="btn" data-job-edit="${esc(r.id)}">${un ? "Edit or mark backed up" : "Edit job"}</button></div>
-    ${sameDrive.length ? `<h3 class="grp">Also on ${esc(drives.join(", "))}</h3><div class="rows">${sameDrive.map(x => jobRow(x, "drive")).join("")}</div>` : ""}
-    ${sameEd.length ? `<h3 class="grp">Also edited by ${esc(r.editor)} in ${esc(r.year)}</h3><div class="rows">${sameEd.map(x => jobRow(x, "editor")).join("")}</div>` : ""}`;
+    ${sameDrive.length ? `<h3 class="grp">Also on ${esc(drives.map(dName).join(", "))}</h3><div class="bk-rows">${jobsOf(sameDrive).slice(0, 6).map((j, i) => jobCard(j, i, { hide: "drive" })).join("")}</div>` : ""}
+    ${sameEd.length ? `<h3 class="grp">Also edited by ${esc(r.editor)} in ${esc(r.year)}</h3><div class="bk-rows">${jobsOf(sameEd).slice(0, 6).map((j, i) => jobCard(j, i, { hide: "editor" })).join("")}</div>` : ""}`;
 }
 
 // ---------------------------------------------------------------- calendar
@@ -587,7 +674,7 @@ function drawCal(dir) {
       return `<span class="ev t-${esc(s.type || "both")}${span}${jobOfShoot(s) ? " done" : ""}" data-sid="${esc(s.id)}" title="${esc(s.name)}">${esc(s.name)}</span>`; }).join("");
     html += `<div class="c ${cls}" role="button" tabindex="0" data-d="${k}" aria-label="${esc(fmtDay(k))}${list.length ? ", " + list.length + (list.length === 1 ? " shoot" : " shoots") : ""}"><span class="n">${d.getDate()}</span><span class="evs">${evs}${list.length > 3 ? `<span class="more">+${list.length - 3}</span>` : ""}</span></div>`;
   }
-  const el = $("cal"); el.innerHTML = html;
+  const el = $("cal"); setHTML(el, html);
   if (dir && !STILL) el.animate([{ opacity: 0, transform: `translateX(${dir * 28}px)` }, { opacity: 1, transform: "none" }], { duration: 320, easing: "cubic-bezier(.2,.8,.2,1)" });
   drawDay();
 }
@@ -770,6 +857,14 @@ function numbers() {   // No. within year + category, in the Sheet's order (as B
   return n;
 }
 const bkYears = () => [...new Set([String(new Date().getFullYear()), ...(data.rows || []).map(r => String(r.year || ""))].filter(Boolean))].sort().reverse();
+// the Backup page's own tabs: one per section (Event, Event · Photo, Corporate …), each with its own numbers
+function secsIn(list) {
+  const pos = {};
+  list.forEach(r => { const s = sectionOf(r), sec = r.sec != null && r.sec !== "" && isFinite(+r.sec) ? +r.sec : null, k = sec ?? 99 + (SECTIONS.indexOf(s) + 1 || 50); if (!(s in pos) || k < pos[s]) pos[s] = k; });
+  return Object.keys(pos).sort((a, b) => pos[a] - pos[b] || a.localeCompare(b));
+}
+// one card per row of a section; its badges still show both halves (Video and its Photo twin)
+const secJobs = rs => rs.map(r => { const j = jobsOf([r, twinOf(r)].filter(Boolean))[0]; return { ...j, main: r }; });
 function catsIn(list) {
   const pos = {};
   // the order Backup gives its sections (r.sec, or 99 + its place in SECTIONS), each category placed where its first section is
@@ -783,6 +878,107 @@ function hl(text, ts) {
   const re = new RegExp("(" + ts.map(t => esc(t).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")", "gi");
   return h.split(/(&[#\w]+;)/).map(p => p.startsWith("&") ? p : p.replace(re, "<mark>$1</mark>")).join("");
 }
+// one job (its Video and Photo rows) as Backup draws it; used by Backup, a drive, a person and a job's neighbours
+function jobCard(j, i, o) {
+  o = o || {}; const ts = o.ts || [], num = o.num || numbers();
+  const r = j.main, w = whenOf(r), t = splitJob(r).title, no = num.get(r.id);
+    const st = k => j[k] ? `<span class="md ${selfUnbacked(j[k]) ? "no" : "ok"}" title="${k === "video" ? "Video" : "Photo"}: ${!j[k].backupDate && !j[k].backedUp ? "not backed up" : "backed up" + (j[k].backupDate ? " " + esc(fmtDates([j[k].backupDate])) : "")}">${k === "video" ? "Video" : "Photo"}</span>` : "";
+    const drives = [...new Set(j.rows.flatMap(drivesOf))];
+    const meta = [w.when && `<span class="bk-when-m">${hl(w.when, ts)}</span>`, w.place && hl(w.place, ts), o.hide !== "editor" && r.editor && `<a href="#/editor/${encodeURIComponent(r.editor)}">${hl(r.editor, ts)}</a>`, r.notes && `<span class="bk-notes">${hl(r.notes, ts)}</span>`].filter(Boolean).map(x => `<span class="mr">${x}</span>`).join("");
+    const open = bkOpen.has(r.id);
+    return `<div class="bk-row${j.un ? " un" : ""}${open ? " open" : ""}" data-job="${esc(r.id)}" tabindex="0" aria-expanded="${open}" style="--i:${Math.min(i, 14)}">
+      <span class="bk-no">${no ? String(no).padStart(2, "0") : ""}</span>
+      <span class="bk-main"><b>${hl(t, ts)}</b>${meta ? `<small>${meta}</small>` : ""}${w.list ? `<ol class="bk-parts">${w.parts.map((p, k) => `<li><span>${ROMAN(k + 1)}.</span>${hl([p.date ? fmtDates([p.date]) : "", p.label].filter(Boolean).join(" · "), ts)}</li>`).join("")}</ol>` : ""}</span>
+      <span class="bk-when">${hl(w.when, ts)}</span>
+      <span class="bk-media">${st("video")}${st("photo")}</span>
+      <span class="bk-drv">${jobLinks(j).map(l => linkA(l, "bk-link")).join("")}${j.un ? `<button type="button" class="btn sm bk-fix" data-job-edit="${esc(r.id)}">Back up</button>` : ""}${o.hide === "drive" ? "" : drives.map(d => `<a href="#/drive/${encodeURIComponent(d)}">${hl(dName(d), ts)}</a>`).join("") || '<span class="muted small">No drive</span>'}</span>
+      <button type="button" class="bk-more" aria-label="Details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+      ${open ? `<div class="bk-det"><div class="bk-det-in">${bkDetail(r.id)}</div></div>` : ""}
+    </div>`;
+  }
+// tap a job (or its arrow) and it opens in place, as on the Backup page: days, what's backed up where, who, notes, links, history
+const bkOpen = new Set();
+function relAt(at) {
+  const d = new Date(at); if (isNaN(d)) return String(at || "");
+  const m = Math.round((Date.now() - d) / 6e4);
+  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : m < 10080 ? `${Math.round(m / 1440)} ${Math.round(m / 1440) === 1 ? "day" : "days"} ago` : fmtShort(String(at).slice(0, 10)) + (d.getFullYear() !== new Date().getFullYear() ? " " + d.getFullYear() : "");
+}
+const LINK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>';
+// a job's links: with several days, link 1 goes with day i., link 2 with ii. …; with one day, the link carries the job's name
+function jobLinks(j) {
+  const r = j.main, w = whenOf(r), t = splitJob(r).title, many = w.parts.length > 1;
+  const us = j.rows.flatMap(x => String(x.link || "").split(/\s*\n\s*/)).map(u => normLink(u) || "").filter(Boolean).filter((u, i, a) => a.indexOf(u) === i);
+  return us.map((u, k) => ({ u, tag: many && k < w.parts.length ? ROMAN(k + 1) + "." : us.length > 1 ? String(k + 1) : "", name: many && w.parts[k] ? [w.parts[k].date ? fmtDates([w.parts[k].date]) : "", w.parts[k].label].filter(Boolean).join(" · ") : t }));
+}
+const linkA = (l, cls) => `<a class="${cls}" href="${esc(l.u)}" target="_blank" rel="noopener" title="${esc(l.name)}: ${esc(l.u)}">${LINK_SVG}${l.tag ? `<span>${esc(l.tag)}</span>` : ""}</a>`;
+// a job opened in place, as the Apps Script Backup does it: one quiet line under the name (where, who, what's backed up,
+// what its twin is missing, notes, the last change), its days with their links, and Edit / Back up
+function bkDetail(id) {
+  const r = (data.rows || []).find(x => x.id === id); if (!r) return "";
+  const j = jobsOf([r, twinOf(r)].filter(Boolean))[0], w = whenOf(r), links = jobLinks({ ...j, main: r }), many = w.parts.length > 1;
+  const half = (k, x) => !x ? "" : selfUnbacked(x) ? `<span class="dx-no">${k} not backed up</span>` : `<span class="dx-ok">${k} backed up${x.backupDate ? " " + esc(fmtDates([x.backupDate])) : ""}</span>`;
+  const notes = [...new Set(j.rows.map(x => x.notes).filter(Boolean))];
+  const last = j.rows.flatMap(x => x.history || []).filter(h => h && h.at).sort((a, b) => String(a.at).localeCompare(String(b.at))).at(-1);
+  const made = j.rows.map(x => x.createdAt).filter(Boolean).sort()[0];
+  const line = metaRow(w.place && esc(w.place), r.editor && `<a href="#/editor/${encodeURIComponent(r.editor)}">${esc(r.editor)}</a>`, half("Video", j.video), half("Photo", j.photo),
+    ...notes.map(n => `<span class="dx-note">${esc(n)}</span>`),
+    last ? `<span class="dx-by"><b>${esc(last.by || "Someone")}</b> ${esc((ACT[last.action] || last.action || "").toLowerCase())} <time title="${esc(String(last.at).slice(0, 16).replace("T", " "))}">${esc(relAt(last.at))}</time></span>`
+      : made ? `<span class="dx-by">Added ${esc(relAt(made))}</span>` : "");
+  const days = many ? `<ol class="dx-days">${w.parts.map((p, k) => `<li><span class="dt-n">${ROMAN(k + 1)}.</span><span>${esc([p.date ? fmtDates([p.date]) : "", p.label].filter(Boolean).join("  ")) || "–"}</span>${links[k] ? linkA(links[k], "dt-link") : ""}</li>`).join("")}</ol>` : "";
+  const rest = links.slice(many ? w.parts.length : 0);
+  return `<div class="dx"><p class="dx-line">${line}<button type="button" class="dx-edit" data-job-edit="${esc(r.id)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17v3z"/><path d="M13.5 8.5l3 3"/></svg>Edit</button></p>${days}${rest.length ? `<div class="dx-acts">${rest.map(l => linkA(l, "dt-link")).join("")}</div>` : ""}</div>`;
+}
+function bkToggle(row) {
+  const id = row.dataset.job, open = !row.classList.contains("open");
+  open ? bkOpen.add(id) : bkOpen.delete(id);
+  let d = row.querySelector(".bk-det");
+  if (open && !d) { d = document.createElement("div"); d.className = "bk-det"; d.innerHTML = `<div class="bk-det-in">${bkDetail(id)}</div>`; row.appendChild(d); void d.offsetWidth; }
+  clearTimeout(row._dt);
+  row.classList.toggle("open", open); row.setAttribute("aria-expanded", open);
+  if (!open && d) row._dt = setTimeout(() => { if (!row.classList.contains("open")) d.remove(); }, STILL ? 0 : 380);   // folds up, then goes
+  fx(open ? "open" : "close");
+}
+// facts side by side, spaced, never strung together with dots
+const metaRow = (...xs) => xs.filter(Boolean).map(x => `<span class="mr">${x}</span>`).join("");
+// pop-ups are drawers: they push up from the bottom edge and slide back down; drag the top of one down to put it away
+function sheetShow(sc) {
+  sc._closing = false; (sc._anims || []).forEach(a => a.cancel()); sc._anims = null; sc.hidden = false;
+  clearTimeout(sc._sit); sc._sit = setTimeout(() => { const b = MBTN; if (!sc.hidden && !b.hidden && typeof perch === "function") perch(b.getBoundingClientRect(), "hop"); }, 380);   // he hops onto the drawer once it is up
+}
+function sheetHide(sc) {
+  if (sc.hidden || sc._closing) return;
+  const sh = sc.querySelector(".sheet"); if (STILL || !sh) { sc.hidden = true; afterSheet(); return; }
+  sc._closing = true;
+  const cur = getComputedStyle(sh).transform, from = cur && cur !== "none" ? cur : "none";
+  sc._anims = [sh.animate([{ transform: from }, { transform: "translateY(110%)" }], { duration: 280, easing: "cubic-bezier(.5,0,.75,.4)", fill: "forwards" }),
+    sc.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 280, fill: "forwards" })];
+  sc._anims[0].onfinish = () => { if (!sc._closing) return; sc._closing = false; sc._anims.forEach(a => a.cancel()); sc._anims = null; sc.hidden = true; afterSheet(); };
+}
+const afterSheet = () => { if (typeof perch === "function" && !document.querySelector(".scrim:not([hidden])")) perch(MBTN.getBoundingClientRect()); };
+const SHEET_CLOSE = { jobScrim: () => closeJob(), chkScrim: () => closeChk(), shootScrim: () => closeShoot() };
+document.querySelectorAll(".scrim > .sheet").forEach(sh => {
+  // push it down and it goes; pull it up and it stretches like rubber and springs back. A finger drags it when the drawer
+  // is scrolled to its top (down) or can't scroll further (up); otherwise the finger scrolls its content as usual.
+  let y0 = null, dy = 0, t0 = 0, on = false;
+  const pull = d => d >= 0 ? `translateY(${d}px)` : `translateY(${-Math.sqrt(-d) * 3.2}px) scaleY(${1 + Math.min(.06, Math.sqrt(-d) / 260)})`;
+  const skip = t => t.closest("input, select, textarea, button, a, label, [contenteditable]");
+  const start = (y, t) => { if (skip(t)) return; y0 = y; dy = 0; on = false; t0 = performance.now(); sh.style.transformOrigin = "50% 100%"; };
+  const move = (y, e) => { if (y0 == null) return; const d = y - y0;
+    if (!on) { const atTop = sh.scrollTop <= 0, atEnd = sh.scrollTop + sh.clientHeight >= sh.scrollHeight - 1;
+      if ((d > 6 && atTop) || (d < -6 && atEnd)) { on = true; y0 = y; } else if (Math.abs(d) > 6) { y0 = null; return; } else return; }
+    if (e.cancelable) e.preventDefault(); dy = y - y0; sh.style.transform = dy ? pull(dy) : ""; };
+  const end = () => { if (y0 == null) return; y0 = null; if (!on) return; on = false; const sc = sh.parentElement, fast = dy > 30 && dy / Math.max(1, performance.now() - t0) > .6;
+    if (dy > 90 || fast) { SHEET_CLOSE[sc.id] && SHEET_CLOSE[sc.id](); requestAnimationFrame(() => { sh.style.transform = ""; }); return; }
+    if (dy) { const from = pull(dy); sh.style.transform = ""; sh.animate([{ transform: from }, { transform: "none" }], { duration: dy < 0 ? 520 : 420, easing: "cubic-bezier(.34,1.56,.64,1)" }); } };
+  sh.addEventListener("touchstart", e => start(e.touches[0].clientY, e.target), { passive: true });
+  sh.addEventListener("touchmove", e => move(e.touches[0].clientY, e), { passive: false });
+  sh.addEventListener("touchend", end); sh.addEventListener("touchcancel", end);
+  sh.addEventListener("pointerdown", e => { if (e.pointerType !== "touch" && !e.button) { start(e.clientY, e.target); if (y0 != null) sh.setPointerCapture(e.pointerId); } });
+  sh.addEventListener("pointermove", e => { if (e.pointerType !== "touch") move(e.clientY, e); });
+  sh.addEventListener("pointerup", e => { if (e.pointerType !== "touch") end(); }); sh.addEventListener("pointercancel", e => { if (e.pointerType !== "touch") end(); });
+});
+// a page drawn again with nothing changed keeps its rows as they are: no rebuild, no restyle of hundreds of rows
+function setHTML(el, html) { if (el._html === html && el.isConnected) return false; el.innerHTML = html; el._html = html; return true; }
 function drawBackup(first) {
   if (!session) return;
   const rows = bkRows(), ys = bkYears();
@@ -790,30 +986,23 @@ function drawBackup(first) {
   const inYear = rows.filter(r => String(r.year) === bk.year), unRows = inYear.filter(unbacked);
   if (!unRows.length) bk.un = false;
   // years: a red dot where something isn't backed up
-  $("bkYears").innerHTML = ys.map(y => `<button type="button" role="tab" data-y="${esc(y)}" aria-selected="${y === bk.year}">${esc(y)}${rows.some(r => String(r.year) === y && unbacked(r)) ? '<i class="dot red"></i>' : ""}</button>`).join("");
+  setHTML($("bkYears"), ys.map(y => `<button type="button" role="tab" data-y="${esc(y)}" aria-selected="${y === bk.year}">${esc(y)}${rows.some(r => String(r.year) === y && unbacked(r)) ? '<i class="dot red"></i>' : ""}</button>`).join(""));
+  { const i = ys.indexOf(bk.year), un = y => rows.some(r => String(r.year) === y && unbacked(r));   // ys is newest first: ‹ goes back in time
+    $("bkPrev").disabled = i >= ys.length - 1; $("bkNext").disabled = i <= 0;
+    $("bkPrev").querySelector(".dot").hidden = !ys.slice(i + 1).some(un); $("bkNext").querySelector(".dot").hidden = !ys.slice(0, Math.max(0, i)).some(un);
+    $("bkPrev").title = ys[i + 1] || ""; $("bkNext").title = ys[i - 1] || ""; }
   const yEl = $("bkYear"); if (yEl.textContent !== bk.year) { yEl.innerHTML = `${esc(bk.year.slice(0, 2))}<em>${esc(bk.year.slice(2))}</em>`; if (!first && !STILL) yEl.animate([{ opacity: 0, transform: "translateY(16px)" }, { opacity: 1, transform: "none" }], { duration: 360, easing: "cubic-bezier(.2,.8,.2,1)" }); }
   $("bkJobs").textContent = inYear.length; $("bkDrives").textContent = new Set(inYear.flatMap(drivesOf)).size; $("bkUnN").textContent = unRows.length;
   $("bkUn").classList.toggle("red", unRows.length > 0); $("bkUn").setAttribute("aria-pressed", bk.un); $("bkUn").disabled = !unRows.length;
   const ts = bkTerms(), searching = ts.length > 0, num = numbers();
   $("bkScope").hidden = !searching; $("bkScope").querySelector('[data-v="year"]').textContent = "Only " + bk.year;
   $("bkScope").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === bk.scope));
-  const cats = catsIn(inYear);
+  const cats = secsIn(inYear);
   if (!cats.includes(bk.cat)) bk.cat = cats[0] || null;
   $("bkCats").hidden = searching || bk.un;
-  $("bkCats").innerHTML = cats.map(c => { const js = jobsOf(inYear.filter(r => baseOf(sectionOf(r)) === c)); return `<button type="button" role="tab" data-c="${esc(c)}" aria-selected="${c === bk.cat}">${esc(c)}<span>${js.length}</span>${js.some(j => j.un) ? '<i class="dot red"></i>' : ""}</button>`; }).join("");
-  const row = (j, i) => {
-    const r = j.main, w = whenOf(r), t = splitJob(r).title, no = num.get(r.id);
-    const st = k => j[k] ? `<span class="md ${selfUnbacked(j[k]) ? "no" : "ok"}" title="${k === "video" ? "Video" : "Photo"}: ${!j[k].backupDate && !j[k].backedUp ? "not backed up" : "backed up" + (j[k].backupDate ? " " + esc(fmtDates([j[k].backupDate])) : "")}">${k === "video" ? "Video" : "Photo"}</span>` : "";
-    const drives = [...new Set(j.rows.flatMap(drivesOf))];
-    const meta = [w.place && hl(w.place, ts), r.editor && `<a href="#/editor/${encodeURIComponent(r.editor)}">${hl(r.editor, ts)}</a>`, r.notes && `<span class="bk-notes">${hl(r.notes, ts)}</span>`].filter(Boolean).join(" · ");
-    return `<div class="bk-row${j.un ? " un" : ""}" data-job="${esc(r.id)}" tabindex="0" role="link" style="--i:${Math.min(i, 14)}">
-      <span class="bk-no">${no ? String(no).padStart(2, "0") : ""}</span>
-      <span class="bk-main"><b>${hl(t, ts)}</b>${meta ? `<small>${meta}</small>` : ""}${w.list ? `<ol class="bk-parts">${w.parts.map((p, k) => `<li><span>${ROMAN(k + 1)}.</span>${hl([p.date ? fmtDates([p.date]) : "", p.label].filter(Boolean).join(" · "), ts)}</li>`).join("")}</ol>` : ""}</span>
-      <span class="bk-when">${hl(w.when, ts)}</span>
-      <span class="bk-media">${st("video")}${st("photo")}</span>
-      <span class="bk-drv">${drives.map(d => `<a href="#/drive/${encodeURIComponent(d)}">${hl(d === "未知" ? "Unknown" : d, ts)}</a>`).join("") || '<span class="muted small">No drive</span>'}</span>
-    </div>`;
-  };
+  setHTML($("bkCats"), cats.map(c => { const js = secJobs(inYear.filter(r => sectionOf(r) === c)); return `<button type="button" role="tab" data-c="${esc(c)}" aria-selected="${c === bk.cat}"><em class="sec-n">${esc(baseOf(c))}${isPhotoSec(c) ? `<i class="sec-sep">·</i>Photo` : ""}</em><span>${js.length}</span>${js.some(j => j.un) ? '<i class="dot red"></i>' : ""}</button>`; }).join(""));
+  const row = (j, i) => jobCard(j, i, { num, ts });
+  const TH = '<div class="bk-th" aria-hidden="true"><span>No.</span><span>Job</span><span>Date</span><span>Backed up</span><span>Drive</span></div>';
   const sortJ = js => bk.desc ? js.slice().reverse() : js;
   const head = (title, n, jump) => `<h3 class="bk-gh">${jump ? `<button type="button" class="bk-jump" data-y="${esc(title)}">${esc(title)}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>` : esc(title)}<span>${n} ${n === 1 ? "job" : "jobs"}</span></h3>`;
   const sortBtn = `<button type="button" class="btn ghost sm bk-sort" id="bkSort" aria-label="Sort">${bk.desc ? "Newest first" : "Oldest first"}</button>`;
@@ -822,26 +1011,30 @@ function drawBackup(first) {
     const pool = bk.scope === "year" ? inYear : rows, hits = jobsOf(pool).filter(j => j.rows.some(r => bkMatch(r, ts)));
     const shown = bk.all ? hits : hits.slice(0, 60);
     filt = `<span class="muted">${hits.length ? `${hits.length} found` : ""}</span>${hits.length > 1 ? sortBtn : ""}`;
-    html = hits.length ? ys.map(y => [y, shown.filter(j => String(j.main.year) === y)]).filter(([, l]) => l.length).map(([y, l]) => `<section class="bk-group">${head(y, l.length, bk.scope === "all")}<div class="bk-rows">${sortJ(l).map(row).join("")}</div></section>`).join("")
+    html = hits.length ? ys.map(y => [y, shown.filter(j => String(j.main.year) === y)]).filter(([, l]) => l.length).map(([y, l]) => `<section class="bk-group">${head(y, l.length, bk.scope === "all")}<div class="bk-rows">${TH}${sortJ(l).map(row).join("")}</div></section>`).join("")
       + (shown.length < hits.length ? `<button type="button" class="btn ghost" id="bkAll">Show all ${hits.length}</button>` : "")
       : `<div class="bk-empty">Nothing matches “${esc($("bkQ").value.trim())}”${bk.scope === "year" ? ` in ${esc(bk.year)}` : ""}.</div>`;
   } else if (bk.un) {
-    const js = jobsOf(inYear).filter(j => j.un);
+    const js = secJobs(inYear.filter(unbacked));
     filt = `<button type="button" class="fchip on" id="bkUnOff">Not backed up in ${esc(bk.year)} ✕</button>${js.length > 1 ? sortBtn : ""}`;
-    html = cats.map(c => [c, js.filter(j => baseOf(sectionOf(j.main)) === c)]).filter(([, l]) => l.length).map(([c, l]) => `<section class="bk-group">${head(c, l.length)}<div class="bk-rows">${sortJ(l).map(row).join("")}</div></section>`).join("");
+    html = cats.map(c => [c, js.filter(j => sectionOf(j.main) === c)]).filter(([, l]) => l.length).map(([c, l]) => `<section class="bk-group">${head(c, l.length)}<div class="bk-rows">${TH}${sortJ(l).map(row).join("")}</div></section>`).join("");
   } else {
-    const inCat = inYear.filter(r => baseOf(sectionOf(r)) === bk.cat);
+    const inCat = inYear.filter(r => sectionOf(r) === bk.cat);
     const drives = [...new Set(inCat.flatMap(drivesOf))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     if (bk.drive && !drives.includes(bk.drive)) bk.drive = null;
-    const js = jobsOf(inCat).filter(j => !bk.drive || j.rows.some(r => drivesOf(r).includes(bk.drive)));
+    const js = secJobs(inCat).filter(j => !bk.drive || drivesOf(j.main).includes(bk.drive));
     filt = (drives.length > 1 ? `<span class="muted small">Drives</span>${drives.map(d => `<button type="button" class="fchip${bk.drive === d ? " on" : ""}" data-drive="${esc(d)}" aria-pressed="${bk.drive === d}">${esc(d === "未知" ? "Unknown" : d)}</button>`).join("")}` : "") + (js.length > 1 ? sortBtn : "");
-    html = js.length ? `<div class="bk-rows">${sortJ(js).map(row).join("")}</div>` : `<div class="bk-empty">No jobs in ${esc(bk.year)} yet. <button type="button" class="btn sm" id="bkNew2">+ New job</button></div>`;
+    html = js.length ? `<div class="bk-rows">${TH}${sortJ(js).map(row).join("")}</div>` : `<div class="bk-empty">No jobs in ${esc(bk.year)} yet.</div>`;
   }
-  $("bkFilters").innerHTML = filt;
+  setHTML($("bkFilters"), filt);
   const list = $("bkList"), key = [bk.year, bk.cat, bk.drive, bk.un, bk.scope, ts.join(" "), bk.desc].join("|");
-  list.innerHTML = html;
+  setHTML(list, html);
+  { const cs = $("bkCats"), on = cs.querySelector('[aria-selected="true"]');   // the chosen section is always in view on the strip (sideways only)
+    if (on && !cs.hidden) { const l = on.offsetLeft - cs.offsetLeft, r = l + on.offsetWidth; if (l < cs.scrollLeft || r > cs.scrollLeft + cs.clientWidth - 24) cs.scrollTo({ left: Math.max(0, l - 16), behavior: first || STILL ? "auto" : "smooth" }); } }
   if (list.dataset.key !== key) { list.dataset.key = key; list.classList.remove("anim"); void list.offsetWidth; list.classList.add("anim"); }
 }
+const bkStep = d => { const ys = bkYears(), y = ys[ys.indexOf(bk.year) + d]; if (!y) return; bk.year = y; bk.drive = null; buzz(); drawBackup(); };
+$("bkPrev").addEventListener("click", () => bkStep(1)); $("bkNext").addEventListener("click", () => bkStep(-1));
 $("bkYears").addEventListener("click", e => { const b = e.target.closest("[data-y]"); if (!b || b.dataset.y === bk.year) return; bk.year = b.dataset.y; bk.drive = null; buzz(); drawBackup(); });
 $("bkCats").addEventListener("click", e => { const b = e.target.closest("[data-c]"); if (!b) return; bk.cat = b.dataset.c; bk.drive = null; buzz(); drawBackup(); });
 $("bkUn").addEventListener("click", () => { bk.un = !bk.un; buzz(); drawBackup(); });
@@ -858,10 +1051,66 @@ $("bkList").addEventListener("click", e => {
   const y = e.target.closest(".bk-jump"); if (y) { bk.year = y.dataset.y; $("bkQ").value = ""; buzz(); drawBackup(); $("views").scrollTop = 0; return; }
   if (e.target.closest("#bkAll")) { bk.all = true; return drawBackup(); }
   if (e.target.closest("#bkNew2")) return newJob();
-  if (e.target.closest("a")) return;
-  const r = e.target.closest("[data-job]"); if (r) location.hash = "#/job/" + encodeURIComponent(r.dataset.job);
+  if (e.target.closest("a, [data-job-edit]")) return;
 });
-$("bkList").addEventListener("keydown", e => { const r = e.target.closest("[data-job]"); if (r && e.key === "Enter") location.hash = "#/job/" + encodeURIComponent(r.dataset.job); });
+document.addEventListener("keydown", e => { const r = e.target.closest && e.target.closest(".bk-row[data-job]"); if (r && e.target === r && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); bkToggle(r); } });
+// ---------------------------------------------------------------- step-by-step forms
+// A new job / new shoot is asked one question at a time (Name, then Date, then Video or Photo, ...), with Next all the way.
+// It is the same form underneath: the steps only show and hide its fields, and the last step's Save is the form's own Save.
+// "All fields" (or editing an existing job) shows the whole form at once.
+function wizOn(form, o) {
+  const units = [...form.querySelectorAll("[data-wz]")], n = Math.max(...units.map(u => +u.dataset.wz || 0));
+  let w = form._wz;
+  if (!w) {
+    const head = document.createElement("div"); head.className = "wz-head";
+    head.innerHTML = `<div class="wz-dots" aria-hidden="true"></div><p class="wz-q" aria-live="polite"></p><button type="button" class="wz-all">All fields</button>`;
+    (form.querySelector(".jf-top") || form.querySelector("h2")).after(head);
+    const acts = [...form.querySelectorAll(".actions")].pop(), save = acts.querySelector("button:not([type=button])"), cancel = [...acts.querySelectorAll("button")].find(b => /Cancel/.test(b.textContent));
+    const back = document.createElement("button"); back.type = "button"; back.className = "btn ghost wz-back"; back.textContent = "Back";
+    const next = document.createElement("button"); next.type = "button"; next.className = "btn wz-next"; next.textContent = "Next";
+    cancel.after(back); save.before(next);
+    w = form._wz = { head, back, next, save, cancel, i: 0, n: 0, o: null };
+    back.addEventListener("click", () => wizGo(form, w.i - 1));
+    next.addEventListener("click", () => wizNext(form));
+    head.querySelector(".wz-all").addEventListener("click", () => { wizOff(form); fx("open"); });
+    form.addEventListener("keydown", e => {
+      if (!form.classList.contains("wiz") || e.key !== "Enter" || e.isComposing || e.target.tagName === "TEXTAREA" || e.target.tagName === "BUTTON") return;
+      if (w.i < w.n - 1) { e.preventDefault(); wizNext(form); }
+    });
+  }
+  w.n = n; w.o = o; w.i = -1; form.classList.add("wiz");
+  w.head.querySelector(".wz-dots").innerHTML = Array.from({ length: n }, () => "<i></i>").join("");
+  wizGo(form, 0, true);
+}
+function wizOff(form) {
+  const w = form._wz; if (!w || !form.classList.contains("wiz")) return;
+  form.classList.remove("wiz"); delete form.dataset.step;
+  form.querySelectorAll(".wz-off, .wz-in, .wz-in-back").forEach(u => u.classList.remove("wz-off", "wz-in", "wz-in-back"));
+  w.back.hidden = w.next.hidden = true; w.save.hidden = false; w.cancel.hidden = false;
+}
+function wizNext(form) {
+  const w = form._wz, bad = w.o.check && w.o.check(w.i);
+  if (bad) { w.o.need ? w.o.need(bad) : toast(bad[0]); fx("err"); return; }
+  wizGo(form, w.i + 1);
+}
+function wizGo(form, i, first) {
+  const w = form._wz; if (!w || i < 0 || i >= w.n || i === w.i) return;
+  const back = i < w.i; w.i = i; form.dataset.step = i + 1;
+  form.querySelectorAll("[data-wz]").forEach(u => {
+    const on = u.dataset.wz === String(i + 1); u.classList.toggle("wz-off", !on);
+    u.classList.remove("wz-in", "wz-in-back"); if (on && !first && !STILL) { void u.offsetWidth; u.classList.add(back ? "wz-in-back" : "wz-in"); }
+  });
+  w.head.querySelectorAll(".wz-dots i").forEach((d, k) => { d.classList.toggle("on", k === i); d.classList.toggle("done", k < i); });
+  w.head.querySelector(".wz-q").textContent = (w.o.titles || [])[i] || "";
+  w.back.hidden = i === 0; w.cancel.hidden = i > 0; w.next.hidden = i === w.n - 1; w.save.hidden = i !== w.n - 1;
+  const msg = form.querySelector(".msg"); if (msg) msg.textContent = "";
+  if (w.o.enter) w.o.enter(i);
+  if (!first) fx(back ? "close" : "nav");
+  const f = form.querySelector(`[data-wz="${i + 1}"] input:not([type=date]):not([type=checkbox]), [data-wz="${i + 1}"] select, [data-wz="${i + 1}"]:is(input, select)`);
+  if (f && (matchMedia("(hover: hover)").matches || i === 0 || f.type === "number")) setTimeout(() => f.focus({ preventScroll: true }), first ? 60 : 260);
+}
+// the step a field is on: a check on Save that fails on an earlier step goes back to it
+function wizShow(form, el) { const u = el && el.closest("[data-wz]"); if (form.classList.contains("wiz") && u && /^\d+$/.test(u.dataset.wz)) wizGo(form, +u.dataset.wz - 1); }
 // ---------------------------------------------------------------- job form: add, edit, back up, delete
 // The form is the Workspace's own; Save hands it to Classic Backup (loaded unseen in the background), which saves it with
 // its own code: the same rows, numbers, history, twin rules and outbox as before. Nothing here writes to the Sheet itself.
@@ -877,7 +1126,7 @@ function jfSetParts(ps) {
   $("jfParts").innerHTML = ps.map((p, i) => `<div class="jf-part">${many ? `<span class="jf-pn">${ROMAN(i + 1)}.</span>` : ""}<input type="date" value="${esc(p.date || "")}" aria-label="Day ${i + 1}"><input class="jf-pl" value="${esc(p.label || "")}" placeholder="Note, e.g. venue" aria-label="Day ${i + 1} note">${many ? `<button type="button" class="ibtn sm jf-rm" data-i="${i}" aria-label="Remove day ${i + 1}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>` : ""}</div>`).join("");
 }
 function jfCats() {
-  const st = classicState(), cur = $("jfCat").value || (jf.r ? baseOf(sectionOf(jf.r)) : bk.cat || "Event");
+  const st = classicState(), cur = $("jfCat").value || (jf.r ? baseOf(sectionOf(jf.r)) : baseOf(bk.cat || "Event"));
   const l = st.ready && st.cats && st.cats.length ? st.cats.slice() : [...new Set([...SECTIONS, ...(data.rows || []).map(sectionOf)].map(baseOf))];
   if (!l.includes(cur)) l.push(cur);
   $("jfCat").innerHTML = l.map(c => `<option${c === cur ? " selected" : ""}>${esc(c)}</option>`).join("");
@@ -935,9 +1184,12 @@ function openJob(r, pre) {
   const live = r && classicState().ready ? classicJob(r.id) : null;
   if (live) jfFill(live.r, live.tw, live.no, null, live.sig);
   else jfFill(r, r ? twinOf(r) : null, r ? numbers().get(r.id) || "" : "", pre, "");
-  $("jobScrim").hidden = false; buzz();
-  jfConn();
-  if (matchMedia("(hover: hover)").matches) (r ? $("jfName") : $("jfName").value ? $("jfCat") : $("jfName")).focus();
+  sheetShow($("jobScrim")); fx("open");
+  jfConn(); jfNoHint();
+  if (!r) wizOn($("jobForm"), { titles: ["What's the job?", "Which days?", "Video or photo?", "Which No.?"],
+    check: i => { const p = jfPayload(); return i === 0 && !p.name ? ["Fill in the name.", "jfName"] : i === 1 && !p.parts.some(x => x.date) ? ["Pick the day.", "jfParts"] : i === 2 && !p.type ? ["Choose Video, Photo or Video + Photo.", "jfType"] : null; },
+    need: b => { $("jfMsg").textContent = b[0]; jfNeed(b[1]); }, enter: i => { if (i === 3) jfNoHint(); } });
+  else { wizOff($("jobForm")); if (matchMedia("(hover: hover)").matches) $("jfName").focus(); }
 }
 function jfFill(r, tw, no, pre, sig) {
   const j = r ? splitJob(r) : null;
@@ -961,7 +1213,7 @@ function jfFill(r, tw, no, pre, sig) {
   $("jfTypeLbl").textContent = r ? "Job type" : "What does this job have?";
   jfType(); jfDrives();
 }
-function closeJob(force) { if (jf && jf.busy && !force) return; $("jobScrim").hidden = true; if (jf) clearTimeout(jf.t); jf = null; }
+function closeJob(force) { if (jf && jf.busy && !force) return; if (!$("jobScrim").hidden) fx("close"); sheetHide($("jobScrim")); if (jf) clearTimeout(jf.t); jf = null; }
 function normLink(v) {
   v = String(v || "").trim(); if (!v) return "";
   if (!/^https?:\/\//i.test(v)) v = "https://" + v.replace(/^\/+/, "");
@@ -986,7 +1238,7 @@ function jfCheck(p) {
   if (p.no != null && !(Number.isInteger(p.no) && p.no >= 1)) return ["No. is a whole number from 1.", "jfNo"];
   return null;
 }
-function jfNeed(id) { const el = $(id); el.classList.remove("need"); void el.offsetWidth; el.classList.add("need"); (el.querySelector("input,button") || el).focus({ preventScroll: true }); el.scrollIntoView({ behavior: STILL ? "auto" : "smooth", block: "center" }); }
+function jfNeed(id) { const el = $(id); wizShow($("jobForm"), el); el.classList.remove("need"); void el.offsetWidth; el.classList.add("need"); (el.querySelector("input,button") || el).focus({ preventScroll: true }); el.scrollIntoView({ behavior: STILL ? "auto" : "smooth", block: "center" }); }
 async function jfSave(force) {
   if (!jf || jf.busy) return;
   const p = jfPayload(), bad = jfCheck(p);
@@ -1009,7 +1261,7 @@ async function jfSave(force) {
   closeJob(); buzz();
   toast(res.queued ? "Saved on this device. It syncs when the connection is back." : marked ? `Marked backed up: ${name}` : r ? `Saved: ${name}` : `Added to ${res.year || jfYear()}: ${name}`);
   halo();
-  if (!r && res.year) { bk.year = String(res.year); bk.cat = p.cat; }
+  if (!r && res.year) { bk.year = String(res.year); bk.cat = p.type === "photo" ? p.cat + " · Photo" : p.cat; }
   await refresh();
 }
 async function jfDelete() {
@@ -1025,7 +1277,20 @@ async function jfDelete() {
   if (wasJob) location.hash = "#/backup";
   await refresh();
 }
-$("jfType").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (!b || !jf) return; jf.type = b.dataset.v; jfType(); });
+$("jfType").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (!b || !jf) return; jf.type = b.dataset.v; jfType(); jfNoHint(); if ($("jobForm").dataset.step === "3") setTimeout(() => wizNext($("jobForm")), 260); });
+// No.: empty = the job goes last; a number already taken = it goes in at that place and the ones after move down (Backup's own rule)
+function jfNoHint() {
+  const h = $("jfNoHint"); if (!jf) return;
+  const d = (jfParts().find(x => x.date) || {}).date || "", y = d.slice(0, 4) || (jf.r ? String(jf.r.year) : String(new Date().getFullYear()));
+  const cat = $("jfCat").value, sec = jf.r ? sectionOf(jf.r) : cat + (jf.type === "photo" ? " · Photo" : "");
+  const n = bkRows().filter(r => (!jf.r || r.id !== jf.r.id) && String(r.year) === y && sectionOf(r) === sec).length;
+  const v = parseInt($("jfNo").value, 10);
+  h.textContent = !cat ? "" : v > 0 && v <= n ? `It goes in as No. ${v} in ${sec} ${y}; No. ${v} to ${n} move down one.`
+    : v > n + 1 ? `${sec} ${y} has ${n} jobs, so it goes last, as No. ${n + 1}.`
+    : `Leave it empty and it goes last in ${sec} ${y}, as No. ${n + 1}. Type a number that's taken to put it in that place.`;
+}
+["jfNo", "jfCat"].forEach(id => $(id).addEventListener("input", jfNoHint));
+$("jfParts").addEventListener("input", jfNoHint);
 $("jfMarks").addEventListener("click", e => { const b = e.target.closest("[data-h]"); if (!b || !jf) return; jf.tick[b.dataset.h] = !jf.tick[b.dataset.h]; if (jf.tick[b.dataset.h] && !$("jfEditor").value.trim()) $("jfEditor").value = session.name; buzz(); jfType(); });
 $("jfDrives").addEventListener("click", e => { const b = e.target.closest("[data-d]"); if (!b || !jf) return; const d = b.dataset.d; jf.drives.has(d) ? jf.drives.delete(d) : jf.drives.add(d); jfDrives(); });
 function jfAddDrive() { const d = $("jfDriveNew").value.trim().replace(/\s+/g, " ").toUpperCase(); if (!d || !jf) return; if (d.includes(",")) { $("jfMsg").textContent = "A drive name can't have a comma."; return; } if (!jf.extra.includes(d)) jf.extra.push(d); jf.drives.add(d); $("jfDriveNew").value = ""; jfDrives(); }
@@ -1060,7 +1325,11 @@ $("jfCfmNo").addEventListener("click", () => { $("jfCfm").hidden = true; $("jfAc
 $("jfCfmYes").addEventListener("click", jfDelete);
 function newJob(pre) { openJob(null, pre && pre.name != null ? pre : null); }
 $("bkNew").addEventListener("click", () => newJob());
-document.addEventListener("click", e => { const b = e.target.closest("[data-job-edit]"); if (!b) return; openJob((data.rows || []).find(x => x.id === b.dataset.jobEdit) || null); });
+document.addEventListener("click", e => { const b = e.target.closest("[data-job-edit]"); if (!b) return; openJob((data.rows || []).find(x => x.id === b.dataset.jobEdit) || null);
+  if (b.classList.contains("bk-fix") && jf) {   // "Back up" on a row: the form opens with the missing halves ticked, ready for the drive and Save
+    document.querySelectorAll("#jfMarks .jf-mark:not(.done):not(.on)").forEach(m => m.click());
+    const box = $("jfMarkBox"); if (box && !box.hidden) setTimeout(() => box.scrollIntoView({ block: "center", behavior: STILL ? "auto" : "smooth" }), 320);
+  } });
 
 // Check data: the same name twice (same year and category), or backed up with no drive or no editor
 let chkScope = "year";
@@ -1079,9 +1348,9 @@ function drawCheck() {
     ${l.length > 60 ? `<p class="muted small">And ${l.length - 60} more. Pick one year to see them all.</p>` : ""}</section>`).join("")
     : `<div class="chk-ok"><b>All good</b><small>No repeated names, and every backed-up job has a drive and an editor${chkScope === "year" ? " in " + esc(bk.year) : ""}.</small></div>`;
 }
-$("bkCheck").addEventListener("click", () => { chkScope = "year"; drawCheck(); $("chkScrim").hidden = false; buzz(); });
+$("bkCheck").addEventListener("click", () => { chkScope = "year"; drawCheck(); sheetShow($("chkScrim")); buzz(); });
 $("chkScope").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (b) { chkScope = b.dataset.v; drawCheck(); } });
-const closeChk = () => { $("chkScrim").hidden = true; };
+const closeChk = () => { sheetHide($("chkScrim")); };
 $("chkClose").addEventListener("click", closeChk);
 $("chkScrim").addEventListener("click", e => { if (e.target === $("chkScrim") || e.target.closest(".chk-item")) closeChk(); });
 
@@ -1176,13 +1445,17 @@ function openShoot(s, onSaved) {
   $("sfName").value = s.name || ""; $("sfFrom").value = ds[0] || ""; $("sfTo").value = ds.length > 1 ? ds[ds.length - 1] : "";
   $("sfLoc").value = s.location || ""; $("sfNotes").value = s.notes || ""; $("sfMsg").textContent = "";
   sfType = s.type || "both"; sfCrew = new Set(crewOf(s));
-  drawSeg(); drawCrew(); $("sfDel").hidden = !s.id; $("shootScrim").hidden = false; $("sfName").focus();
+  drawSeg(); drawCrew(); $("sfDel").hidden = !s.id; sheetShow($("shootScrim"));
+  if (!s.id) wizOn($("shootForm"), { titles: ["What's the shoot?", "When and where?", "Video or photo?", "Who's going?"],
+    check: i => i === 0 && !$("sfName").value.trim() ? ["Fill in the name.", "sfName"] : i === 1 && !$("sfFrom").value ? ["Pick the day.", "sfFrom"] : null,
+    need: b => { $("sfMsg").textContent = b[0]; $(b[1]).focus(); } });
+  else { wizOff($("shootForm")); $("sfName").focus(); }
 }
 function drawSeg() { document.querySelectorAll("#sfType button").forEach(b => b.classList.toggle("on", b.dataset.v === sfType)); }
 function drawCrew() { $("sfCrew").innerHTML = team.map(n => `<button type="button" class="${sfCrew.has(n) ? "on" : ""}" data-n="${esc(n)}">${esc(n)}</button>`).join(""); }
-$("sfType").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { sfType = b.dataset.v; drawSeg(); } });
+$("sfType").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { sfType = b.dataset.v; drawSeg(); if ($("shootForm").dataset.step === "3") setTimeout(() => wizNext($("shootForm")), 260); } });
 $("sfCrew").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; const n = b.dataset.n; sfCrew.has(n) ? sfCrew.delete(n) : sfCrew.add(n); drawCrew(); });
-const closeShoot = () => { $("shootScrim").hidden = true; editing = null; };
+const closeShoot = () => { sheetHide($("shootScrim")); editing = null; };
 $("sfCancel").addEventListener("click", closeShoot);
 $("shootScrim").addEventListener("click", e => { if (e.target === $("shootScrim")) closeShoot(); });
 $("shootForm").addEventListener("submit", async e => {
@@ -1376,24 +1649,26 @@ function status(t, live) {
 // Close: the chat shrinks back into that spot and 小M lands there again. ⌘K / Ctrl+K does the same; Esc closes.
 let mOpen = false, mAnim = null;
 function showM() {
-  const b = $("mBtn"); if (!b.hidden) return; b.hidden = false;
+  const b = MBTN; if (!b.hidden) return; b.hidden = false; perch();
   if (!STILL) b.animate([{ transform: "translateY(40px) scale(.6)", opacity: 0 }, { transform: "none", opacity: 1 }], { duration: 520, easing: "cubic-bezier(.34,1.4,.64,1)" });
 }
 function centerOf(el) { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height }; }
 function openM(text) {
   if (mOpen) { if (text != null) setInput(text); $("aiIn").focus(); return; }
-  mOpen = true; buzz(); status("");
+  mOpen = true; fx("open"); status(""); fanHide(true);
   if (mAnim) { mAnim.forEach(a => a.cancel()); mAnim = null; }
-  const b = $("mBtn"), p = $("mPanel"), from = centerOf(b);
+  const b = MBTN, p = $("mPanel"), from = centerOf(b);
   anchorPanel(); p.hidden = false; b.setAttribute("aria-expanded", "true"); document.body.classList.add("m-open");
   drawChat(); if (text != null) setInput(text);
   const pr = p.getBoundingClientRect(), av = centerOf($("mpAv")), cx = from.x - pr.left, cy = from.y - pr.top;
   if (mAnim) mAnim.forEach(a => a.cancel());
   if (STILL) { b.style.visibility = "hidden"; $("mpAv").style.visibility = ""; $("aiIn").focus(); return; }
   $("mpAv").style.visibility = "hidden";
-  const big = Math.hypot(Math.max(cx, pr.width - cx), Math.max(cy, pr.height - cy));
+  const big = Math.hypot(Math.max(cx, pr.width - cx), Math.max(cy, pr.height - cy)), ph = phoneW();
   mAnim = [
-    p.animate([{ clipPath: `circle(${from.w / 2}px at ${cx}px ${cy}px)` }, { clipPath: `circle(${big}px at ${cx}px ${cy}px)` }], { duration: 460, easing: "cubic-bezier(.2,.8,.2,1)" }),
+    // phone: grows out of 小M with transform + opacity only (drawn by the GPU, no repaint of the whole screen each frame)
+    ph ? p.animate([{ transform: "scale(.12)", opacity: 0, borderRadius: "40px", transformOrigin: `${cx}px ${cy}px` }, { transform: "none", opacity: 1, borderRadius: "0px", transformOrigin: `${cx}px ${cy}px` }], { duration: 420, easing: "cubic-bezier(.2,.8,.2,1)" })
+      : p.animate([{ clipPath: `circle(${from.w / 2}px at ${cx}px ${cy}px)` }, { clipPath: `circle(${big}px at ${cx}px ${cy}px)` }], { duration: 460, easing: "cubic-bezier(.2,.8,.2,1)" }),
     p.animate([{ opacity: .4 }, { opacity: 1 }], { duration: 220, easing: "ease-out" }),
     // 小M hops in an arc up into the chat's header and shrinks to the size of the avatar there
     b.animate([{ transform: "none" },
@@ -1401,12 +1676,12 @@ function openM(text) {
       { transform: `translate(${av.x - from.x}px, ${av.y - from.y}px) scale(${av.w / from.w})` }], { duration: 460, easing: "cubic-bezier(.3,.7,.3,1)" })
   ];
   mAnim[2].onfinish = () => { b.style.visibility = "hidden"; $("mpAv").style.visibility = ""; act($("mpAv"), "land", 450); };
-  setTimeout(() => $("aiIn").focus({ preventScroll: true }), 120);
+  if (!phoneW()) setTimeout(() => $("aiIn").focus({ preventScroll: true }), 120);   // phone: the keyboard comes up when you tap the box, not mid-animation
 }
 function closeM(now) {
   if (!mOpen) return;
-  mOpen = false; $("mpHist").hidden = true; $("histBtn").setAttribute("aria-expanded", "false");
-  const b = $("mBtn"), p = $("mPanel");
+  mOpen = false; fx("close"); $("mpHist").hidden = true; $("histBtn").setAttribute("aria-expanded", "false");
+  const b = MBTN, p = $("mPanel");
   b.setAttribute("aria-expanded", "false"); document.body.classList.remove("m-open");
   if (mAnim) mAnim.forEach(a => a.cancel());
   if (now || STILL || p.hidden) { p.hidden = true; b.style.visibility = ""; return; }
@@ -1414,68 +1689,344 @@ function closeM(now) {
   const big = Math.hypot(Math.max(cx, pr.width - cx), Math.max(cy, pr.height - cy));
   $("mpAv").style.visibility = "hidden";
   mAnim = [
-    p.animate([{ clipPath: `circle(${big}px at ${cx}px ${cy}px)`, opacity: 1 }, { clipPath: `circle(${to.w / 2}px at ${cx}px ${cy}px)`, opacity: .3 }], { duration: 360, easing: "cubic-bezier(.5,0,.75,0)" }),
+    phoneW() ? p.animate([{ transform: "none", opacity: 1, transformOrigin: `${cx}px ${cy}px` }, { transform: "scale(.12)", opacity: 0, borderRadius: "40px", transformOrigin: `${cx}px ${cy}px` }], { duration: 320, easing: "cubic-bezier(.5,0,.75,0)" })
+      : p.animate([{ clipPath: `circle(${big}px at ${cx}px ${cy}px)`, opacity: 1 }, { clipPath: `circle(${to.w / 2}px at ${cx}px ${cy}px)`, opacity: .3 }], { duration: 360, easing: "cubic-bezier(.5,0,.75,0)" }),
     b.animate([{ transform: `translate(${av.x - to.x}px, ${av.y - to.y}px) scale(${av.w / to.w})` },
       { transform: `translate(${(av.x - to.x) * .5}px, ${(av.y - to.y) * .5 - 30}px) scale(.8)`, offset: .5 }, { transform: "none" }], { duration: 420, easing: "cubic-bezier(.3,.7,.3,1)" })
   ];
   mAnim[0].onfinish = () => { p.hidden = true; $("mpAv").style.visibility = ""; };
-  mAnim[1].onfinish = () => act($("mSvg"), "land", 450);
+  mAnim[1].onfinish = () => { act($("mSvg"), "land", 450); perch(); };
 }
-$("mBtn").addEventListener("click", e => { if (mDragged) { mDragged = false; e.preventDefault(); return; } openM(); });
-// 小M floats: drag him anywhere, he snaps to the nearest side and stays there next time
+// Tap 小M: he does one of five little things (never the same twice in a row). Point at him (or tap, on a phone) and three
+// choices fan out beside him: Ask M (the chat), Add backup (a new job, step by step), Add calendar (a new shoot).
+const TRICKS = [["t-ha", "ok", 1500], ["t-spin", "nav", 1400], ["t-shy", "toggle", 1600], ["t-sneeze", "err", 1500], ["cheer", "pin", 1900]];
+let lastTrick = -1;
+function trick() {
+  let i; do { i = Math.floor(Math.random() * TRICKS.length); } while (i === lastTrick && TRICKS.length > 1); lastTrick = i;
+  const [name, sound, ms] = TRICKS[i]; act($("mSvg"), name, ms); fx(sound);
+}
+MBTN.addEventListener("click", e => {
+  e.preventDefault();   // he may stand inside a card that is a link: tapping him never follows it
+  if (e.detail === 0) { openM(); return; }   // keyboard: Enter / Space opens the chat as before
+  trick(); if (!matchMedia("(hover: hover)").matches) fanShow(); });
+const fan = document.createElement("div"); fan.className = "m-fan"; fan.id = "mFan"; fan.hidden = true; fan.setAttribute("role", "menu");
+fan.innerHTML = [["ask", "Ask M", '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 10h8M8 13h5"/>'],
+  ["job", "Add backup", '<path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5"/>'],
+  ["shoot", "Add calendar", '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4M12 13v4M10 15h4"/>']]
+  .map(([f, t, d], i) => `<button type="button" role="menuitem" data-f="${f}" aria-label="${t}" style="--i:${i}"><svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg></button>`).join("");
+document.body.appendChild(fan);
+let fanT = 0;
+// the three buttons open in a ring round 小M, on the side that has room (towards the middle of the screen)
+function fanShow() {
+  clearTimeout(fanT); const b = MBTN; if (mOpen || b.hidden) return;
+  const r = b.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2, R = r.width / 2 + (phoneW() ? 28 : 30);
+  const a0 = Math.atan2(innerHeight * .45 - cy, innerWidth / 2 - cx), step = phoneW() ? .78 : .74;
+  fan.style.left = cx + "px"; fan.style.top = cy + "px"; fan.sy = $("views").scrollTop;
+  fan.querySelectorAll("button").forEach((x, i) => { const a = a0 + (i - 1) * step; x.style.setProperty("--x", Math.cos(a) * R + "px"); x.style.setProperty("--y", Math.sin(a) * R + "px"); x.classList.toggle("tip-l", Math.cos(a) < -.3); });
+  if (fan.hidden) { fan.hidden = false; fan.classList.remove("in", "out"); void fan.offsetWidth; fan.classList.add("in"); }
+  if (!matchMedia("(hover: hover)").matches) fanT = setTimeout(fanHide, 4500);
+}
+function fanHide(now) { clearTimeout(fanT); if (fan.hidden) return; if (now || STILL) { fan.hidden = true; return; } fan.classList.add("out"); fanT = setTimeout(() => { fan.hidden = true; fan.classList.remove("out"); }, 200); }
+const fanLater = () => { clearTimeout(fanT); fanT = setTimeout(fanHide, 280); };
+MBTN.addEventListener("pointerenter", e => { if (e.pointerType === "mouse") fanShow(); });
+MBTN.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") fanLater(); });
+fan.addEventListener("pointerenter", () => clearTimeout(fanT));
+fan.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") fanLater(); });
+fan.addEventListener("click", e => {
+  const b = e.target.closest("[data-f]"); if (!b) return; fanHide(true);
+  if (b.dataset.f === "ask") openM();
+  else if (b.dataset.f === "job") newJob();
+  else openShoot({ dates: route.name === "calendar" && selDay ? selDay : ymd(new Date()) });
+});
+$("views").addEventListener("scroll", () => { if (Math.abs($("views").scrollTop - (fan.sy || 0)) > 8) fanHide(true); }, { passive: true });   // the circle stays put on 小M; a real scroll closes it
+document.addEventListener("pointerdown", e => { if (!fan.hidden && !fan.contains(e.target) && !MBTN.contains(e.target)) fanHide(); }, true);
+// 小M stands on the page, as on the Backup page: on the top edge of its main panel (the graph, the calendar, the Backup
+// strip, the team cards, the list, the job). When you go to another page he hops over and lands on its panel.
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-let mDragged = false, mPos = store.get("mPos", null);
 const phoneW = () => window.innerWidth < 900;
-function mBounds() {
-  const b = $("mBtn"), w = b.offsetWidth || 76, m = phoneW() ? 12 : 24;
-  return { w, m, minY: 56, maxY: window.innerHeight - w - (phoneW() ? 76 : 22) };
+const PERCH = { home: ["#monitor"], calendar: [".cal-box", true], backup: ["#bkHero"], team: ["#teamGrid"], list: ["#listRows"], job: ["#v-job .facts"], settings: ["#v-settings .card"] };
+const seat = document.createElement("div"); seat.className = "m-seat";
+// on a page of cards (Team, Drives) he has a card to stand on at a time: the one in view; scrolled out of sight, he blinks
+// to the next card, and back to the first when you go back to the top
+// stations: as you scroll, he blinks from panel to panel so he is always in view. Team and Drives are all cards (the first
+// card is his first spot); on the other pages his first spot is the page's own (PERCH), then the panels and rows below it.
+const PHONE = matchMedia("(max-width: 899px)");
+const STATIONS = { team: "#teamGrid > .tm", drives: "#listRows .drive-card" };
+const SCROLL = { calendar: "#day", backup: "#bkList .bk-row", settings: "#v-settings .card", job: "#v-job .facts ~ *, #v-job .bk-row",
+  list: "#listRows .bk-row, #listRows .drive-card, #listRows .row" };
+const stationSel = () => STATIONS[shownView === "list" ? route.name : shownView];
+function stationEls() {   // every spot on this page, in order; [0] is his first one
+  const sel = stationSel(); if (sel) return [...document.querySelectorAll(sel)].filter(e => e.offsetParent);
+  const w = PERCH[shownView], s = SCROLL[shownView]; if (!w || !s) return [];
+  const first = document.querySelector(w[0]); return [first, ...[...document.querySelectorAll(s)].filter(e => e.offsetParent && e !== first && !e.contains(first))].filter(Boolean);
 }
-function placeM() {
-  const b = $("mBtn");
-  if (!mPos) { b.style.left = b.style.top = b.style.right = b.style.bottom = ""; b.classList.remove("on-left"); return; }
-  const { w, m, minY, maxY } = mBounds();
-  b.style.right = b.style.bottom = "auto";
-  b.style.left = (mPos.side === "l" ? m : window.innerWidth - w - m) + "px";
-  b.style.top = clamp(mPos.y * window.innerHeight, minY, Math.max(minY, maxY)) + "px";
-  b.classList.toggle("on-left", mPos.side === "l");
+function perchWant() {
+  const sel = stationSel();
+  if (sel) { const els = stationEls(); if (els.length) { perch.st = clamp(perch.st || 0, 0, els.length - 1); return [els[perch.st], true, true]; } }
+  if (perch.st > 0) { const els = stationEls(); if (els[perch.st]) return [els[perch.st], true, true]; perch.st = 0; }
+  const w = PERCH[shownView]; return w && [document.querySelector(w[0]), w[1]];
 }
-// on a wide screen the chat opens on 小M's side of the screen
-function anchorPanel() {
-  const p = $("mPanel"), c = centerOf($("mBtn"));
-  if (phoneW() || !mPos) { p.style.left = p.style.right = p.style.top = p.style.bottom = ""; return; }
-  const left = c.x < window.innerWidth / 2, top = c.y < window.innerHeight / 2;
-  p.style.left = left ? "24px" : "auto"; p.style.right = left ? "auto" : "";
-  p.style.top = top ? "24px" : "auto"; p.style.bottom = top ? "auto" : "";
+function perch(from, how) {
+  const b = MBTN; if (!b.isConnected) document.body.appendChild(b);
+  if (b.hidden || mOpen) return;
+  if (b.getAnimations().some(a => a.playState === "running") && !from) return;   // mid-jump: a redraw doesn't move him
+  // a pop-up is open: he sits on its top edge
+  const sc = document.querySelector(".scrim:not([hidden])");
+  if (sc && !sc._closing) { const sh = sc.querySelector(".sheet"); seat.remove(); if (b.parentElement !== document.body) document.body.appendChild(b);
+    b.classList.remove("perched"); b.classList.add("on-sheet"); b.style.right = ""; sitOn(b, sh);
+    const to = b.getBoundingClientRect(); if (from && from.width && !STILL) hop(b, from, to, true); return; }
+  b.classList.remove("on-sheet"); b.style.left = b.style.top = "";
+  document.querySelectorAll(".m-host").forEach(e => e.classList.remove("m-host"));
+  // Home: no panel to stand on; he floats inside the graph, weightless
+  const mon = shownView === "home" && $("monitor");
+  if (mon && mon.offsetParent) { seat.remove(); b.classList.remove("perched"); b.style.right = ""; space.on(b, mon);
+    const to = b.getBoundingClientRect(); if (from && from.width && !STILL) (how === "hop" ? hop : blink)(b, from, to); return; }
+  space.off(b);
+  b.classList.remove("docked"); b.style.bottom = "";
+  // phone, scrolled down: he sits on the top edge of the tab bar at the bottom until you are back at the top
+  if (perch.dock && PHONE.matches && $("tabs").offsetParent) { seat.remove(); if (b.parentElement !== document.body) document.body.appendChild(b);
+    b.classList.remove("perched"); b.classList.add("docked"); b.style.right = "";
+    b.style.bottom = Math.round(innerHeight - $("tabs").getBoundingClientRect().top - 4) + "px";
+    const to = b.getBoundingClientRect(); if (from && from.width && !STILL && (Math.abs(from.left - to.left) > 2 || Math.abs(from.top - to.top) > 2)) (how === "hop" ? hop : blink)(b, from, to); return; }
+  const want = perchWant(), t = want && want[0];
+  const ok = t && t.offsetParent && t.getBoundingClientRect().height > 30;
+  if (ok && want[2]) t.classList.add("m-host");
+  if (ok) {
+    if (want[1]) { if (seat.parentElement !== t || t.firstChild !== seat) t.prepend(seat); seat.style.marginBottom = ""; }
+    else if (t.previousElementSibling !== seat) { t.before(seat); }
+    if (!want[1]) { const g = parseFloat(getComputedStyle(t.parentElement).rowGap) || 0; seat.style.marginBottom = -g + "px"; }
+    if (b.parentElement !== seat) seat.appendChild(b);
+    b.classList.add("perched"); fitPerch(b, !!want[1], !!want[2]);
+  } else { if (b.parentElement !== document.body) document.body.appendChild(b); b.classList.remove("perched"); b.style.right = ""; seat.remove(); }
+  // the hop: up off the old spot, an arc through the air with a motion blur that follows his speed, a squash on landing
+  const to = b.getBoundingClientRect();
+  if (from && from.width && !STILL && (Math.abs(from.left - to.left) > 2 || Math.abs(from.top - to.top) > 2)) (how === "hop" ? hop : blink)(b, from, to);
 }
-addEventListener("resize", () => { placeM(); if (mOpen) anchorPanel(); });
-(() => {
-  const b = $("mBtn"); let st = null;
-  b.addEventListener("pointerdown", e => { if (e.button || mOpen) return; const r = b.getBoundingClientRect(); st = { x: e.clientX, y: e.clientY, dx: e.clientX - r.left, dy: e.clientY - r.top, on: false, id: e.pointerId }; });
-  b.addEventListener("pointermove", e => {
-    if (!st || e.pointerId !== st.id) return;
-    if (!st.on) { if (Math.hypot(e.clientX - st.x, e.clientY - st.y) < 7) return; st.on = true; b.setPointerCapture(e.pointerId); b.classList.add("dragging", "walk"); }
-    const { w } = mBounds();
-    b.style.right = b.style.bottom = "auto";
-    b.style.left = clamp(e.clientX - st.dx, 0, window.innerWidth - w) + "px";
-    b.style.top = clamp(e.clientY - st.dy, 0, window.innerHeight - w) + "px";
-  });
-  const end = e => {
-    if (!st || e.pointerId !== st.id) return;
-    const was = st.on; st = null; if (!was) return;
-    mDragged = true; setTimeout(() => { mDragged = false; }, 400);
-    b.classList.remove("dragging", "walk");
-    const r = b.getBoundingClientRect(), side = r.left + r.width / 2 < window.innerWidth / 2 ? "l" : "r";
-    mPos = { side, y: r.top / window.innerHeight }; store.set("mPos", mPos);
-    placeM(); buzz();
-    const t = b.getBoundingClientRect();
-    if (!STILL) b.animate([{ transform: `translate(${r.left - t.left}px, ${r.top - t.top}px)` }, { transform: "none" }], { duration: 480, easing: "cubic-bezier(.34,1.45,.64,1)" });
-    act($("mSvg"), "land", 450);
+// 小M in space (Home). He drifts where he rests, slowly turning, as if there were no up or down. Turn the graph and the
+// turning sweeps him along; he swims back against it to the front of the screen, coming closer (bigger) as he does,
+// leaning into each stroke. Let go and he drifts back to his spot. Moves only through translate / rotate / scale, so the
+// jump-in and blink animations (which use transform) still play on top.
+const space = (() => {
+  let b = null, mon = null, raf = 0, last = 0, W = 0, H = 0, front = { x: 0, y: 0 };
+  // z is depth: 0 = right in front of you (big), 1 = far back in the graph (small, behind its dots)
+  const p = { x: 0, y: 0 }, v = { x: 0, y: 0 }; let z = .6, vz = 0, rot = 0, vr = 0, face = 1, ptr = null, sw = false, zi = "";
+  const NEAR = 1.12, FAR = .38, scOf = z => NEAR + (FAR - NEAR) * z;
+  const size = () => { const r = mon.getBoundingClientRect(); W = r.width; H = r.height; const w = b.offsetWidth;
+    front = { x: W * (W < 600 ? .66 : .7) - w / 2, y: H * .58 - w / 2 }; };
+  const down = e => { if (e.target.closest(".mbtn, button, a")) return; ptr = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() }; };
+  // turning the graph throws him: along the turn and back into the scene, harder the faster you swipe; he tumbles as he goes
+  const move = e => { if (!ptr || e.pointerId !== ptr.id) return; const now = performance.now(), dx = e.clientX - ptr.x, dy = e.clientY - ptr.y, dt = Math.max(8, now - ptr.t) / 1000;
+    ptr.x = e.clientX; ptr.y = e.clientY; ptr.t = now; const sp = Math.hypot(dx, dy) / dt;
+    v.x += dx * 1.1; v.y += dy * .7; vz += Math.min(3, sp / 900) * .5; vr += dx * .9; };
+  const up = e => { if (ptr && e.pointerId === ptr.id) ptr = null; };
+  const ro = window.ResizeObserver ? new ResizeObserver(() => b && size()) : null;
+  function tick(now) {
+    raf = requestAnimationFrame(tick); const dt = Math.min(.05, (now - (last || now)) / 1000); last = now; if (!dt) return;
+    if (b.getAnimations().some(a => a.playState === "running")) return;   // let a blink finish first
+    const t = now / 1000, w = b.offsetWidth;
+    // left alone he works his way to the front, in strokes; once there he just drifts, weightless
+    const tx = front.x + Math.sin(t * .31) * 10 + Math.sin(t * .17 + 1) * 6, ty = front.y + Math.sin(t * .23 + 2) * 12;
+    const ax = tx - p.x, ay = ty - p.y, d = Math.hypot(ax, ay) || 1, far = z > .12 || d > 30;
+    const stroke = .45 + .55 * Math.max(0, Math.sin(t * 8));
+    if (!ptr && far) { const f = Math.min(1, d / 50) * 520 * stroke; v.x += ax / d * f * dt; v.y += ay / d * f * dt; vz -= (z > .02 ? .9 * stroke : 0) * dt; }
+    else if (!ptr) { v.x += ax * 1.1 * dt; v.y += ay * 1.1 * dt; vz += (0 - z) * 1.5 * dt; }
+    const damp = Math.pow(.3, dt); v.x *= damp; v.y *= damp; vz *= Math.pow(.25, dt); vr *= Math.pow(.2, dt);
+    p.x += v.x * dt; p.y += v.y * dt; z = Math.max(0, Math.min(1, z + vz * dt)); if (z === 1 || z === 0) vz *= -.3;
+    // soft walls: he bumps off the edges of the screen instead of leaving it
+    const sc = scOf(z), half = w * sc / 2, cx = w / 2, mx = W - cx - half * .6, my = H - cx - half * .6, nx = half * .6 - cx, ny = half * .6 - cx;
+    if (p.x < nx) { p.x = nx; v.x = Math.abs(v.x) * .5; } if (p.x > mx) { p.x = mx; v.x = -Math.abs(v.x) * .5; }
+    if (p.y < ny) { p.y = ny; v.y = Math.abs(v.y) * .5; } if (p.y > my) { p.y = my; v.y = -Math.abs(v.y) * .5; }
+    const speed = Math.hypot(v.x, v.y), swim = !ptr && far && (speed > 25 || vz < -.05);
+    if (swim !== sw) { sw = swim; b.classList.toggle("swim", swim); }
+    if (Math.abs(v.x) > 40) face = v.x < 0 ? -1 : 1;
+    const lean = swim ? Math.max(-50, Math.min(50, (v.x / (speed || 1)) * 45)) : Math.sin(t * .4) * 9;
+    rot += vr * dt;   // a hard swipe sets him spinning
+    const settle = ((rot % 360) + 540) % 360 - 180; rot -= (settle - lean) * Math.min(1, dt * (Math.abs(vr) > 60 ? .4 : 2.2));
+    // far back he slips behind the graph's dots
+    const nz = z > .55 ? "0" : ""; if (nz !== zi) { zi = nz; b.style.zIndex = nz; }
+    b.style.translate = p.x.toFixed(1) + "px " + p.y.toFixed(1) + "px"; b.style.rotate = rot.toFixed(2) + "deg";
+    b.style.scale = (swim ? face : 1) * sc + " " + sc; b.style.opacity = (1 - z * .35).toFixed(3);
+  }
+  return {
+    on(el, m) {
+      if (b === el && mon === m && el.classList.contains("space")) return;
+      b = el; mon = m; if (b.parentElement !== mon) mon.appendChild(b); b.classList.add("space"); size();
+      p.x = front.x; p.y = front.y; v.x = v.y = 0; z = .25; vz = 0; rot = 0; vr = 0; ptr = null; zi = "";
+      b.style.translate = p.x + "px " + p.y + "px"; b.style.rotate = "0deg"; b.style.scale = String(scOf(z));
+      mon.addEventListener("pointerdown", down); addEventListener("pointermove", move, { passive: true }); addEventListener("pointerup", up); addEventListener("pointercancel", up);
+      if (ro) ro.observe(mon);
+      if (!STILL && !raf) { last = 0; raf = requestAnimationFrame(tick); }
+    },
+    off(el) {
+      if (!b) return; cancelAnimationFrame(raf); raf = 0; if (ro) ro.disconnect();
+      mon.removeEventListener("pointerdown", down); removeEventListener("pointermove", move); removeEventListener("pointerup", up); removeEventListener("pointercancel", up);
+      el.classList.remove("space", "swim"); el.style.translate = el.style.rotate = el.style.scale = el.style.zIndex = el.style.opacity = ""; sw = false; b = null;
+    }
   };
-  b.addEventListener("pointerup", end); b.addEventListener("pointercancel", end);
-  b.addEventListener("dblclick", e => e.preventDefault());
-  placeM();
 })();
+document.addEventListener("visibilitychange", () => { const b = MBTN; if (b.classList.contains("space")) { if (document.hidden) space.off(b); else perch(); } });
+// sitting on a pop-up's top edge, at its right; he follows the edge as the pop-up grows or the keyboard moves it
+let sitRO = null;
+function sitOn(b, sh) {
+  const put = () => { if (!b.classList.contains("on-sheet")) return; const r = sh.getBoundingClientRect(), w = b.offsetWidth;
+    b.style.left = Math.round(Math.min(innerWidth - w - 8, r.right - w - 22)) + "px"; b.style.top = Math.round(r.top - w * .72) + "px"; };
+  put(); if (sitRO) sitRO.disconnect(); if (window.ResizeObserver) { sitRO = new ResizeObserver(put); sitRO.observe(sh); }
+  if (window.visualViewport && !sitOn.vv) { sitOn.vv = true; visualViewport.addEventListener("resize", () => { const s = document.querySelector(".scrim:not([hidden]) > .sheet"); if (s && b.classList.contains("on-sheet")) sitOn(b, s); }); }
+}
+// on Team / Drives: when his card is almost out of sight he blinks to the next card in view; quickly back at the top, to the first
+let stT = 0, lastY = 0;
+$("views").addEventListener("scroll", () => { if (stT || shownView === "home") return; stT = requestAnimationFrame(() => { stT = 0;
+  const b = MBTN; if (b.hidden || mOpen || b.getAnimations().some(a => a.playState === "running")) return;
+  if (PHONE.matches) {   // phone: scroll down and he blinks onto the tab bar; back at the top, onto the page again
+    const y = $("views").scrollTop, dn = y > lastY; lastY = y;
+    if (y < 40 && perch.dock) { perch.dock = false; perch.st = 0; perch(b.getBoundingClientRect()); }
+    else if (y > 80 && dn && !perch.dock && b.classList.contains("perched")) { perch.dock = true; perch(b.getBoundingClientRect()); }
+    return; }
+  if (!b.classList.contains("perched")) return;
+  const els = stationEls(); if (els.length < 2) return;
+  const vr = $("views").getBoundingClientRect(), br = b.getBoundingClientRect(), cur = Math.min(perch.st || 0, els.length - 1);
+  let next = cur;
+  if ($("views").scrollTop < 40) next = 0;
+  else if (br.bottom < vr.top + 26 || br.top > vr.bottom - 20) {   // gone from sight: the first spot whose top edge is in view
+    const i = els.findIndex(e => { const t = e.getBoundingClientRect().top; return t > vr.top + 70 && t < vr.bottom - 90; });
+    next = i < 0 ? cur : i; }
+  if (next !== cur && Math.abs(els[next].getBoundingClientRect().top - els[cur].getBoundingClientRect().top) > 4) { perch.st = next; perch(br); }
+}); }, { passive: true });
+// where on the panel's edge he stands: clear of buttons and tabs right above it (tries spots from the right towards the left),
+// and with room above him inside the scrolling page so his head is never cut off
+function fitPerch(b, inside, station) {
+  seat.style.height = ""; b.style.right = ""; if (fitPerch.pushed) { fitPerch.pushed.style.marginTop = fitPerch.pushed.style.paddingTop = ""; fitPerch.pushed = null; }
+  if (station) {   // a card of his own: he stands at its right end; the first card gets room above it so his head isn't cut off
+    // on a job row he stands over the quiet middle, clear of the row above's tags, drive and Back up
+    // on a job row he looks along its top edge for the spot that hides least of the row above (its name, tags, drive, Back up)
+    const host = seat.parentElement;
+    if (host.matches(".bk-row, .row")) {
+      const prev = host.previousElementSibling, hr = host.getBoundingClientRect();
+      const things = prev && !prev.classList.contains("bk-th") ? [...prev.querySelectorAll("b, .mr, .md, .bk-drv > *, .bk-more, .bk-when, .bk-no, .bk-parts li, span, a, button")].filter(x => x.offsetParent && !x.children.length || x.matches("button, a, .md"))
+        .map(x => x.getBoundingClientRect()).filter(q => q.width && q.bottom > hr.top - b.offsetHeight) : [];
+      const cover = () => { const r = b.getBoundingClientRect(), L = r.left + 8, R = r.right - 8, T = r.top + 6, B = r.bottom - 4;
+        return things.reduce((a, q) => a + Math.max(0, Math.min(R, q.right) - Math.max(L, q.left)) * Math.max(0, Math.min(B, q.bottom) - Math.max(T, q.top)), 0); };
+      let best = 8, least = Infinity;
+      for (let c = 8; c < hr.width - b.offsetWidth - 4; c += 10) { b.style.right = c + "px"; const k = cover(); if (k < least - 1) { least = k; best = c; } if (!k) break; }
+      b.style.right = best + "px";
+    }
+    const views = $("views"), top = b.getBoundingClientRect().top - views.getBoundingClientRect().top + views.scrollTop;
+    if (top < 6) { const g = seat.parentElement.parentElement; g.style.paddingTop = (6 - top) + "px"; fitPerch.pushed = g; }
+    return; }
+  const views = $("views"), vr = views.getBoundingClientRect(), host = seat.parentElement, hr = host.getBoundingClientRect();
+  // stand over the panel's own content: on a wide grid (team cards) that is the right end of its first row, not the empty space
+  let edge = hr.right;
+  if (!inside && want1Row(seat.nextElementSibling)) { const kids = [...seat.nextElementSibling.children].filter(k => k.offsetParent);
+    if (kids.length) { const top = kids[0].getBoundingClientRect().top; edge = Math.max(...kids.filter(k => Math.abs(k.getBoundingClientRect().top - top) < 4).map(k => k.getBoundingClientRect().right)); } }
+  const base = (parseFloat(getComputedStyle(b).right) || 10) + Math.max(0, hr.right - edge);
+  // things he must not stand on: buttons, tabs, fields and headings of this page (by their boxes, so it works mid page-change too)
+  const page = document.querySelector("#v-" + shownView) || document.body;
+  const edgeTop = (inside ? host : seat.nextElementSibling || host).getBoundingClientRect().top;   // what he stands on is below his feet: only what is above the edge counts
+  const lines = el => { const r = document.createRange(); r.selectNodeContents(el); return [...r.getClientRects()]; };
+  const things = [...page.querySelectorAll("button, a[href], input, select, textarea, [role=tab], .btn, .fchip")].filter(x => !b.contains(x) && x.offsetParent).map(x => x.getBoundingClientRect())
+    .concat([...page.querySelectorAll("h1, h2, h3, p, .lead")].filter(x => !b.contains(x) && x.offsetParent).flatMap(lines)).filter(q => q.top < edgeTop - 2);
+  const busy = () => { const r = b.getBoundingClientRect(), L = r.left + 6, R = r.right - 6, T = r.top, B = r.bottom - 4;
+    return things.some(q => q.width && q.left < R && q.right > L && q.top < B && q.bottom > T); };
+  let pick = null;
+  for (let c = base; c < hr.width - b.offsetWidth - 4; c += 14) { b.style.right = c + "px"; if (!busy()) { pick = c; break; } }
+  b.style.right = (pick == null ? base : pick) + "px";
+  // nowhere free along the edge (a full row of buttons right above it): open a gap above the panel just tall enough for him
+  let push = 0;
+  if (pick == null) { const r = b.getBoundingClientRect(); push = Math.max(0, ...things.filter(q => q.left < r.right - 6 && q.right > r.left + 6 && q.top < r.bottom).map(q => q.bottom - r.top + 4)); }
+  if (!inside) { const top = b.getBoundingClientRect().top - vr.top + views.scrollTop; push = Math.max(push, 6 - top); }
+  if (push > 0) { if (inside) { host.style.marginTop = push + "px"; fitPerch.pushed = host; } else seat.style.height = push + "px"; }
+}
+const want1Row = el => el && /grid|flex/.test(getComputedStyle(el).display) && el.children.length > 1;
+// 闪现, the blink: at the old spot he jumps, spins and bursts into paper letters and is gone; at the new spot paper letters
+// burst, he springs out of them and lands with a bounce. The old spot is played by a copy of him, so the page never waits.
+function blink(b, from, to) {
+  const ghost = b.cloneNode(true); ghost.removeAttribute("id"); ghost.querySelectorAll("[id]").forEach(e => e.removeAttribute("id"));
+  ghost.className = "mbtn m-ghost"; ghost.setAttribute("aria-hidden", "true"); ghost.tabIndex = -1;
+  Object.assign(ghost.style, { position: "fixed", left: from.left + "px", top: from.top + "px", width: from.width + "px", height: from.height + "px", right: "auto", bottom: "auto", margin: 0, zIndex: 40, pointerEvents: "none", viewTransitionName: "none" });
+  document.body.appendChild(ghost);
+  ghost.animate([
+    { transform: "none" },
+    { transform: "translateY(4px) scale(1.12, .86)", offset: .14 },
+    { transform: "translateY(-34px) scale(.92, 1.1) rotate(0)", offset: .42 },
+    { transform: "translateY(-40px) scale(.6) rotate(320deg)", opacity: 1, offset: .74 },
+    { transform: "translateY(-42px) scale(0) rotate(540deg)", opacity: 0 }
+  ], { duration: 520, easing: "cubic-bezier(.3,.6,.4,1)", fill: "forwards" }).onfinish = () => ghost.remove();
+  setTimeout(() => paperBurst(from.left + from.width / 2, from.top + from.height / 2 - 38), 360);
+  // the new spot: a burst, then he springs out and lands
+  const IN = 470;
+  b.animate([{ opacity: 0 }, { opacity: 0 }], { duration: IN, fill: "backwards" });
+  setTimeout(() => { const r = b.getBoundingClientRect(); paperBurst(r.left + r.width / 2, r.top + r.height / 2 - 10, true); }, IN - 120);
+  b.animate([
+    { transform: "translateY(-46px) scale(0) rotate(-200deg)", opacity: 0 },
+    { transform: "translateY(-58px) scale(1.08, 1.12) rotate(0)", opacity: 1, offset: .38 },
+    { transform: "translateY(0) scale(1.24, .76)", offset: .66 },
+    { transform: "translateY(-12px) scale(.94, 1.08)", offset: .8 },
+    { transform: "translateY(0) scale(1.06, .95)", offset: .92 },
+    { transform: "none", opacity: 1 }
+  ], { duration: 640, delay: IN, easing: "cubic-bezier(.3,.7,.3,1)", fill: "backwards" }).onfinish = () => { act($("mSvg"), "land", 450); fx("drag"); };
+  fx("pin");
+}
+// shredded paper: torn scraps of every shape, thrown out (or sucked in), then fluttering down and turning over as they fall
+const SHRED = ["polygon(0 8%,100% 0,92% 100%,6% 88%)", "polygon(10% 0,100% 18%,80% 100%,0 70%)", "polygon(0 0,100% 30%,70% 100%)", "polygon(0 20%,60% 0,100% 60%,40% 100%)",
+  "polygon(0 0,100% 0,100% 40%,85% 55%,100% 70%,100% 100%,0 100%)", "polygon(5% 10%,95% 0,100% 90%,0 100%)"];
+function paperBurst(x, y, inward) {
+  const wrap = document.createElement("div"); wrap.className = "paper-burst"; wrap.style.left = x + "px"; wrap.style.top = y + "px"; document.body.appendChild(wrap);
+  const n = 30;
+  for (let i = 0; i < n; i++) {
+    const p = document.createElement("i"), a = (i / n) * Math.PI * 2 + Math.random() * .5, d = 26 + Math.random() * 62;
+    const w = 3 + Math.random() * 8, h = w * (.6 + Math.random() * 1.8);   // strips and flakes
+    p.className = "pb" + (i % 4 === 0 ? " o" : i % 5 === 0 ? " g" : "");
+    p.style.cssText = `width:${w.toFixed(1)}px;height:${h.toFixed(1)}px;margin:${(-h / 2).toFixed(1)}px 0 0 ${(-w / 2).toFixed(1)}px;clip-path:${SHRED[i % SHRED.length]}`;
+    wrap.appendChild(p);
+    const dx = Math.cos(a) * d, dy = Math.sin(a) * d * .8 - 18, r = (Math.random() - .5) * 720, fl = 360 + Math.random() * 540, fall = 40 + Math.random() * 40, sway = (Math.random() - .5) * 30;
+    const k = inward ? [[dx * 1.3, dy * 1.3], [0, 0]] : [[0, 0], [dx, dy]];
+    p.animate([
+      { transform: `translate(${k[0][0]}px, ${k[0][1]}px) rotate(0) rotateX(0) scale(${inward ? .7 : .4})`, opacity: inward ? 0 : 1 },
+      { transform: `translate(${k[1][0]}px, ${k[1][1]}px) rotate(${r * .5}deg) rotateX(${fl * .3}deg) scale(1)`, opacity: 1, offset: .35 },
+      { transform: `translate(${k[1][0] + sway}px, ${k[1][1] + fall * .5}px) rotate(${r * .8}deg) rotateX(${fl * .65}deg) rotateY(90deg) scale(1)`, opacity: 1, offset: .65 },
+      { transform: `translate(${k[1][0] - sway * .5}px, ${k[1][1] + fall}px) rotate(${r}deg) rotateX(${fl}deg) rotateY(180deg) scale(.9)`, opacity: 0 }
+    ], { duration: 900 + Math.random() * 400, easing: "cubic-bezier(.15,.7,.35,1)", fill: "forwards" });
+  }
+  setTimeout(() => wrap.remove(), 1400);
+}
+function hop(b, from, to) {
+  const dx = from.left - to.left, dy = from.top - to.top, up = Math.min(-70, Math.min(dy, 0) - 60), tilt = dx > 0 ? -10 : 10;
+  const k = Math.min(1.6, Math.hypot(dx, dy) / 260 + .5);   // longer jumps blur and stretch a little more
+  b.animate([
+    { transform: `translate(${dx}px, ${dy}px) scale(1.08, .88)`, filter: "blur(0)", offset: 0 },
+    { transform: `translate(${dx}px, ${dy - 8}px) scale(.9, 1.14)`, filter: `blur(${.6 * k}px)`, offset: .12 },
+    { transform: `translate(${dx * .5}px, ${dy * .55 + up}px) rotate(${tilt}deg) scale(.94, 1.08)`, filter: `blur(${1.8 * k}px)`, offset: .48 },
+    { transform: `translate(${dx * .08}px, ${dy * .1 - 18}px) rotate(${-tilt * .3}deg) scale(.92, 1.12)`, filter: `blur(${1.1 * k}px)`, offset: .82 },
+    { transform: "translate(0, 0) scale(1.16, .84)", filter: "blur(0)", offset: .92 },
+    { transform: "none", filter: "blur(0)", offset: 1 }
+  ], { duration: 640, easing: "cubic-bezier(.33,.0,.25,1)" }).onfinish = () => { act($("mSvg"), "land", 450); fx("drag"); };
+}
+// on a wide screen the chat opens on 小M's side of the screen, or where you last dragged it (by its top bar)
+let mpPos = store.get("mpPos", null);
+function anchorPanel() {
+  const p = $("mPanel");
+  if (!phoneW() && mpPos) { const w = p.offsetWidth || 420, h = p.offsetHeight || 600;
+    p.style.right = p.style.bottom = "auto"; p.style.left = clamp(mpPos.x * innerWidth, 8, Math.max(8, innerWidth - w - 8)) + "px"; p.style.top = clamp(mpPos.y * innerHeight, 8, Math.max(8, innerHeight - h - 8)) + "px"; return; }
+  p.style.left = p.style.right = p.style.top = p.style.bottom = "";
+}
+addEventListener("resize", () => { if (mOpen) anchorPanel(); });
+MBTN.addEventListener("dblclick", e => e.preventDefault());
 $("mClose").addEventListener("click", () => closeM());
+(() => {
+  const p = $("mPanel"), h = p.querySelector(".mp-head"); let st = null;
+  h.addEventListener("pointerdown", e => { if (phoneW() || e.button || e.target.closest("input")) return; const r = p.getBoundingClientRect(); st = { dx: e.clientX - r.left, dy: e.clientY - r.top, id: e.pointerId, on: false, x: e.clientX, y: e.clientY }; });
+  h.addEventListener("pointermove", e => {
+    if (!st || e.pointerId !== st.id) return;
+    if (!st.on) { if (Math.hypot(e.clientX - st.x, e.clientY - st.y) < 4) return; st.on = true; h.setPointerCapture(e.pointerId); p.classList.add("moving"); if (mAnim) mAnim.forEach(a => a.finish()); }
+    p.style.right = p.style.bottom = "auto";
+    p.style.left = clamp(e.clientX - st.dx, 8, innerWidth - p.offsetWidth - 8) + "px"; p.style.top = clamp(e.clientY - st.dy, 8, innerHeight - p.offsetHeight - 8) + "px";
+  });
+  const end = e => { if (!st || e.pointerId !== st.id) return; const was = st.on; st = null; if (!was) return; p.classList.remove("moving");
+    h._moved = true; setTimeout(() => { h._moved = false; }, 300); const r = p.getBoundingClientRect(); mpPos = { x: r.left / innerWidth, y: r.top / innerHeight }; store.set("mpPos", mpPos); fx("drag"); };
+  h.addEventListener("pointerup", end); h.addEventListener("pointercancel", end);
+  h.addEventListener("click", e => { if (h._moved) { h._moved = false; e.stopPropagation(); e.preventDefault(); } }, true);   // a drag that started on a button doesn't press it
+  h.addEventListener("dblclick", e => { if (e.target.closest("button")) return; mpPos = null; store.set("mpPos", null); anchorPanel(); });   // double-click the bar: back to its usual place
+})();
 document.addEventListener("keydown", e => {
   if (!session) return;
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); mOpen ? closeM() : openM(); return; }
@@ -1483,7 +2034,7 @@ document.addEventListener("keydown", e => {
     if (!$("jobScrim").hidden) { if (!$("jfCfm").hidden) $("jfCfmNo").click(); else closeJob(); return; }
     if (!$("chkScrim").hidden) { closeChk(); return; }
     if (!$("shootScrim").hidden) { closeShoot(); return; }
-    if (mOpen) { closeM(); $("mBtn").focus(); return; }
+    if (mOpen) { closeM(); MBTN.focus(); return; }
     if (graph && graph.pinned) graph.pin(null);
   }
 });
@@ -1496,7 +2047,7 @@ function drawHits() {
   hits = [];
   if (q.length >= 2 && !/^add a shoot/i.test(q)) {
     const has = s => String(s || "").toLowerCase().includes(lq);
-    yearsAll().reverse().flatMap(drivesIn).filter(d => has(d.name)).slice(0, 3).forEach(d => hits.push({ kind: "drive", label: d.name, sub: `${d.n} jobs${d.un ? ", " + d.un + " not backed up" : ""}`, href: "#/drive/" + encodeURIComponent(d.name) }));
+    yearsAll().reverse().flatMap(drivesIn).filter(d => has(d.name)).slice(0, 3).forEach(d => hits.push({ kind: "drive", label: dName(d.name), sub: `${d.n} jobs${d.un ? ", " + d.un + " not backed up" : ""}`, href: "#/drive/" + encodeURIComponent(d.name) }));
     team.filter(has).forEach(n => hits.push({ kind: "editor", label: n, sub: "Editor", href: "#/editor/" + encodeURIComponent(n) }));
     findJobs(q, 5).forEach(r => hits.push({ kind: unbacked(r) ? "no" : "ok", label: r.name + (isPhotoSec(sectionOf(r)) ? " · Photo" : ""), sub: [r.drive, r.editor, fmtShort(r.date)].filter(Boolean).join(", "), href: "#/job/" + encodeURIComponent(r.id) }));
     shoots.filter(s => has(s.name) || has(s.location)).slice(0, 2).forEach(s => hits.push({ kind: "shoot", label: s.name, sub: datesOf(s).map(fmtDay).join(", "), href: "#/calendar/" + encodeURIComponent(datesOf(s)[0] || "") }));
@@ -1505,7 +2056,7 @@ function drawHits() {
   hitI = -1;
   const h = $("hits");
   h.innerHTML = hits.map((x, i) => `<a class="hit" href="${esc(x.href)}" data-i="${i}" role="option"><span class="hub ${x.kind === "drive" ? "drive" : x.kind === "editor" ? "ed" : x.kind === "no" ? "red" : x.kind === "ok" ? "green" : "hollow"}">${x.kind === "editor" ? esc(initials(x.label)) : ""}</span><b>${esc(x.label)}</b><small>${esc(x.sub)}</small></a>`).join("")
-    + (hits.length ? `<p class="hits-foot">Enter asks M · ↑↓ picks a match</p>` : "");
+    + (hits.length ? `<p class="hits-foot">Enter asks M. ↑↓ picks a match.</p>` : "");
   h.hidden = !hits.length;
 }
 function markHit() { [...$("hits").querySelectorAll(".hit")].forEach((a, i) => a.classList.toggle("sel", i === hitI)); }
@@ -1545,6 +2096,7 @@ function fillBot(d, m, i, live) {
     b.children[1].onclick = () => openShoot({ dates: ymd(new Date()) }); box.appendChild(b); }
 }
 async function ask(text) {
+  fx("send");
   if (rec) { const r = rec; rec = null; r.onend = null; r.abort(); $("micBtn").classList.remove("on"); }
   if (streaming) return;
   $("hits").hidden = true;
@@ -1701,15 +2253,23 @@ function drawFest(s) {
   s = s || festStatus(); const t = s && s.theme, el = $("festNow"); if (!el) return;
   el.textContent = (simDate() ? "Pretending today is " + s.date + ". " : "") + (!t ? "No festival coming up in the next 14 days." : t.daysLeft ? t.en + " in " + t.daysLeft + " day" + (t.daysLeft > 1 ? "s" : "") + "." : "Today: " + t.en + "!");
   $("simDate").value = simDate();
-  const on = !(window.XiaoMSfx && XiaoMSfx.muted);
-  document.querySelectorAll("#sfxSeg button").forEach(b => b.classList.toggle("on", (b.dataset.s === "on") === on));
 }
-$("sfxSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (b && window.XiaoMSfx) { XiaoMSfx.muted = b.dataset.s === "off"; drawFest(); } });
 $("simDate").addEventListener("change", e => { store.set("mSimDate", e.target.value || ""); festKey = festKeyNow(); scenes(true, true); });
 $("simClear").addEventListener("click", () => { store.set("mSimDate", ""); festKey = festKeyNow(); scenes(true); });
 $("festReplay").addEventListener("click", () => scenes(true, true));
 
 // ---------------------------------------------------------------- settings
+function drawFx() {
+  const F = window.UIFx; if (!F) return;
+  const on = (id, v) => document.querySelectorAll(`#${id} button`).forEach(b => b.classList.toggle("on", b.dataset.v === (v ? "1" : "0")));
+  on("sndSeg", F.sound()); on("hapSeg", F.haptics());
+  $("hapSeg").hidden = $("hapLbl").hidden = !F.canFeel;
+}
+["sndSeg", "hapSeg"].forEach(id => $(id).addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b || !window.UIFx) return; const v = b.dataset.v === "1";
+  if (id === "sndSeg") UIFx.sound(v); else UIFx.haptics(v);
+  drawFx(); if (v) UIFx(id === "sndSeg" ? "ok" : "toggle");
+}));
 function drawTheme() { const t = document.documentElement.getAttribute("data-theme"); document.querySelectorAll("#themeSeg button").forEach(b => b.classList.toggle("on", b.dataset.t === t)); }
 $("themeSeg").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
@@ -1760,7 +2320,7 @@ $("demoBday").addEventListener("click", () => {
   try { localStorage.removeItem("bdaySeen"); localStorage.removeItem("xiaom-celebrated"); } catch (e) {}
   location.hash = "#/home"; refresh();   // the new birthday changes festKey, so refresh plays it once
 });
-$("ver").textContent = "Studio M Workspace v" + APP_VER + (DEMO ? " · demo" : "");
+$("ver").textContent = "Studio M Workspace v" + APP_VER + (DEMO ? " (demo)" : "");
 
 // ---------------------------------------------------------------- 小M's hooks for the Classic Backup page and the scenes layer
 // The Backup page's own 小M is hidden; its moods and moves (worried about unbacked jobs, hops, shrugs…) show on this one,
@@ -1774,7 +2334,7 @@ const Pet = {
     m._mir = list.filter(c => MIR.includes(c)); m._mir.forEach(c => m.classList.add(c));
   },
   wear(html) { const m = $("mSvg").querySelector(".m25"), keep = m && m._mir; $("mSvg").innerHTML = html; if (keep) this.mirror(keep); },
-  show(on) { if (on) showM(); else $("mBtn").hidden = true; },
+  show(on) { if (on) showM(); else MBTN.hidden = true; },
   typeAt() {}, stopTyping() {}, down() {}, perchOn() {}
 };
 window.Pet = Pet;
@@ -1794,11 +2354,11 @@ function halo() {
   const probe = mk(0, 0); document.body.appendChild(svg);
   const P = probe.getTotalLength();
   // where 小M is (its centre, pushed to the nearest edge); bottom right when it's hidden
-  const b = $("mBtn"), br = !b.hidden && b.getBoundingClientRect(), cx = br ? br.left + br.width / 2 : W - 60, cy = br ? br.top + br.height / 2 : H - 60;
+  const b = MBTN, br = !b.hidden && b.getBoundingClientRect(), cx = br ? br.left + br.width / 2 : W - 60, cy = br ? br.top + br.height / 2 : H - 60;
   let s0 = 0, best = Infinity;
   for (let i = 0; i < 240; i++) { const t = (i / 240) * P, q = probe.getPointAtLength(t), dd = (q.x - cx) ** 2 + (q.y - cy) ** 2; if (dd < best) { best = dd; s0 = t; } }
   const opp = probe.getPointAtLength((s0 + P / 2) % P); probe.remove();
-  haloOn = true; mood("happy");
+  haloOn = true; mood("happy"); fx("ok");
   if (STILL) {   // reduced motion: the edge lights once, nothing travels
     const pa = mk(2, 0); pa.animate([{ opacity: 0 }, { opacity: .9 }, { opacity: 0 }], { duration: 700 }).onfinish = () => { svg.remove(); haloOn = false; };
     return;
@@ -1839,7 +2399,19 @@ addEventListener("resize", () => { if (session) markNav(); });
 function themeBar() { const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = document.documentElement.getAttribute("data-theme") === "light" ? "#ffffff" : "#0e0e0e"; }
 // the phone app's offline shell (not inside the Mac app, which has its files already)
 if ("serviceWorker" in navigator && !window.__TAURI__ && (location.protocol === "https:" || /^(localhost|127\.0\.0\.1)$/.test(location.hostname)))
-  addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+  addEventListener("load", () => navigator.serviceWorker.register("sw.js").then(reg => {
+    // a new version: it takes over as soon as it's downloaded, and the app reloads into it unless you're in the middle of something
+    let had = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (!had) { had = true; return; }
+      const busy = !$("jobScrim").hidden || !$("shootScrim").hidden || (mOpen && $("aiIn").value.trim());
+      // reloading in front of you is a white flash: right at start (still on the loading screen) it's fine; later it waits
+      // until the app goes to the background, and the next time you open it it is the new version
+      if (busy || performance.now() > 4000) { addEventListener("visibilitychange", () => { if (document.hidden) location.reload(); }); if (busy) toast("A new version is ready. It opens next time."); }
+      else location.reload();
+    });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) reg.update().catch(() => {}); });   // back from the background: look for one
+  }).catch(() => {}));
 drawTheme(); themeBar(); drawAI(); drawVoice();
 // Studio M loading: the beam sweeps the logo, it breathes out, then the PIN screen
 lock();

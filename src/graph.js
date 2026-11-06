@@ -370,7 +370,7 @@
       else if (type === "hover") opt.onHover && opt.onHover(nodeOf(value));
       else if (type === "open") opt.onOpen && opt.onOpen(nodeOf(value));
       else if (type === "cursor") canvas.style.cursor = value;
-      else if (type === "buzz") { if (navigator.vibrate) try { navigator.vibrate(6); } catch (e) {} }
+      else if (type === "buzz") { if (window.UIFx) UIFx("pin"); else if (navigator.vibrate) try { navigator.vibrate(6); } catch (e) {} }
     }
     const src = document.currentScript && document.currentScript.src || "graph.js";
     try {

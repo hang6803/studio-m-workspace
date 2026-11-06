@@ -2,7 +2,7 @@
 // the data API (another server) is never cached here: the app keeps its own copy of the last data it loaded.
 const VER = "__M_VER__";
 const CACHE = "studio-m-" + VER;
-const SHELL = ["./", "index.html", "app.css", "app.js", "graph.js", "xiaom.js", "festivals.js", "festival-theme.js", "celebrate.js", "sfx.js", "backup.html", "manifest.webmanifest",
+const SHELL = ["./", "index.html", "app.css", "app.js", "fx.js", "graph.js", "xiaom.js", "festivals.js", "festival-theme.js", "celebrate.js", "sfx.js", "backup.html", "manifest.webmanifest",
   "assets/cg-400.woff", "assets/cg-700.woff", "assets/logo-d.png", "assets/logo-l.png",
   "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });

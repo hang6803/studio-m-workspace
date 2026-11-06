@@ -63,7 +63,7 @@ const M_SCENES = `<script>if (/[?&]scenes\\b/.test(location.search)) document.do
 html:not(.m-scenes) .bd-ov, html:not(.m-scenes) .fx-layer { display: none !important }
 html.m-scenes, html.m-scenes body { background: transparent !important }
 html.m-scenes body::before, html.m-scenes body::after { display: none !important }
-html.m-scenes body > * { visibility: hidden !important }
+html.m-scenes body > *:not(.bd-ov):not(.fx-layer):not(script):not(style) { display: none !important }   /* the rest of the page is not drawn at all (was only invisible, and still animating) */
 html.m-scenes body > .bd-ov, html.m-scenes body > .fx-layer { visibility: visible !important }
 html.m-scenes .fx-layer { position: fixed !important; inset: 0 !important; height: auto !important; -webkit-mask-image: none !important; mask-image: none !important }
 </style>\n`;
@@ -216,6 +216,7 @@ writeFileSync(at("dist/index.html"), shell.replace("<!--M_CONFIG-->", `<script>w
 copyFileSync(at("src/app.js"), at("dist/app.js"));
 copyFileSync(at("src/app.css"), at("dist/app.css"));
 copyFileSync(at("src/graph.js"), at("dist/graph.js"));
+copyFileSync(at("src/fx.js"), at("dist/fx.js"));
 // 小M and the festival / birthday modules come from hang6803/xiaom-module (vendor/xiaom/SOURCE has the commit)
 for (const f of ["xiaom.js", "festivals.js", "festival-theme.js", "celebrate.js", "sfx.js"]) copyFileSync(at("vendor/xiaom/" + f), at("dist/" + f));
 writeFileSync(at("dist/backup.html"), backup);
@@ -225,7 +226,7 @@ mkdirSync(at("dist/icons"), { recursive: true });
 for (const f of ["icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png"]) copyFileSync(at("src/icons/" + f), at("dist/icons/" + f));
 copyFileSync(at("src/manifest.webmanifest"), at("dist/manifest.webmanifest"));
 const shellHash = createHash("sha256");
-for (const f of ["index.html", "app.js", "app.css", "graph.js", "xiaom.js", "festivals.js", "festival-theme.js", "celebrate.js", "sfx.js", "backup.html", "manifest.webmanifest"]) shellHash.update(readFileSync(at("dist/" + f)));
+for (const f of ["index.html", "app.js", "app.css", "fx.js", "graph.js", "xiaom.js", "festivals.js", "festival-theme.js", "celebrate.js", "sfx.js", "backup.html", "manifest.webmanifest"]) shellHash.update(readFileSync(at("dist/" + f)));
 const ver = JSON.parse(read("package.json")).version + "-" + shellHash.digest("hex").slice(0, 8);
 writeFileSync(at("dist/sw.js"), read("src/sw.js").replace("__M_VER__", ver));
 console.log("BUILD_OK", api.apiUrl ? "live" : "demo", Buffer.byteLength(backup));
