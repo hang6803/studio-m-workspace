@@ -1263,3 +1263,27 @@ body.lamp-tap.lamp-off .light .lamp { opacity: 0; transition: opacity .7s ease-o
   .scrim > .sheet::before { display: none }
 }
 @media (min-width: 900px) and (prefers-reduced-motion: reduce) { .scrim > .sheet { animation: fade .2s ease both } }
+
+/* 0.9.7: checking the PIN happens on the PIN screen: the dots ripple in a wave. Wrong: they flash red and shake */
+.dots.checking i { animation: pinWave .9s cubic-bezier(.45, 0, .55, 1) infinite }
+.dots.checking i:nth-child(2) { animation-delay: .08s } .dots.checking i:nth-child(3) { animation-delay: .16s } .dots.checking i:nth-child(4) { animation-delay: .24s }
+.dots.checking i:nth-child(5) { animation-delay: .32s } .dots.checking i:nth-child(6) { animation-delay: .4s }
+@keyframes pinWave { 0%, 100% { transform: translateY(0) scale(1); opacity: 1 } 35% { transform: translateY(-7px) scale(1.15); opacity: .7 } }
+.dots.bad i, .dots.bad i.on { background: var(--danger); border-color: var(--danger); box-shadow: 0 0 10px color-mix(in srgb, var(--danger) 60%, transparent) }
+#lockMsg:not(:empty) { color: var(--danger) }
+@media (prefers-reduced-motion: reduce) { .dots.checking i { animation: none; opacity: .6 } }
+
+/* 0.9.7: Backup's filter row ends with Add backup and the sort as an icon */
+.bk-tools { margin-left: auto; display: inline-flex; align-items: center; gap: 8px }
+.bk-tools .bk-sort { margin-left: 0 }
+.bk-add { display: inline-flex; align-items: center; gap: 6px }
+.bk-add svg, .bk-sort svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round }
+.bk-sort svg { transition: transform .45s var(--spring) }
+.bk-sort.asc svg { transform: scaleY(-1) }
+
+/* phone: Add backup is a round + next to the sort */
+@media (max-width: 899px) {
+  .bk-tools .bk-add { width: 40px; height: 40px; padding: 0; justify-content: center; border-radius: 50%; gap: 0 }
+  .bk-tools .bk-add span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0) }
+  .bk-add svg { width: 18px; height: 18px }
+}
