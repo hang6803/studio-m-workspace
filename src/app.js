@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.8";
+const APP_VER = "0.9.9";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
@@ -1842,11 +1842,12 @@ function aiSystem(q) {
   const found = findJobs(q).map(jobLine);
   return `You are M, the assistant in Studio M Workspace, the Studio M Production team app (event video and photo). Today is ${today} (${WD[(now.getDay() + 6) % 7]}).
 Team: ${team.join(", ")}. You are talking with ${session.name}. Answer in the language they write in; keep it short and friendly; Markdown is fine.
-When they want to add a shoot day, write one short line, then exactly one block like this (every day of the shoot, crew only from the team):
+When they want to add shoots, write one short line, then one block per shoot like this (every day of the shoot):
 \`\`\`shoot
 {"name":"short event name","dates":["YYYY-MM-DD"],"location":"","type":"video|photo|both","crew":["Hang"],"notes":""}
 \`\`\`
-The app shows that block as a card they confirm. Never say a shoot is saved; they save it from the card.
+A pasted schedule with many events (a WhatsApp list) gets one block for every event, all in this one reply, nothing between the blocks; never say you'll do them one by one. One date with two numbered events is two blocks. crew: only team members (match nicknames and tags like "@JHang" or "Mun (Studio M)" to the team name). Everything else goes in notes, short: times, roles, people outside the team, gear, TBC.
+type: video if only video, photo if only photo, otherwise both. The app shows each block as a card they confirm. Never say a shoot is saved; they save it from the cards.
 Upcoming shoots:
 ${upcoming.join("\n") || "none"}
 Jobs not backed up in ${year} (Video and Photo are separate rows; a job counts as backed up only when both are):
@@ -2062,6 +2063,7 @@ function linkify(html) {
   return html.split(/(<pre[\s\S]*?<\/pre>|<a[\s\S]*?<\/a>|<[^>]+>|&#?\w+;)/).map(p => p.startsWith("<") || p.startsWith("&") ? p : p.replace(re, n => `<a href="#/${kind[n]}/${encodeURIComponent(n)}" class="ml">${n}</a>`)).join("");
 }
 const SHOOT_RE = /```shoot\s*([\s\S]*?)(```|$)/;
+const SHOOTS_RE = /```(?:shoot|json)\s*([\s\S]*?)(```|$)/g;   // every shoot block in a reply (a pasted schedule gives many)
 // What the model says is never saved as is: dates must be real days, crew only team names, then the person confirms
 function cleanShoot(o) {
   const dates = (Array.isArray(o.dates) ? o.dates : [o.dates]).map(String).filter(d => parseYmd(d)).sort().slice(0, 31);
@@ -2568,14 +2570,31 @@ function addMsg(m, i) {
 }
 // the reply text, with the ```shoot block turned into a confirm card once it is complete
 function fillBot(d, m, i, live) {
-  const box = d.querySelector(".md"), sm = m.content.match(SHOOT_RE);
-  const text = m.content.replace(SHOOT_RE, "").trim();
-  box.innerHTML = m.error ? `<p class="err">${esc(m.error)}</p>` : text ? md(text) : live ? '<span class="dots3"><i></i><i></i><i></i></span>' : "";
-  if (live && text) { const last = box.lastElementChild && box.lastElementChild.matches("ul,ol") ? box.lastElementChild.lastElementChild : box.lastElementChild || box; last.insertAdjacentHTML("beforeend", '<span class="caret"></span>'); }
-  if (sm && (!live || sm[2])) {
-    let o = null; try { o = JSON.parse(sm[1]); } catch (e) {}
-    if (o) box.appendChild(confirmCard(cleanShoot(o), m, i));
-  } else if (sm && live) box.insertAdjacentHTML("beforeend", '<p class="muted small">Preparing the card…</p>');
+  const box = d.querySelector(".md");
+  if (m.error) { box.innerHTML = `<p class="err">${esc(m.error)}</p>`; }
+  else {
+    // text and shoot blocks in their order: each block becomes a card once it is complete
+    const parts = []; let at = 0, k = 0, x; SHOOTS_RE.lastIndex = 0;
+    while ((x = SHOOTS_RE.exec(m.content))) { parts.push({ t: m.content.slice(at, x.index) }); parts.push({ b: x[1], done: !!x[2], k: k++ }); at = x.index + x[0].length; if (!x[0]) break; }
+    parts.push({ t: m.content.slice(at) });
+    box.innerHTML = ""; const cards = [];
+    parts.forEach(p => {
+      if (p.t != null) { const t = p.t.trim(); if (t) box.insertAdjacentHTML("beforeend", md(t)); return; }
+      let o = null; if (p.done || !live) try { o = JSON.parse(p.b); } catch (e) {}
+      if (o && (o.dates || o.name)) { const c = confirmCard(cleanShoot(o), m, i, p.k); box.appendChild(c); cards.push(c); }
+      else if (live) box.insertAdjacentHTML("beforeend", '<p class="muted small">Preparing the card…</p>');
+    });
+    if (!box.childElementCount && live) box.innerHTML = '<span class="dots3"><i></i><i></i><i></i></span>';
+    else if (live && !parts.some(p => p.b != null && !p.done)) { const last = box.lastElementChild && box.lastElementChild.matches("ul,ol") ? box.lastElementChild.lastElementChild : box.lastElementChild || box; if (last && !last.classList.contains("confirm")) last.insertAdjacentHTML("beforeend", '<span class="caret"></span>'); }
+    // several cards: one button adds every one still waiting
+    const open = cards.filter(c => c.querySelector('[data-a="add"]'));
+    if (!live && open.length > 1) { const all = document.createElement("div"); all.className = "actions add-all"; all.style.justifyContent = "flex-start";
+      all.innerHTML = `<button type="button" class="btn">Add all ${open.length} to Calendar</button>`;
+      all.firstChild.onclick = async () => { all.firstChild.disabled = true; all.firstChild.classList.add("busy");
+        for (const c of open) { const b = c.querySelector('[data-a="add"]'); if (b && !b.disabled) await c._add(); }
+        all.remove(); };
+      box.appendChild(all); }
+  }
   if (m.error) { const b = document.createElement("div"); b.className = "actions"; b.style.justifyContent = "flex-start"; b.innerHTML = '<a class="btn ghost" href="#/settings">AI settings</a><button type="button" class="btn ghost">+ Shoot by hand</button>';
     b.children[1].onclick = () => openShoot({ dates: ymd(new Date()) }); box.appendChild(b); }
 }
@@ -2600,6 +2619,15 @@ async function ask(text) {
       bot.content = t; fillBot(d, bot, i, true);
       const th = $("thread"); if (th.scrollHeight - th.scrollTop - th.clientHeight < 160) th.scrollTop = th.scrollHeight;
     }, ctl.signal);
+    // a long schedule can run past the reply limit and stop inside a block: ask for the rest (up to 3 more times)
+    for (let n = 0; n < 3 && /```(?:shoot|json)(?![\s\S]*```)/.test(bot.content.replace(/```(?:shoot|json)[\s\S]*?```/g, "")); n++) {
+      const cut = bot.content.lastIndexOf("```"), head = bot.content.slice(0, cut);
+      const before = head;
+      await callModel([{ role: "system", content: aiSystem(text) }, ...history, { role: "assistant", content: head },
+        { role: "user", content: "Your reply was cut off. Continue with the remaining shoots only: the shoot blocks, nothing else, starting from the one that was cut." }], t => {
+        bot.content = before.trimEnd() + "\n" + t; fillBot(d, bot, i, true);
+      }, ctl.signal);
+    }
     mood("happy"); if (!DEMO) learnFrom(text, bot.content);
   } catch (e) {
     if (e.name === "AbortError") { if (!bot.content) bot.content = "_Stopped._"; }
@@ -2613,20 +2641,25 @@ async function ask(text) {
   fillBot(d, bot, i, false); saveChats(); drawChats(); scrollEnd();
 }
 function setSending(on) { $("sendBtn").classList.toggle("stop", on); $("sendBtn").setAttribute("aria-label", on ? "Stop" : "Send"); }
-function confirmCard(s, m, i) {
+function confirmCard(s, m, i, k) {
+  k = k || 0; const st = () => (m.cards && m.cards[k]) || (k === 0 ? m.card : "");
   const ds = datesOf(s), b = document.createElement("div"); b.className = "confirm";
   b.innerHTML = `<b>${esc(s.name || "New shoot")}</b><p class="muted small">${esc(ds.map(fmtDay).join(", ") || "Pick a date")}${s.location ? ", " + esc(s.location) : ""}. ${esc({ video: "Video", photo: "Photo", both: "Video and photo" }[s.type])}. ${esc(crewOf(s).join(", ") || "No crew yet")}.</p>` +
-    (m.card ? `<p class="muted small done">${m.card}</p>` : `<div class="actions"><button type="button" class="btn" data-a="add">Add to Calendar</button><button type="button" class="btn ghost" data-a="edit">Edit</button><button type="button" class="btn ghost" data-a="no">Not now</button></div>`);
-  const done = html => { m.card = html; saveChats(); const a = b.querySelector(".actions"); if (a) { a.outerHTML = `<p class="muted small done">${html}</p>`; } b.classList.add("ok"); };
+    (st() ? `<p class="muted small done">${st()}</p>` : `<div class="actions"><button type="button" class="btn" data-a="add">Add to Calendar</button><button type="button" class="btn ghost" data-a="edit">Edit</button><button type="button" class="btn ghost" data-a="no">Not now</button></div>`);
+  const done = html => { m.cards = m.cards || {}; m.cards[k] = html; saveChats(); const a = b.querySelector(".actions"); if (a) { a.outerHTML = `<p class="muted small done">${html}</p>`; } b.classList.add("ok"); };
   const added = saved => done(`Added to the Calendar. <a href="#/calendar/${esc(datesOf(saved)[0] || "")}">See ${esc(fmtDay(datesOf(saved)[0] || ""))}</a>`);
+  const save = async (btn, quiet) => {
+    btn.disabled = true; btn.classList.add("busy");
+    const now = new Date().toISOString(), full = { ...s, id: uid(), jobId: "", createdBy: session.name, createdAt: now, updatedBy: session.name, updatedAt: now };
+    try { await M.api("saveShoot", ["", full]); shoots.push(full); drawAll(); added(full); if (!quiet) { toast("Added to the Calendar"); halo(); } buzz(); return true; }
+    catch (err) { btn.disabled = false; btn.classList.remove("busy"); toast(err.message); return false; }
+  };
+  b._add = () => { const btn = b.querySelector('[data-a="add"]'); if (!btn || !s.name || !ds.length) return Promise.resolve(false); return save(btn, true); };   // "Add all"
   b.addEventListener("click", async e => {
     const a = e.target.dataset && e.target.dataset.a; if (!a) return;
     if (a === "no") return done("Not added.");
     if (a === "edit" || !s.name || !ds.length) return openShoot(s, added);
-    e.target.disabled = true; e.target.classList.add("busy");
-    const now = new Date().toISOString(), full = { ...s, id: uid(), jobId: "", createdBy: session.name, createdAt: now, updatedBy: session.name, updatedAt: now };
-    try { await M.api("saveShoot", ["", full]); shoots.push(full); drawAll(); added(full); toast("Added to the Calendar"); halo(); buzz(); }
-    catch (err) { e.target.disabled = false; e.target.classList.remove("busy"); toast(err.message); }
+    save(e.target);
   });
   return b;
 }

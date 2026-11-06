@@ -341,7 +341,7 @@ function ask_(messages) {
   const res = UrlFetchApp.fetch(DEEPSEEK_URL, {
     method: "post", contentType: "application/json", muteHttpExceptions: true,
     headers: { Authorization: "Bearer " + key },
-    payload: JSON.stringify({ model: DEEPSEEK_MODEL, messages: sys.concat(turns), temperature: 0.4, max_tokens: 1200, stream: false })
+    payload: JSON.stringify({ model: DEEPSEEK_MODEL, messages: sys.concat(turns), temperature: 0.4, max_tokens: 4000, stream: false })
   });
   const code = res.getResponseCode(), body = res.getContentText();
   if (code !== 200) {
