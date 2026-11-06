@@ -15,6 +15,29 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
 };
 const STILL = matchMedia("(prefers-reduced-motion: reduce)").matches;
+// a toggle you just turned on gives one jelly wobble (only the one you pressed, not on every redraw)
+document.addEventListener("click", e => { const b = e.target.closest(".seg button, .chips button, .fchip, .te-role button"); if (!b || STILL) return;
+  requestAnimationFrame(() => { const el = b.isConnected ? b : null; if (!el || !el.classList.contains("on")) return; el.classList.remove("jel"); void el.offsetWidth; el.classList.add("jel"); el.addEventListener("animationend", () => el.classList.remove("jel"), { once: true }); }); });
+// a firm spring for things that snap into place: fast in, one small overshoot, settled
+const SNAP = "linear(0, .25 6%, .68 15%, 1.04 26%, 1.09 32%, 1.05 40%, .995 52%, .99 62%, 1)";
+// Grids that re-flow (a column more or less when the window changes, a card that opens) glide to their new places
+// instead of jumping: each card remembers where it was and slides from there (only jumps of 24px or more, so a
+// card opening frame by frame doesn't fight it).
+function flipGrid(el) {
+  if (STILL || !window.ResizeObserver) return;
+  const at = new Map(), key = c => c.dataset.n || c.dataset.d || c.getAttribute("href") || c;
+  const look = () => { const out = new Map(); for (const c of el.children) { const r = c.getBoundingClientRect(); out.set(key(c), [r.left, r.top, c]); } return out; };
+  let last = look();
+  const ro = new ResizeObserver(() => {
+    const now = look();
+    now.forEach(([x, y, c], k) => { const was = last.get(k); if (!was || !c.isConnected || c.classList.contains("editing")) return;
+      const dx = was[0] - x, dy = was[1] - y; if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return;
+      c.animate([{ translate: `${dx}px ${dy}px`, filter: "blur(1.5px)" }, { translate: "0 0", filter: "blur(0)" }], { duration: 520, easing: SNAP, composite: "add" }); });
+    last = now; now.forEach(([, , c]) => ro.observe(c));
+  });
+  ro.observe(el); for (const c of el.children) ro.observe(c);
+  new MutationObserver(() => { for (const c of el.children) ro.observe(c); }).observe(el, { childList: true });
+}
 // the phone keyboard: pop-ups size themselves to the part of the screen above it
 if (window.visualViewport) { const vv = visualViewport, fit = () => { const r = document.documentElement.style; r.setProperty("--vvh", vv.height + "px"); r.setProperty("--vvtop", vv.offsetTop + "px"); };
   vv.addEventListener("resize", fit); vv.addEventListener("scroll", fit); fit();
@@ -142,6 +165,13 @@ function demo(fn, args) {
       if (rankD(n) >= rankD(me)) return no("You can't remove a " + roleD(n));
       if (n === "小M") delete db.pins["小M"]; else { db.team = db.team.filter(x => x !== n); delete db.birthdays[n]; delete db.pins[n]; delete db.roles[n]; }
       logD("removed", n); save(); return ok(peopleD());
+    }
+    case "setPinFor": {
+      const [n, pin] = args;
+      if (rankD(me) < 2) return no("Only admins and above can do that");
+      if (n === me) return no("Change your own PIN below");
+      if (rankD(n) > rankD(me)) return no("You can't reset the PIN of a " + roleD(n));
+      db.pins[n] = pin; logD("reset PIN", n, "on the Team page"); save(); return ok(peopleD());
     }
     case "auditLog": if (rankD(me) < 2) return no("Only admins and above can do that"); logD("opened the log", ""); save(); return ok(db.log.slice().reverse());
     case "getAll": return ok({ rev: db.rev, rows: db.rows, team: db.team, birthdays: db.birthdays || {}, settings: db.settings, pinRequired: false, me: { name: me, role: roleD(me) } });
@@ -306,11 +336,10 @@ function useCopy(c) { data = c.all; team = c.all.team || []; shoots = c.sh || []
 addEventListener("online", () => { if (session && session.offline) lock("Back online. Enter your PIN to sync."); });
 
 // ---------------------------------------------------------------- PIN lock
-// Pick your name, then your 6-digit PIN. An old 4-digit PIN still opens once (press OK, or it goes by itself on a
-// device that used it before), and then asks for a new 6-digit one. First time / Register / Forgot PIN sit below the pad.
+// Just the 6-digit PIN: the PIN says who you are. An old 4-digit PIN still opens once (press OK, or it goes by itself on
+// a device that used it before), and then asks for a new 6-digit one. First time / Register / Forgot PIN sit below the pad.
 const PIN_LEN = 6;
 let entered = "", team = [], who = null, legacyT = 0;
-const lens = () => store.get("mLen", {}) || {};
 function lock(msg) {
   session = null; entered = ""; clearTimeout(legacyT);
   $("shell").hidden = true; $("setup").hidden = true; $("lock").hidden = false;
@@ -318,7 +347,7 @@ function lock(msg) {
   $("backupFrame").removeAttribute("src"); backupLoaded = false; scenes(false);
   closeM(true); MBTN.hidden = true; if (graph) graph.stop();
   closeShoot(); if (streaming) streaming.abort(); gKey = ""; teamOk = false; closeJob(true);
-  ppl = null; logRows = null; pplAt = 0; if (data) data.me = null; shownView = "";
+  ppl = null; logRows = null; pplAt = 0; editOpen = null; if (data) data.me = null; shownView = "";
   loadWho();
 }
 // who can sign in: everyone on the team with a PIN, and 小M when it has one (kept on the device for offline)
@@ -327,13 +356,7 @@ async function loadWho() {
   drawWho();
 }
 const signers = () => who ? who.members.filter(m => m.hasPin).map(m => m.name).concat(who.xiaom ? ["小M"] : []) : [];
-function drawWho() {
-  const list = signers(), me = store.get("mUser", "");
-  $("lockWhoRow").hidden = !list.length;
-  $("lockWho").innerHTML = (list.includes(me) ? "" : `<option value="">Pick your name</option>`) + list.map(n => `<option${n === me ? " selected" : ""}>${esc(n)}</option>`).join("");
-  $("lockTitle").textContent = list.includes(me) ? `Hi ${me}, enter your PIN` : "Enter your PIN";
-}
-$("lockWho").addEventListener("change", e => { store.set("mUser", e.target.value); entered = ""; drawDots(); drawWho(); $("lockMsg").textContent = ""; fx("toggle"); });
+function drawWho() { $("lockTitle").textContent = "Enter your PIN"; }
 function drawDots() {
   [...$("dots").children].forEach((d, i) => d.classList.toggle("on", i < entered.length));
   $("dots").classList.toggle("old", entered.length === 4);
@@ -342,11 +365,10 @@ function drawDots() {
 }
 async function signIn(pin) {
   clearTimeout(legacyT);
-  const name = $("lockWho").value;
   try {
-    session = await slow(M.api("login", [pin, name]));
+    session = await slow(M.api("login", [pin]));
     keepPin(pin, session.name); store.set("mUser", session.name);
-    const l = lens(); l[session.name] = pin.length; store.set("mLen", l);
+    store.set("mLen4", pin.length === 4);
     entered = ""; drawDots(); setTimeout(() => lockMood("yay"), 300);
     if (session.upgrade) { setTimeout(() => openUpgrade(pin), 700); return; }
     setTimeout(unlock, 900);
@@ -365,7 +387,7 @@ function key(k) {
   else if (entered.length < PIN_LEN && /\d/.test(k)) entered += k;
   drawDots();
   if (entered.length === PIN_LEN) signIn(entered);
-  else if (entered.length === 4 && lens()[$("lockWho").value] === 4) { const p = entered; legacyT = setTimeout(() => { if (entered === p) signIn(p); }, 1100); }
+  else if (entered.length === 4 && store.get("mLen4", false)) { const p = entered; legacyT = setTimeout(() => { if (entered === p) signIn(p); }, 1100); }
 }
 $("pad").addEventListener("click", e => { const b = e.target.closest("button"); if (b) key(b.dataset.k); });
 document.addEventListener("keydown", e => {
@@ -417,7 +439,7 @@ $("setupForm").addEventListener("submit", async e => {
   if (!name) return;
   try { session = await slow(M.api("setMyPin", [name, up ? f.dataset.old : $("suStudio").value, pin])); }
   catch (err) { msg.textContent = err.message; fx("err"); return; }
-  keepPin(pin, session.name); store.set("mUser", session.name); const l = lens(); l[session.name] = 6; store.set("mLen", l);
+  keepPin(pin, session.name); store.set("mUser", session.name); store.set("mLen4", false);
   f.reset(); delete f.dataset.old; fx("ok"); unlock();
 });
 $("regForm").addEventListener("submit", async e => {
@@ -437,7 +459,7 @@ $("forgotForm").addEventListener("submit", async e => {
   if (!by) { msg.textContent = "Pick who approves"; return; }
   try { session = await slow(M.api("resetPin", [$("fgName").value, pin, by, $("fgByPin").value])); }
   catch (err) { msg.textContent = err.message; fx("err"); return; }
-  keepPin(pin, session.name); store.set("mUser", session.name); const l = lens(); l[session.name] = 6; store.set("mLen", l);
+  keepPin(pin, session.name); store.set("mUser", session.name); store.set("mLen4", false);
   e.target.reset(); fx("ok"); toast("PIN reset"); unlock();
 });
 
@@ -893,8 +915,14 @@ const calDrag = { s: null, moved: false };
   const end = e => {
     clearTimeout(hold); if (!st || e.pointerId !== st.id) return;
     const was = st; st = null; if (!ghost) return;
-    ghost.remove(); ghost = null; document.body.classList.remove("cal-dragging"); over && over.classList.remove("drop");
-    const to = over && e.type === "pointerup" ? over.dataset.d : null; over = null;
+    const to = over && e.type === "pointerup" ? over.dataset.d : null, cell = over, g = ghost; ghost = null;
+    document.body.classList.remove("cal-dragging"); over && over.classList.remove("drop"); over = null;
+    if (to && to !== was.from && !STILL) {   // it snaps into the day, and the day takes it with a bounce
+      const r = cell.getBoundingClientRect(), gr = g.getBoundingClientRect();
+      g.animate([{ transform: g.style.transform, opacity: 1 }, { transform: `translate(${r.left + r.width / 2 - gr.width * .3}px, ${r.top + r.height / 2 - gr.height * .3}px) scale(.6)`, opacity: 0 }], { duration: 170, easing: "cubic-bezier(.5, 0, .2, 1)" }).onfinish = () => g.remove();
+      cell.animate([{ transform: "scale(1)" }, { transform: "scale(.9)", offset: .25 }, { transform: "scale(1.06)", offset: .6 }, { transform: "scale(1)" }], { duration: 420, delay: 120, easing: "cubic-bezier(.3, 1.5, .5, 1)" });
+      fx("drag");
+    } else g.remove();
     const s = calDrag.s; calDrag.s = null; setTimeout(() => { calDrag.moved = false; }, 0);
     if (to && to !== was.from) moveShoot(s, Math.round((parseYmd(to) - parseYmd(was.from)) / 864e5));
   };
@@ -1113,7 +1141,7 @@ document.querySelectorAll(".scrim > .sheet").forEach(sh => {
     if (e.cancelable) e.preventDefault(); dy = y - y0; sh.style.transform = dy ? pull(dy) : ""; };
   const end = () => { if (y0 == null) return; y0 = null; if (!on) return; on = false; const sc = sh.parentElement, fast = dy > 30 && dy / Math.max(1, performance.now() - t0) > .6;
     if (dy > 90 || fast) { SHEET_CLOSE[sc.id] && SHEET_CLOSE[sc.id](); requestAnimationFrame(() => { sh.style.transform = ""; }); return; }
-    if (dy) { const from = pull(dy); sh.style.transform = ""; sh.animate([{ transform: from }, { transform: "none" }], { duration: dy < 0 ? 520 : 420, easing: "cubic-bezier(.34,1.56,.64,1)" }); } };
+    if (dy) { const from = pull(dy); sh.style.transform = ""; sh.animate([{ transform: from }, { transform: "none" }], { duration: dy < 0 ? 440 : 340, easing: SNAP }); fx("drag"); } };
   sh.addEventListener("touchstart", e => start(e.touches[0].clientY, e.target), { passive: true });
   sh.addEventListener("touchmove", e => move(e.touches[0].clientY, e), { passive: false });
   sh.addEventListener("touchend", end); sh.addEventListener("touchcancel", end);
@@ -1519,6 +1547,7 @@ const RANK = { member: 1, admin: 2, xiaom: 3, boss: 4 }, ROLE_NAME = { boss: "Bo
 const myRank = () => RANK[(ppl && ppl.me.role) || (data.me && data.me.role) || "member"] || 1;
 const roleOf = n => { const p = ppl && ppl.people.find(x => x.name === n); return p ? p.role : "member"; };
 const canRemove = n => n !== session.name && (pplOld || (roleOf(n) !== "boss" && myRank() >= 2 && RANK[roleOf(n)] < myRank()));
+const canReset = n => !pplOld && myRank() >= 2 && n !== session.name && RANK[roleOf(n)] <= myRank();
 const canRole = n => !pplOld && myRank() >= 3 && n !== session.name && !["boss", "xiaom"].includes(roleOf(n));
 const bdayText = v => { const m = /^(\d{4}|-{0,4})-?(\d{2})-(\d{2})$/.exec(v || ""); return m ? `${+m[3]} ${MON[+m[2] - 1]}` : ""; };
 async function loadPeople(force) {
@@ -1527,7 +1556,7 @@ async function loadPeople(force) {
   pplAt = Date.now();
   try { ppl = await M.api("people"); }
   catch (e) { if (/Unknown call/.test(e.message)) pplOld = true; else { pplAt = 0; return; } }   // an older MApp.gs: the plain list, as before
-  if (route.name === "team") { drawReq(); drawMembers(true); drawTeam(); }
+  if (route.name === "team") drawTeam();
   if (myRank() < 2) $("teamLog").hidden = true;
 }
 async function loadLog() {
@@ -1562,50 +1591,51 @@ $("reqList").addEventListener("click", async e => {
     drawReq(); if (yes) refresh(); else drawMembers(true); if (logRows) loadLog(); }
   catch (err) { $("reqMsg").textContent = err.message; fx("err"); row.querySelectorAll("button").forEach(x => { x.disabled = false; }); }
 });
+// one card per person, highest role first. Edit opens the card's own settings: birthday, role, a new PIN, Remove.
+let editOpen = null;
+const PEN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>';
+const canEdit = n => n === session.name ? n !== "小M" : (canRole(n) || canReset(n) || canRemove(n) || myRank() >= 2);
+function cardEditor(p) {
+  const n = p.name, bot = p.role === "xiaom", v = birthdays[n] || "", m = /(\d{2})-(\d{2})$/.exec(v), yy = /^(\d{4})-/.exec(v);
+  const y0 = new Date().getFullYear(), years = Array.from({ length: 67 }, (_, i) => y0 - 14 - i);
+  const bd = bot ? "" : `<div class="te-row"><span class="te-l">Birthday</span><div class="te-bd"><select data-bd="m" aria-label="Month"><option value="">Month</option>${MON.map((x, i) => `<option value="${String(i + 1).padStart(2, "0")}"${m && +m[1] === i + 1 ? " selected" : ""}>${x}</option>`).join("")}</select>
+    <select data-bd="d" aria-label="Day"><option value="">Day</option>${Array.from({ length: 31 }, (_, i) => `<option value="${String(i + 1).padStart(2, "0")}"${m && +m[2] === i + 1 ? " selected" : ""}>${i + 1}</option>`).join("")}</select>
+    <select data-bd="y" aria-label="Year"><option value="">Year</option>${years.map(x => `<option${yy && +yy[1] === x ? " selected" : ""}>${x}</option>`).join("")}</select></div></div>`;
+  const role = canRole(n) ? `<div class="te-row"><span class="te-l">Role</span><div class="seg te-role" data-role="${esc(n)}"><button type="button" data-v="member" class="${p.role === "member" ? "on" : ""}">Member</button><button type="button" data-v="admin" class="${p.role === "admin" ? "on" : ""}">Admin</button></div></div>` : "";
+  const pin = canReset(n) ? `<form class="te-row rp-form" data-for="${esc(n)}"><span class="te-l">New PIN</span><div class="te-pin"><input type="password" inputmode="numeric" maxlength="6" pattern="\\d{6}" placeholder="6 digits" aria-label="New PIN for ${esc(n)}" autocomplete="new-password" required><button class="btn ghost sm">Set PIN</button></div></form>` : "";
+  const rm = canRemove(n) ? `<button type="button" class="btn ghost sm rm${memArmed === n ? " armed" : ""}" data-rm="${esc(n)}">${memArmed === n ? `Remove ${esc(n)}?` : "Remove from team"}</button>` : "";
+  const meta = p.gmail ? `<p class="muted small te-mail">${esc(p.gmail)}</p>` : "";
+  return `<div class="tm-edit"><div class="tm-edit-in">${meta}${bd}${role}${pin}${rm ? `<div class="te-foot">${rm}</div>` : ""}</div></div>`;
+}
 function drawTeam() {
   if (!session) return;
   loadPeople();
+  const g = $("teamGrid");
+  // a half-picked birthday or a PIN being typed stays as it is through the minute refresh
+  if (g.querySelector(".tm-edit :focus") || [...g.querySelectorAll(".te-bd")].some(r => { const v = [...r.querySelectorAll("select")].map(x => !!x.value); return v.some(Boolean) && !v.every(Boolean); })) return;
   birthdays = Object.assign({}, data.birthdays || {});
   const y = String(new Date().getFullYear()), today = ymd(new Date());
-  $("teamGrid").innerHTML = team.map((n, i) => {
+  const people = ppl && !pplOld ? ppl.people.slice() : team.map(n => ({ name: n, role: "member" }));
+  people.sort((a, b) => (RANK[b.role] || 0) - (RANK[a.role] || 0));
+  g.innerHTML = people.map((p, i) => {
+    const n = p.name, ro = p.role, bot = ro === "xiaom", open = editOpen === n && canEdit(n);
     const rs = rowsOf(y).filter(r => r.editor === n), un = rs.filter(unbacked).length, ok = rs.length - un;
     const next = shoots.filter(s => crewOf(s).includes(n)).map(s => ({ s, d: datesOf(s).sort().find(d => d >= today) })).filter(x => x.d).sort((a, b) => a.d < b.d ? -1 : 1)[0];
-    const bd = bdayText(birthdays[n]), ro = roleOf(n);
-    return `<article class="tm${n === session.name ? " me" : ""}" style="--i:${i}">
-      <div class="tm-h"><span class="tm-av">${esc(initials(n))}</span><div><span class="tm-name"><b>${esc(n)}</b>${n === session.name ? '<span class="tag">You</span>' : ""}${ro !== "member" ? `<span class="role r-${ro}">${ROLE_NAME[ro]}</span>` : ""}</span><span class="muted small">${bd ? "Birthday " + esc(bd) : "No birthday yet"}</span></div></div>
-      <div class="tm-stats"><a href="#/editor/${encodeURIComponent(n)}"><b>${rs.length}</b><span>${rs.length === 1 ? "job" : "jobs"} in ${y}</span></a>
+    const bd = bdayText(birthdays[n]);
+    const body = bot ? `<p class="tm-next muted">Signs in like everyone else. It can approve sign-ups, change roles and remove admins and members.</p>`
+      : `<div class="tm-stats"><a href="#/editor/${encodeURIComponent(n)}"><b>${rs.length}</b><span>${rs.length === 1 ? "job" : "jobs"} in ${y}</span></a>
         <a href="#/editor/${encodeURIComponent(n)}" class="${un ? "red" : ""}"><b>${un}</b><span>not backed up</span></a></div>
       <div class="bar" aria-hidden="true"><i class="ok" style="flex-grow:${ok}"></i><i class="no" style="flex-grow:${un}"></i>${rs.length ? "" : '<i style="flex-grow:1"></i>'}</div>
-      <p class="tm-next">${next ? `Next shoot <a href="#/calendar/${esc(encodeURIComponent(next.d))}">${esc(fmtDay(next.d))}</a>, ${esc(next.s.name)}.` : '<span class="muted">No shoots coming up.</span>'}</p>
+      <p class="tm-next">${next ? `Next shoot <a href="#/calendar/${esc(encodeURIComponent(next.d))}">${esc(fmtDay(next.d))}</a>, ${esc(next.s.name)}.` : '<span class="muted">No shoots coming up.</span>'}</p>`;
+    return `<article class="tm${n === session.name ? " me" : ""}${bot ? " bot" : ""}${open ? " editing" : ""}" data-n="${esc(n)}" style="--i:${i}">
+      <div class="tm-h"><span class="tm-av r-${ro}">${bot ? "M" : esc(initials(n))}</span><div><span class="tm-name"><b>${esc(n)}</b>${n === session.name ? '<span class="tag">You</span>' : ""}${ro !== "member" ? `<span class="role r-${ro}">${ROLE_NAME[ro]}</span>` : ""}</span><span class="muted small">${bot ? "Studio assistant" : bd ? "Birthday " + esc(bd) : "No birthday yet"}${!bot && p.hasPin === false ? ", no PIN yet" : ""}</span></div>
+        ${canEdit(n) ? `<button type="button" class="ibtn tm-ed" data-ed="${esc(n)}" aria-expanded="${open}" aria-label="Edit ${esc(n)}" title="Edit">${PEN}</button>` : ""}</div>
+      ${body}${canEdit(n) ? cardEditor(p) : ""}
     </article>`;
-  }).join("");
-  drawReq(); drawMembers();
-  $("memAdd").hidden = !(pplOld || myRank() >= 2);
-  $("roleHint").textContent = pplOld ? "Only the day and month of a birthday are shown. Age is never shown."
-    : myRank() >= 3 ? "You can change roles and remove people below you. Birthdays show day and month only."
-    : myRank() >= 2 ? "You can approve sign-ups and remove members. Birthdays show day and month only."
-    : "Birthdays show day and month only. Age is never shown.";
+  }).join("") + (pplOld || myRank() >= 2 ? `<form class="tm tm-add" style="--i:${people.length}"><span class="tm-av r-member" aria-hidden="true">+</span><input maxlength="40" placeholder="Add someone by name" aria-label="New member's name" autocomplete="off"><button class="btn ghost sm">Add</button></form>` : "");
+  drawReq();
 }
-function drawMembers(force) {
-  // a half-picked birthday or an open select stays as it is through the minute refresh
-  const ml = $("memList");
-  if (!force && (ml.contains(document.activeElement) || [...ml.querySelectorAll(".mem")].some(r => { const v = [...r.querySelectorAll("[data-bd]")].map(x => !!x.value); return v.some(Boolean) && !v.every(Boolean); }))) return;
-  const y0 = new Date().getFullYear(), years = Array.from({ length: 67 }, (_, i) => y0 - 14 - i);
-  const people = ppl && !pplOld ? ppl.people : team.map(n => ({ name: n, role: "member" }));
-  const row = p => {
-    const n = p.name, v = birthdays[n] || "", m = /(\d{2})-(\d{2})$/.exec(v), yy = /^(\d{4})-/.exec(v), bot = p.role === "xiaom";
-    const rm = canRemove(n) ? `<button type="button" class="btn ghost sm rm${memArmed === n ? " armed" : ""}" data-rm="${esc(n)}">${memArmed === n ? "Remove?" : "Remove"}</button>` : '<span class="rm-sp"></span>';
-    const role = canRole(n) ? `<label class="ro"><span class="sr">Role of ${esc(n)}</span><select data-role="${esc(n)}"><option value="member"${p.role === "member" ? " selected" : ""}>Member</option><option value="admin"${p.role === "admin" ? " selected" : ""}>Admin</option></select></label>` : '<span class="ro-sp"></span>';
-    return `<div class="mem${n === session.name ? " me" : ""}" data-n="${esc(n)}"><span class="hub ed r-${p.role}">${bot ? "M" : esc(initials(n))}</span>
-      <div class="mem-who"><b>${esc(n)}${n === session.name ? '<span class="tag">You</span>' : ""}</b>${p.gmail ? `<span class="muted small">${esc(p.gmail)}</span>` : ""}${!bot && p.hasPin === false ? '<span class="muted small">No PIN yet</span>' : ""}</div>
-      ${bot ? '<span class="muted small mem-bot">Studio assistant</span>' : `<label class="bd"><span class="sr">Birthday of ${esc(n)}</span><select data-bd="m" aria-label="Month"><option value="">Month</option>${MON.map((x, i) => `<option value="${String(i + 1).padStart(2, "0")}"${m && +m[1] === i + 1 ? " selected" : ""}>${x}</option>`).join("")}</select>
-      <select data-bd="d" aria-label="Day"><option value="">Day</option>${Array.from({ length: 31 }, (_, i) => `<option value="${String(i + 1).padStart(2, "0")}"${m && +m[2] === i + 1 ? " selected" : ""}>${i + 1}</option>`).join("")}</select>
-      <select data-bd="y" aria-label="Year"><option value="">Year</option>${years.map(x => `<option${yy && +yy[1] === x ? " selected" : ""}>${x}</option>`).join("")}</select></label>`}
-      ${role}${rm}</div>`;
-  };
-  ml.innerHTML = (pplOld || !ppl ? [["", people]] : ["boss", "xiaom", "admin", "member"].map(r => [r, people.filter(p => p.role === r)]))
-    .filter(([, l]) => l.length).map(([r, l]) => (r ? `<p class="mem-h">${r === "admin" ? "Admins" : r === "member" ? "Members" : ROLE_NAME[r]}</p>` : "") + l.map(row).join("")).join("");
-}
+const drawMembers = () => drawTeam();
 async function saveTeam(members, bd, msg) {
   // never write a team list that didn't come from a good load, or one without you in it: that would wipe the list in Backup too
   if (!teamOk || !(members.includes(session.name) || session.name === "小M")) { $("memMsg").textContent = "The team list hasn't loaded yet. Try again in a moment."; return; }
@@ -1614,41 +1644,59 @@ async function saveTeam(members, bd, msg) {
   try { await M.api("setTeam", ["", members, bd]); toast(msg); buzz(); pplAt = 0; loadPeople(); }
   catch (err) { team = prevT; birthdays = prevB; data.team = prevT; data.birthdays = prevB; drawTeam(); $("memMsg").textContent = err.message; }
 }
-$("memList").addEventListener("change", async e => {
-  const rs = e.target.closest("[data-role]");
-  if (rs) {
-    const n = rs.dataset.role, v = rs.value; $("memMsg").textContent = "";
-    try { ppl = await M.api("setRole", [n, v]); fx("ok"); toast(`${n} is now ${v === "admin" ? "an admin" : "a member"}`); }
-    catch (err) { $("memMsg").textContent = err.message; fx("err"); }
-    drawMembers(true); drawTeam(); return;
-  }
-  const row = e.target.closest(".mem"); if (!row || !row.querySelector('[data-bd="m"]')) return;
-  const n = row.dataset.n, m = row.querySelector('[data-bd="m"]').value, d = row.querySelector('[data-bd="d"]').value, y = row.querySelector('[data-bd="y"]').value;
+flipGrid($("teamGrid"));
+$("teamGrid").addEventListener("change", e => {
+  const row = e.target.closest(".te-bd"); if (!row) return;
+  const n = e.target.closest(".tm").dataset.n, m = row.querySelector('[data-bd="m"]').value, d = row.querySelector('[data-bd="d"]').value, y = row.querySelector('[data-bd="y"]').value;
   if (!(m && d && y) && (m || d || y)) return;   // wait for all three (Backup keeps the year for the zodiac hat)
   const bd = Object.assign({}, birthdays);
   if (m) bd[n] = `${y}-${m}-${d}`; else delete bd[n];
   if (m && !parseYmd(bd[n])) { $("memMsg").textContent = "That day doesn't exist."; return; }
-  $("memMsg").textContent = ""; saveTeam(team, bd, m ? `Birthday saved for ${n}` : `Birthday cleared for ${n}`);
+  $("memMsg").textContent = ""; document.activeElement.blur(); saveTeam(team, bd, m ? `Birthday saved for ${n}` : `Birthday cleared for ${n}`);
 });
-$("memList").addEventListener("click", async e => {
+$("teamGrid").addEventListener("submit", async e => {
+  e.preventDefault();
+  const add = e.target.closest(".tm-add");
+  if (add) {
+    const inp = add.querySelector("input"), n = inp.value.trim().replace(/\s+/g, " ");
+    if (!n) return;
+    if (team.some(x => x.toLowerCase() === n.toLowerCase())) { $("memMsg").textContent = `${n} is already on the team.`; return; }
+    if (/[,<>"]/.test(n) || n === "小M") { $("memMsg").textContent = "Use letters and spaces only."; return; }
+    inp.value = ""; inp.blur(); $("memMsg").textContent = "";
+    saveTeam([...team, n], birthdays, `${n} added. They pick a PIN with First time.`); return;
+  }
+  const f = e.target.closest(".rp-form"); if (!f) return;
+  const n = f.dataset.for, v = f.querySelector("input").value;
+  if (!/^\d{6}$/.test(v)) { $("memMsg").textContent = "PIN is 6 digits"; return; }
+  f.querySelector("button").disabled = true; $("memMsg").textContent = "";
+  try { ppl = await M.api("setPinFor", [n, v]); fx("ok"); toast(`New PIN set for ${n}. Tell them in person.`); if (logRows) loadLog(); f.querySelector("input").value = ""; f.querySelector("input").blur(); }
+  catch (err) { $("memMsg").textContent = err.message; fx("err"); }
+  f.querySelector("button").disabled = false;
+});
+$("teamGrid").addEventListener("click", async e => {
+  const ed = e.target.closest("[data-ed]");
+  if (ed) {
+    const n = ed.dataset.ed, card = ed.closest(".tm"); editOpen = editOpen === n ? null : n; memArmed = null;
+    $("teamGrid").querySelectorAll(".tm.editing").forEach(c => { if (c !== card) { c.classList.remove("editing"); c.querySelector("[data-ed]").setAttribute("aria-expanded", "false"); } });
+    card.classList.toggle("editing", editOpen === n); ed.setAttribute("aria-expanded", String(editOpen === n)); fx(editOpen === n ? "open" : "close"); return;
+  }
+  const rb = e.target.closest(".te-role button");
+  if (rb) {
+    const seg = rb.parentElement, n = seg.dataset.role, v = rb.dataset.v; if (rb.classList.contains("on")) return;
+    seg.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === rb)); $("memMsg").textContent = "";
+    try { ppl = await M.api("setRole", [n, v]); fx("ok"); toast(`${n} is now ${v === "admin" ? "an admin" : "a member"}`); if (logRows) loadLog(); }
+    catch (err) { $("memMsg").textContent = err.message; fx("err"); }
+    drawTeam(); return;
+  }
   const b = e.target.closest("[data-rm]"); if (!b) return;
   const n = b.dataset.rm;
-  if (memArmed !== n) { memArmed = n; fx("tap"); drawMembers(true); setTimeout(() => { if (memArmed === n) { memArmed = null; drawMembers(true); } }, 3000); return; }
-  memArmed = null;
+  if (memArmed !== n) { memArmed = n; fx("tap"); b.classList.add("armed"); b.textContent = `Remove ${n}?`; setTimeout(() => { if (memArmed === n) { memArmed = null; b.classList.remove("armed"); b.textContent = "Remove from team"; } }, 3000); return; }
+  memArmed = null; editOpen = null;
   if (pplOld) { const bd = Object.assign({}, birthdays); delete bd[n]; saveTeam(team.filter(x => x !== n), bd, `${n} removed`); return; }
   b.disabled = true; $("memMsg").textContent = "";
   try { ppl = await M.api("removeMember", [n]); fx("off"); toast(`${n} removed`); refresh(); if (logRows) loadLog(); }
-  catch (err) { $("memMsg").textContent = err.message; fx("err"); }
-  drawMembers(true);
-});
-$("memAdd").addEventListener("submit", e => {
-  e.preventDefault();
-  const n = $("memNew").value.trim().replace(/\s+/g, " ");
-  if (!n) return;
-  if (team.some(x => x.toLowerCase() === n.toLowerCase())) { $("memMsg").textContent = `${n} is already on the team.`; return; }
-  if (/[,<>"]/.test(n) || n === "小M") { $("memMsg").textContent = "Use letters and spaces only."; return; }
-  $("memNew").value = ""; $("memMsg").textContent = "";
-  saveTeam([...team, n], birthdays, `${n} added. They pick a PIN with First time.`);
+  catch (err) { $("memMsg").textContent = err.message; fx("err"); b.disabled = false; }
+  drawTeam();
 });
 
 // ---------------------------------------------------------------- shoot form
@@ -2254,7 +2302,15 @@ $("mClose").addEventListener("click", () => closeM());
     p.style.left = clamp(e.clientX - st.dx, 8, innerWidth - p.offsetWidth - 8) + "px"; p.style.top = clamp(e.clientY - st.dy, 8, innerHeight - p.offsetHeight - 8) + "px";
   });
   const end = e => { if (!st || e.pointerId !== st.id) return; const was = st.on; st = null; if (!was) return; p.classList.remove("moving");
-    h._moved = true; setTimeout(() => { h._moved = false; }, 300); const r = p.getBoundingClientRect(); mpPos = { x: r.left / innerWidth, y: r.top / innerHeight }; store.set("mpPos", mpPos); fx("drag"); };
+    h._moved = true; setTimeout(() => { h._moved = false; }, 300);
+    // within 72px of an edge it snaps flush to the 12px margin, in one firm spring
+    const r = p.getBoundingClientRect(), M = 12, Z = 72;
+    let x = r.left, y = r.top;
+    if (x < Z) x = M; else if (innerWidth - r.right < Z) x = innerWidth - r.width - M;
+    if (y < Z) y = M; else if (innerHeight - r.bottom < Z) y = innerHeight - r.height - M;
+    if ((x !== r.left || y !== r.top) && !STILL) { p.style.left = x + "px"; p.style.top = y + "px"; p.animate([{ translate: `${r.left - x}px ${r.top - y}px` }, { translate: "0 0" }], { duration: 380, easing: SNAP }); }
+    else { p.style.left = x + "px"; p.style.top = y + "px"; }
+    mpPos = { x: x / innerWidth, y: y / innerHeight }; store.set("mpPos", mpPos); fx("drag"); };
   h.addEventListener("pointerup", end); h.addEventListener("pointercancel", end);
   h.addEventListener("click", e => { if (h._moved) { h._moved = false; e.stopPropagation(); e.preventDefault(); } }, true);   // a drag that started on a button doesn't press it
   h.addEventListener("dblclick", e => { if (e.target.closest("button")) return; mpPos = null; store.set("mpPos", null); anchorPanel(); });   // double-click the bar: back to its usual place
@@ -2470,7 +2526,7 @@ $("voiceSeg").addEventListener("click", e => { const b = e.target.closest("butto
 $("pinForm").addEventListener("submit", async e => {
   e.preventDefault(); const n = $("pfNew").value;
   if (!sixOk(n, $("pfNew2").value, $("pfMsg"))) return;
-  try { session = await M.api("setMyPin", [session.name, $("pfOld").value, n]); keepPin(n, session.name); const l = lens(); l[session.name] = 6; store.set("mLen", l); e.target.reset(); $("pfMsg").textContent = ""; fx("ok"); toast("PIN changed"); }
+  try { session = await M.api("setMyPin", [session.name, $("pfOld").value, n]); keepPin(n, session.name); store.set("mLen4", false); e.target.reset(); $("pfMsg").textContent = ""; fx("ok"); toast("PIN changed"); }
   catch (err) { $("pfMsg").textContent = err.message; }
 });
 $("aiProv").innerHTML = Object.entries(AI_PROVIDERS).map(([k, p]) => `<option value="${k}">${esc(p.label)}</option>`).join("");

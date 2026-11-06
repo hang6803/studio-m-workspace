@@ -30,7 +30,6 @@
   <div class="lock-in">
     <div class="lock-m" id="lockM" aria-hidden="true"></div>
     <h1 class="lock-title" id="lockTitle">Enter your PIN</h1>
-    <label class="lock-who" id="lockWhoRow" hidden><span class="sr">Who is signing in</span><select id="lockWho" aria-label="Who is signing in"></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></label>
     <div class="dots" id="dots" aria-live="polite"><i></i><i></i><i></i><i></i><i></i><i></i></div>
     <p class="lock-msg" id="lockMsg"></p>
     <div class="pad" id="pad">
@@ -173,20 +172,17 @@
         <div class="card tq" id="teamReq" hidden><h3>Sign-up requests <b class="pill" id="reqN"></b></h3>
           <div id="reqList"></div><p class="msg" id="reqMsg"></p></div>
         <div class="team-grid" id="teamGrid"></div>
+        <p class="msg" id="memMsg"></p>
         <div class="team-lower">
-          <div class="card" id="teamEdit"><h3>People and roles</h3><p class="muted small" id="roleHint">Only the day and month of a birthday are shown. Age is never shown.</p>
-            <div class="mem-list" id="memList"></div>
-            <form class="mem-add" id="memAdd" hidden><input id="memNew" maxlength="40" placeholder="Add someone by name" aria-label="New member's name" autocomplete="off"><button class="btn ghost">Add</button></form>
-            <p class="msg" id="memMsg"></p></div>
         <form class="card" id="pinForm"><h3>Change my PIN</h3>
           <label>Current PIN<input id="pfOld" type="password" inputmode="numeric" maxlength="6" required autocomplete="current-password"></label>
           <label>New PIN (6 digits)<input id="pfNew" type="password" inputmode="numeric" maxlength="6" pattern="\d{6}" required autocomplete="new-password"></label>
           <label>New PIN again<input id="pfNew2" type="password" inputmode="numeric" maxlength="6" pattern="\d{6}" required autocomplete="new-password"></label>
           <p class="msg" id="pfMsg"></p><div class="actions"><button class="btn">Change PIN</button></div></form>
-        </div>
         <div class="card tlog" id="teamLog" hidden>
           <div class="tlog-h"><h3>Activity</h3><span class="muted small">Only admins, 小M and the boss see this. Opening it is recorded too.</span><button type="button" class="btn ghost sm" id="logMore">Refresh</button></div>
           <div class="tlog-list" id="logList"></div></div>
+        </div>
       </section>
 
       <section class="view page bk-page" id="v-backup" hidden>

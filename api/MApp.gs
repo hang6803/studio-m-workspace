@@ -12,7 +12,7 @@ const SESSION_TTL = 21600;   // 6 hours, the longest CacheService keeps a value;
 // Reads need a signed-in person. Writes also need one; the studio PIN (first argument of each Code.gs write) is
 // filled in here, so people only ever type their own PIN.
 const API_READ = { getAll: getAll, getRev: getRev, getJob: getJob, getShoots: getShoots, addFeedback: addFeedback, ask: ask_, aiStatus: aiStatus_,
-  people: people_, approve: approve_, reject: reject_, setRole: setRole_, removeMember: removeMember_, auditLog: auditLog_ };
+  people: people_, approve: approve_, reject: reject_, setRole: setRole_, removeMember: removeMember_, auditLog: auditLog_, setPinFor: setPinFor_ };
 const API_WRITE = { saveJob: saveJob, deleteJob: deleteJob, setTeam: setTeamGuarded_, setSetting: setSetting,
   saveShoot: saveShoot, deleteShoot: deleteShoot };
 // open without a session: who exists, signing in, first-time PIN, registering, and a PIN reset vouched for by an admin
@@ -165,6 +165,19 @@ function resetPin_(name, newPin, byName, byPin) {
   props_().setProperty("UPIN_" + name, hash_(newPin));
   audit_("reset PIN", name, "vouched by " + byName, byName);
   return login_(newPin, name);
+}
+
+// From the Team page: an admin, 小M or the boss sets a new PIN for someone (not above them) and tells them in person
+function setPinFor_(name, newPin) {
+  name = String(name || "").trim(); newPin = String(newPin || "");
+  need_("admin");
+  if (name === REQ.who) throw new Error("Change your own PIN below");
+  if (signers_().indexOf(name) < 0) throw new Error("Not on the team: " + name);
+  if (rank_(name) > rank_(REQ.who)) throw new Error("You can't reset the PIN of a " + roleOf_(name));
+  if (!PIN_RE.test(newPin)) throw new Error("PIN is 6 digits");
+  props_().setProperty("UPIN_" + name, hash_(newPin));
+  audit_("reset PIN", name, "on the Team page");
+  return people_();
 }
 
 // Sign up: name, Gmail, birthday, PIN. Nothing opens until an admin (or above) approves it on the Team page.
