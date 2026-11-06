@@ -62,14 +62,27 @@ test("built pages do not contain an API key", () => {
     const server = readFileSync(at("api/MApp.gs"), "utf8");
     assert.equal(server.includes("req.key"), false, "server still checks a shared key");
     assert.equal(server.includes('getProperty("API_KEY")'), false, "server still reads API_KEY");
-    assert.match(server, /openGate_\(req\.fn\)/);
-    for (const fn of ["login", "register", "setMyPin", "resetPin", "team"]) {
-      assert.match(server, new RegExp(fn + ":\\s*\\{\\s*ip:"));
-    }
+    assert.match(server, /if \(OPEN_LIMITS\[req\.fn\]\) openGate_\(req\.fn\)/);
+    assert.match(server, /register:\s*\{\s*ip:\s*3,\s*all:\s*10\s*\}/);
+    assert.match(server, /resetPin:\s*\{\s*ip:\s*6,\s*all:\s*20\s*\}/);
+    assert.match(server, /setMyPin:\s*\{\s*ip:\s*40,\s*all:\s*500\s*\}/);
+    assert.equal(/login:\s*\{\s*ip:/.test(server), false, "login still has an all-call IP cap");
+    assert.equal(/team:\s*\{\s*ip:/.test(server), false, "team still has an all-call IP cap");
+    assert.match(server, /TEAM_FAIL_CAP = 500/);
+    assert.match(server, /get\("pinFails:" \+ name\) \|\| 0\) >= 5/);
+    assert.match(server, /get\("pinFails"\) \|\| 0\) >= 30/);
+    const bump = server.slice(server.indexOf("function bump_"), server.indexOf("function openGate_"));
+    assert.equal(bump.includes("Too many tries"), false, "bump_ reports a cache failure as too many tries");
+    assert.match(server, /cache error, sign-in allowed/);
+    assert.match(server, /not trusted/);
     for (const fn of ["saveJob", "deleteJob", "saveShoot"]) {
       assert.match(server, new RegExp(fn + ':\\s*"member"'));
     }
     assert.match(server, /if \(WRITE_MIN\[req\.fn\]\) need_\(WRITE_MIN\[req\.fn\]\)/);
+    assert.match(server, /does not grant or deny by role/);
+    const log = readFileSync(at("CHANGELOG.md"), "utf8");
+    assert.match(log, /只要求已登录，角色分级另开 PR/);
+    assert.equal(log.includes("member and above"), false);
   } finally {
     if (had) writeFileSync(cfgPath, prev);
     else if (existsSync(cfgPath)) unlinkSync(cfgPath);
