@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.5";
+const APP_VER = "0.9.6";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "", apiKey: "" };
@@ -1148,18 +1148,26 @@ const metaRow = (...xs) => xs.filter(Boolean).map(x => `<span class="mr">${x}</s
 // pop-ups are drawers: they push up from the bottom edge and slide back down; drag the top of one down to put it away
 function sheetShow(sc) {
   sc._closing = false; (sc._anims || []).forEach(a => a.cancel()); sc._anims = null; sc.hidden = false;
-  clearTimeout(sc._sit); sc._sit = setTimeout(() => { const b = MBTN; if (!sc.hidden && !b.hidden && typeof perch === "function") perch(b.getBoundingClientRect(), "hop"); }, 380);   // he hops onto the drawer once it is up
+  clearTimeout(sc._sit); sc._sit = setTimeout(() => { const b = MBTN; if (!sc.hidden && !b.hidden && typeof perch === "function") perch(b.getBoundingClientRect(), "hop"); }, DESK.matches ? 300 : 380);   // he hops onto it once it has landed
 }
 function sheetHide(sc) {
   if (sc.hidden || sc._closing) return;
   const sh = sc.querySelector(".sheet"); if (STILL || !sh) { sc.hidden = true; afterSheet(); return; }
   sc._closing = true;
+  if (DESK.matches) {   // computer: the dialog sinks back into the page, softening as it goes; 小M hops off it straight away
+    sc._anims = [sh.animate([{ transform: "none", opacity: 1, filter: "blur(0)" }, { transform: "translateY(10px) scale(.95)", opacity: 0, filter: "blur(6px)" }], { duration: 240, easing: "cubic-bezier(.4,0,.7,.2)", fill: "forwards" }),
+      sc.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 260, fill: "forwards" })];
+    if (typeof perch === "function" && !MBTN.hidden) { const b = MBTN, from = b.getBoundingClientRect(); setTimeout(() => perch(from, "hop"), 0); }
+  } else {
   const cur = getComputedStyle(sh).transform, from = cur && cur !== "none" ? cur : "none";
   sc._anims = [sh.animate([{ transform: from }, { transform: "translateY(110%)" }], { duration: 280, easing: "cubic-bezier(.5,0,.75,.4)", fill: "forwards" }),
     sc.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 280, fill: "forwards" })];
+  }
   sc._anims[0].onfinish = () => { if (!sc._closing) return; sc._closing = false; sc._anims.forEach(a => a.cancel()); sc._anims = null; sc.hidden = true; afterSheet(); };
 }
-const afterSheet = () => { if (typeof perch === "function" && !document.querySelector(".scrim:not([hidden])")) perch(MBTN.getBoundingClientRect()); };
+const afterSheet = () => { if (typeof perch === "function" && !document.querySelector(".scrim:not([hidden])") && !(DESK.matches && !MBTN.classList.contains("on-sheet"))) perch(MBTN.getBoundingClientRect(), DESK.matches ? "hop" : undefined); };
+// computer: pop-ups are dialogs in the middle (they rise in and sink back); phone: drawers from the bottom edge
+const DESK = matchMedia("(min-width: 900px)");
 const SHEET_CLOSE = { jobScrim: () => closeJob(), chkScrim: () => closeChk(), shootScrim: () => closeShoot() };
 document.querySelectorAll(".scrim > .sheet").forEach(sh => {
   // push it down and it goes; pull it up and it stretches like rubber and springs back. A finger drags it when the drawer
@@ -1167,7 +1175,7 @@ document.querySelectorAll(".scrim > .sheet").forEach(sh => {
   let y0 = null, dy = 0, t0 = 0, on = false;
   const pull = d => d >= 0 ? `translateY(${d}px)` : `translateY(${-Math.sqrt(-d) * 3.2}px) scaleY(${1 + Math.min(.06, Math.sqrt(-d) / 260)})`;
   const skip = t => t.closest("input, select, textarea, button, a, label, [contenteditable]");
-  const start = (y, t) => { if (skip(t)) return; y0 = y; dy = 0; on = false; t0 = performance.now(); sh.style.transformOrigin = "50% 100%"; };
+  const start = (y, t) => { if (skip(t) || DESK.matches) return; y0 = y; dy = 0; on = false; t0 = performance.now(); sh.style.transformOrigin = "50% 100%"; };
   const move = (y, e) => { if (y0 == null) return; const d = y - y0;
     if (!on) { const atTop = sh.scrollTop <= 0, atEnd = sh.scrollTop + sh.clientHeight >= sh.scrollHeight - 1;
       if ((d > 6 && atTop) || (d < -6 && atEnd)) { on = true; y0 = y; } else if (Math.abs(d) > 6) { y0 = null; return; } else return; }
