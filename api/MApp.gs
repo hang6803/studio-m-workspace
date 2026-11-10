@@ -45,7 +45,9 @@ function cacheErr_() {
   err.cache = true;
   return err;
 }
-function bump_(key, ttl) {
+// Not bump_(): Code.gs already defines bump_() to increment REV after a write. Both files share one
+// global scope, so this counter needs its own name or it replaces that REV bump.
+function bumpCount_(key, ttl) {
   try {
     const c = cache_();
     const n = Number(c.get(key) || 0) + 1;
@@ -63,8 +65,8 @@ function openGate_(fn) {
   let ipN, allN;
   try {
     const ip = String(REQ.ip || "").trim().slice(0, 60) || "noip";
-    ipN = bump_("op:" + fn + ":" + ip, OPEN_WINDOW);
-    allN = bump_("op:" + fn, OPEN_WINDOW);
+    ipN = bumpCount_("op:" + fn + ":" + ip, OPEN_WINDOW);
+    allN = bumpCount_("op:" + fn, OPEN_WINDOW);
   } catch (e) {
     if (!(e && e.cache)) throw e;
     if (fn === "login") { audit_("rate limit unavailable", "", "cache error, sign-in allowed"); return; }
@@ -101,7 +103,7 @@ function doPost(e) {
       try {
         out = { result: API_OPEN[req.fn].apply(null, args) };
       } catch (err) {
-        if (req.fn === "team") { try { bump_("fail:team", OPEN_WINDOW); } catch (e) {} }   // successes are not counted
+        if (req.fn === "team") { try { bumpCount_("fail:team", OPEN_WINDOW); } catch (e) {} }   // successes are not counted
         throw err;
       }
     } else {

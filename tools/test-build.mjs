@@ -71,8 +71,10 @@ test("built pages do not contain an API key", () => {
     assert.match(server, /TEAM_FAIL_CAP = 500/);
     assert.match(server, /get\("pinFails:" \+ name\) \|\| 0\) >= 5/);
     assert.match(server, /get\("pinFails"\) \|\| 0\) >= 30/);
-    const bump = server.slice(server.indexOf("function bump_"), server.indexOf("function openGate_"));
-    assert.equal(bump.includes("Too many tries"), false, "bump_ reports a cache failure as too many tries");
+    const bump = server.slice(server.indexOf("function bumpCount_"), server.indexOf("function openGate_"));
+    assert.ok(bump.startsWith("function bumpCount_"), "rate-limit counter must not be named bump_");
+    assert.equal(server.includes("function bump_("), false, "MApp.gs must not define bump_(); Code.gs owns that name");
+    assert.equal(bump.includes("Too many tries"), false, "bumpCount_ reports a cache failure as too many tries");
     assert.match(server, /cache error, sign-in allowed/);
     assert.match(server, /not trusted/);
     for (const fn of ["saveJob", "deleteJob", "saveShoot"]) {
