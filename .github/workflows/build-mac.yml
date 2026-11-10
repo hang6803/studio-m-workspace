@@ -13,10 +13,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with: { targets: "aarch64-apple-darwin,x86_64-apple-darwin" }
       - run: npm ci || npm install
+      - run: npm test
       - run: npm run build:web
         env:
           M_API_URL: ${{ secrets.M_API_URL }}
-          M_API_KEY: ${{ secrets.M_API_KEY }}
       - run: npx tauri build --target universal-apple-darwin
       - uses: actions/upload-artifact@v4
         with:

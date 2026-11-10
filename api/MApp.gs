@@ -1,10 +1,14 @@
 // M app (Mac) — JSON API. Add this as a second file (MApp.gs) in the Studio M Backup Apps Script project, next to
 // Code.gs; it only adds, Code.gs and the web page are not changed.
-// The app sends POST {key, token, fn, args} as text/plain and gets {result} or {error} back.
-// Script properties: API_KEY (required, also built into the app), PIN (the studio PIN, as today),
-// DEEPSEEK_KEY (for Ask M; stays here on the server, the app never sees it).
-// Set by this file: PIN_SALT, UPIN_<name> (each person's hashed 4-digit PIN — never sent to the app).
+// The app sends POST {token, fn, args} as text/plain and gets {result} or {error} back.
+// There is no shared API key. A key in an old copy of the page is ignored. Delete the API_KEY script
+// property after this version is deployed, so the key that was published with the old page is dead.
+// Script properties: PIN (the studio PIN, as today), DEEPSEEK_KEY (for Ask M; stays here, the app never sees it).
+// Set by this file: PIN_SALT, UPIN_<name> (each person's hashed PIN — never sent to the app).
 // Deploy: a web-app deployment with "Execute as: Me" and "Who has access: Anyone" (the app has no Google sign-in).
+// Code.gs is not changed by this file. saveJob / deleteJob / checkPin_ still live there. This file checks
+// that a session exists, then fills in the studio PIN before those calls. need_("member") does not split
+// writes by role: every signed-in person is at least a member, and setSetting is not checked.
 const SHOOTS = "Shoots";
 const SHOOT_COLS = ["id", "name", "dates", "location", "type", "crew", "notes", "jobId", "createdBy", "createdAt", "updatedBy", "updatedAt"];
 const SESSION_TTL = 21600;   // 6 hours, the longest CacheService keeps a value; after that the app asks for the PIN again
@@ -15,20 +19,94 @@ const API_READ = { getAll: getAll, getRev: getRev, getJob: getJob_, getShoots: g
   people: people_, approve: approve_, reject: reject_, setRole: setRole_, removeMember: removeMember_, auditLog: auditLog_, setPinFor: setPinFor_ };
 const API_WRITE = { saveJob: saveJob, deleteJob: deleteJob, setTeam: setTeamGuarded_, setSetting: setSetting,
   saveShoot: saveShoot, deleteShoot: deleteShoot };
+// Calls need_("member") before these writes. That only requires a signed-in person: roleOf_() returns
+// member or higher for everyone who can log in, so it does not grant or deny by role. setSetting is not listed.
+// Role permissions are a separate change.
+const WRITE_MIN = { saveJob: "member", deleteJob: "member", saveShoot: "member", deleteShoot: "member" };
 // open without a session: who exists, signing in, first-time PIN, registering, and a PIN reset vouched for by an admin
 const API_OPEN = { team: teamStatus_, login: login_, setMyPin: setMyPin_, register: register_, resetPin: resetPin_ };
+// The IP below is whatever the browser sends. Apps Script cannot see the caller, so that IP is not trusted
+// and a limit keyed on it can be bypassed by sending another one.
+// login is not counted here. Wrong PINs use the older counters only: 5 failures for one name lock that name
+// for 15 minutes, and 30 failures with no name lock sign-in for 10 minutes. Successes are not counted.
+// team successes are not counted either. Only a failed team list counts, toward a high ceiling (TEAM_FAIL_CAP).
+// register and resetPin keep a strict cap on every call. setMyPin's ceiling is high so it cannot lock the team out.
+const OPEN_WINDOW = 600;
+const TEAM_FAIL_CAP = 500;
+const OPEN_LIMITS = {
+  register: { ip: 3, all: 10 },
+  resetPin: { ip: 6, all: 20 },
+  setMyPin: { ip: 40, all: 500 }
+};
 
-let REQ = { who: "", ip: "", dev: "" };   // who is asking, and from where (the app reports its own public IP)
+let REQ = { who: "", ip: "", dev: "" };   // ip is client-reported and not trusted (see the note above OPEN_WINDOW)
+function cacheErr_() {
+  const err = new Error("Couldn't check the rate limit. Try again in a moment.");
+  err.cache = true;
+  return err;
+}
+// Not bump_(): Code.gs already defines bump_() to increment REV after a write. Both files share one
+// global scope, so this counter needs its own name or it replaces that REV bump.
+function bumpCount_(key, ttl) {
+  try {
+    const c = cache_();
+    const n = Number(c.get(key) || 0) + 1;
+    if (!isFinite(n)) throw new Error("bad count");
+    c.put(key, String(n), ttl);
+    return n;
+  } catch (e) {
+    if (e && e.cache) throw e;
+    throw cacheErr_();   // not "too many tries": the cache failed, the person did not
+  }
+}
+function openGate_(fn) {
+  const lim = OPEN_LIMITS[fn];
+  if (!lim) return;
+  let ipN, allN;
+  try {
+    const ip = String(REQ.ip || "").trim().slice(0, 60) || "noip";
+    ipN = bumpCount_("op:" + fn + ":" + ip, OPEN_WINDOW);
+    allN = bumpCount_("op:" + fn, OPEN_WINDOW);
+  } catch (e) {
+    if (!(e && e.cache)) throw e;
+    if (fn === "login") { audit_("rate limit unavailable", "", "cache error, sign-in allowed"); return; }
+    throw e;   // register, resetPin, setMyPin: say the check failed, not that they tried too many times
+  }
+  if (ipN > lim.ip || allN > lim.all) throw new Error("Too many tries. Wait 10 minutes.");
+}
+function teamFailCount_() {
+  try {
+    const n = Number(cache_().get("fail:team") || 0);
+    if (!isFinite(n)) throw new Error("bad count");
+    return n;
+  } catch (e) {
+    if (e && e.cache) throw e;
+    throw cacheErr_();
+  }
+}
 function doPost(e) {
   let out;
   try {
     const req = JSON.parse(e.postData.contents);
-    const key = String(props_().getProperty("API_KEY") || "");
-    if (!key || req.key !== key) throw new Error("Bad API key");
     const args = Array.isArray(req.args) ? req.args : [];
     REQ = { who: "", ip: String(req.ip || "").slice(0, 60), dev: String(req.dev || "").slice(0, 120) };
-    if (API_OPEN[req.fn]) out = { result: API_OPEN[req.fn].apply(null, args) };
-    else {
+    if (API_OPEN[req.fn]) {
+      if (req.fn === "team") {
+        try {
+          if (teamFailCount_() >= TEAM_FAIL_CAP) throw new Error("Too many tries. Wait 10 minutes.");
+        } catch (e) {
+          if (e && e.cache) throw new Error("Couldn't check the rate limit. Try again in a moment.");
+          throw e;
+        }
+      }
+      if (OPEN_LIMITS[req.fn]) openGate_(req.fn);
+      try {
+        out = { result: API_OPEN[req.fn].apply(null, args) };
+      } catch (err) {
+        if (req.fn === "team") { try { bumpCount_("fail:team", OPEN_WINDOW); } catch (e) {} }   // successes are not counted
+        throw err;
+      }
+    } else {
       const who = sessionName_(req.token);
       if (!who) throw new Error("SESSION: please enter your PIN again");
       REQ.who = who;
@@ -37,6 +115,7 @@ function doPost(e) {
         if (req.fn === "getAll") { r.pinRequired = false; r.me = { name: who, role: roleOf_(who) }; }
         out = { result: r };
       } else if (API_WRITE[req.fn]) {
+        if (WRITE_MIN[req.fn]) need_(WRITE_MIN[req.fn]);
         args[0] = String(props_().getProperty("PIN") || "");
         out = { result: API_WRITE[req.fn].apply(null, args) };
       } else throw new Error("Unknown call: " + req.fn);
@@ -100,13 +179,28 @@ function teamStatus_() {
   return { members: teamNames_().map(n => ({ name: n, hasPin: !!pinOf_(n) })), xiaom: !!xiaomPin_(), studioPin: !!props_().getProperty("PIN"), pinLength: 6 };
 }
 
-// Wrong PINs: 5 for one name in 15 minutes locks that name; 30 in all locks sign-in for everyone for 10 minutes.
+// Wrong PINs only (a successful sign-in is not counted). 5 for one name in 15 minutes locks that name.
+// 30 with no name, in 10 minutes, locks unnamed sign-in for everyone. The current app sends no name, so that
+// shared counter of 30 is the global brake. It is not a count of every request.
 const cache_ = () => CacheService.getScriptCache();
-// (the all-names limit only guards the old PIN-only sign-in, so one stranger can't lock the whole team out)
-function tooMany_(name) { return name ? Number(cache_().get("pinFails:" + name) || 0) >= 5 : Number(cache_().get("pinFails") || 0) >= 30; }
+function tooMany_(name) {
+  try {
+    const c = cache_();
+    return name ? Number(c.get("pinFails:" + name) || 0) >= 5 : Number(c.get("pinFails") || 0) >= 30;
+  } catch (e) {
+    if (e && e.cache) throw e;
+    throw cacheErr_();
+  }
+}
 function failed_(name) {
-  const c = cache_(); c.put("pinFails", String(Number(c.get("pinFails") || 0) + 1), 600);
-  if (name) c.put("pinFails:" + name, String(Number(c.get("pinFails:" + name) || 0) + 1), 900);
+  try {
+    const c = cache_();
+    c.put("pinFails", String(Number(c.get("pinFails") || 0) + 1), 600);
+    if (name) c.put("pinFails:" + name, String(Number(c.get("pinFails:" + name) || 0) + 1), 900);
+  } catch (e) {
+    if (e && e.cache) throw e;
+    throw cacheErr_();
+  }
 }
 function checkWho_(name, pin) {   // true when this person's PIN is right (6 digits, or an old 4-digit one not yet changed)
   const h = name === XIAOM ? xiaomPin_() : pinOf_(name);
@@ -117,12 +211,27 @@ function checkWho_(name, pin) {   // true when this person's PIN is right (6 dig
 function login_(pin, name) {
   pin = String(pin || ""); name = String(name || "").trim();
   if (!PIN_RE.test(pin) && !OLD_PIN_RE.test(pin)) throw new Error("PIN is 6 digits");
-  if (tooMany_(name)) throw new Error("Too many tries. Wait 15 minutes.");
+  let locked = false;
+  try { locked = tooMany_(name); }
+  catch (e) {
+    if (!(e && e.cache)) throw e;
+    audit_("rate limit unavailable", name, "cache error, sign-in allowed", name || "?");
+    locked = false;   // the cache is down: let this sign-in through instead of calling it too many tries
+  }
+  if (locked) throw new Error("Too many tries. Wait 15 minutes.");
   if (name && jsonProp_("PENDING", []).some(p => p.name === name && p.kind === "register")) throw new Error("Your sign-up is waiting for approval");
   let who = "";
   if (name) { if (signers_().indexOf(name) >= 0 && checkWho_(name, pin)) who = name; }
   else { const h = hash_(pin); who = signers_().find(n => (n === XIAOM ? xiaomPin_() : pinOf_(n)) === h) || ""; }
-  if (!who) { failed_(name); audit_("sign-in failed", name, "", name || "?"); throw new Error("Wrong PIN"); }
+  if (!who) {
+    try { failed_(name); }
+    catch (e) {
+      if (!(e && e.cache)) throw e;
+      audit_("rate limit unavailable", name, "cache error, sign-in failure not counted", name || "?");
+    }
+    audit_("sign-in failed", name, "", name || "?");
+    throw new Error("Wrong PIN");
+  }
   const token = Utilities.getUuid();
   cache_().put("sess:" + token, who, SESSION_TTL);
   audit_("signed in", who, "", who);
