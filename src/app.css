@@ -1308,3 +1308,24 @@ a, [role="tab"] { -webkit-tap-highlight-color: transparent }   /* no blue box on
   body.m-dock #v-home .composer { margin-bottom: 10px }
   body.m-dock #v-home .mp-hist { top: 52px }
 }
+
+/* ---- 0.9.12 touch screens: the same moves, without the moving blur ----
+   A blur that changes is redrawn from scratch every frame; on a phone that is what stuttered (page changes, cards, sheets,
+   toasts, wizard steps, a job unfolding). Here each entrance only fades and slides. Computers keep the soft focus. */
+@media (pointer: coarse) {
+  @keyframes rise { from { opacity: 0; transform: translateY(8px) } }
+  @keyframes pop { from { opacity: 0; transform: scale(.94) } }
+  @keyframes cardIn { from { opacity: 0; transform: translateY(-8px) scale(.96) } }
+  @keyframes vtOut { to { opacity: 0; transform: translateX(-14px) } }
+  @keyframes vtIn { from { opacity: 0; transform: translateX(18px) } }
+  @keyframes wzin { from { opacity: 0; transform: translateX(28px) } }
+  @keyframes wzback { from { opacity: 0; transform: translateX(-28px) } }
+  @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 12px) scale(.96) } }
+  @keyframes fade { from { opacity: 0 } }
+  @keyframes dlgIn { 0% { opacity: 0; transform: translateY(18px) scale(.94) } 60% { opacity: 1 } 100% { transform: none } }
+  .bk-det, .bk-det[class], .tm-edit { filter: none }
+  .scrim, .scrim[class] { -webkit-backdrop-filter: none !important; backdrop-filter: none !important }
+  /* the key light sat over the whole app as a blend layer, so every moving thing meant blending the full screen again;
+     behind the page it still warms the background, and nothing in front has to be re-blended */
+  .light { z-index: -1 }
+}

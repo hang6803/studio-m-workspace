@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.11";
+const APP_VER = "0.9.12";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -15,6 +15,10 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
 };
 const STILL = matchMedia("(prefers-reduced-motion: reduce)").matches;
+// Touch screens (phones, tablets): animations move and fade but never blur. A moving blur is redrawn from scratch every frame,
+// which is what made page changes, cards and 小M's jumps stutter on a phone. Computers keep the soft focus.
+const TOUCH = matchMedia("(pointer: coarse)").matches;
+const noBlur = frames => TOUCH ? frames.map(f => { const g = Object.assign({}, f); delete g.filter; return g; }) : frames;
 // a toggle you just turned on gives one jelly wobble (only the one you pressed, not on every redraw)
 document.addEventListener("click", e => { const b = e.target.closest(".seg button, .chips button, .fchip, .te-role button"); if (!b || STILL) return;
   requestAnimationFrame(() => { const el = b.isConnected ? b : null; if (!el || !el.classList.contains("on")) return; el.classList.remove("jel"); void el.offsetWidth; el.classList.add("jel"); el.addEventListener("animationend", () => el.classList.remove("jel"), { once: true }); }); });
@@ -43,7 +47,7 @@ function flipGrid(el) {
     const now = look();
     now.forEach(([x, y, c], k) => { const was = last.get(k); if (!was || !c.isConnected || c.classList.contains("editing")) return;
       const dx = was[0] - x, dy = was[1] - y; if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return;
-      c.animate([{ translate: `${dx}px ${dy}px`, filter: "blur(1.5px)" }, { translate: "0 0", filter: "blur(0)" }], { duration: 520, easing: SNAP, composite: "add" }); });
+      c.animate(noBlur([{ translate: `${dx}px ${dy}px`, filter: "blur(1.5px)" }, { translate: "0 0", filter: "blur(0)" }]), { duration: 520, easing: SNAP, composite: "add" }); });
     last = now; now.forEach(([, , c]) => ro.observe(c));
   });
   ro.observe(el); for (const c of el.children) ro.observe(c);
@@ -280,22 +284,32 @@ function act(host, name, ms) {
 // pixel, and every slice is one more 3D layer the phone re-sorts on every frame of his breathing and blinking. So on a touch
 // screen, a small 小M keeps every second plain slice (front, back, outlined and other distinct slices always stay): the same
 // picture, half the layers. The big 小M of festival scenes is never touched.
-const THIN = matchMedia("(pointer: coarse)").matches;
-function thinM(root) {
-  if (!THIN) return;
-  root.querySelectorAll(".m25:not([data-thin])").forEach(m => {
-    const w = m.getBoundingClientRect().width; if (!w || w > 100) return;
-    m.dataset.thin = "1";
-    const groups = new Set(); m.querySelectorAll(".slice").forEach(sl => groups.add(sl.parentElement));
-    groups.forEach(g => {
-      const sl = [...g.children].filter(c => c.classList.contains("slice")); if (sl.length < 5) return;
-      const key = e => e.innerHTML + "|" + (e.style.background || e.style.backgroundColor) + "|" + e.style.borderRadius + "|" + e.style.width + "|" + e.style.height;
-      const ks = sl.map(key), last = sl.length - 1;
-      sl.forEach((e, k) => { if (k === 0 || k === last || k % 2 === 0) return; if (ks[k] !== ks[k - 1] || ks[k] !== ks[k + 1]) return; e.remove(); });
-    });
+const THIN = TOUCH;
+function thinOne(m) {
+  m.dataset.thin = "1";
+  const groups = new Set(); m.querySelectorAll(".slice").forEach(sl => groups.add(sl.parentElement));
+  groups.forEach(g => {
+    const sl = [...g.children].filter(c => c.classList.contains("slice")); if (sl.length < 5) return;
+    const key = e => e.innerHTML + "|" + (e.style.background || e.style.backgroundColor) + "|" + e.style.borderRadius + "|" + e.style.width + "|" + e.style.height;
+    const ks = sl.map(key), last = sl.length - 1;
+    sl.forEach((e, k) => { if (k === 0 || k === last || k % 2 === 0) return; if (ks[k] !== ks[k - 1] || ks[k] !== ks[k + 1]) return; e.remove(); });
   });
 }
-if (THIN) { let q = 0; new MutationObserver(() => { if (!q) q = requestAnimationFrame(() => { q = 0; thinM(document.body); }); }).observe(document.body, { childList: true, subtree: true }); }
+// Each new 小M is decided once, the first time it has a size (ResizeObserver: no forced layout). This used to measure every
+// 小M not yet thinned on every change anywhere on the page, and a hidden one (0 wide) was measured again each time, forever:
+// on a phone that was the biggest single cost of changing pages.
+if (THIN && window.ResizeObserver) {
+  const ro = new ResizeObserver(es => es.forEach(e => {
+    const m = e.target, w = e.contentRect.width; if (!w) return;
+    ro.unobserve(m); if (m.dataset.thin) return;
+    if (w <= 100) thinOne(m); else m.dataset.thin = "0";
+  }));
+  const seen = new WeakSet();
+  const scan = n => { if (n.nodeType !== 1) return; const list = n.classList.contains("m25") ? [n] : n.querySelectorAll(".m25");
+    list.forEach(m => { if (!seen.has(m) && !m.dataset.thin) { seen.add(m); ro.observe(m); } }); };
+  new MutationObserver(ms => ms.forEach(r => r.addedNodes.forEach(scan))).observe(document.body, { childList: true, subtree: true });
+  scan(document.body);
+}
 $("mSvg").innerHTML = face(false);
 $("mpAv").innerHTML = face(false);
 $("lockM").innerHTML = X ? face(false) : mSVG(true);
@@ -540,7 +554,7 @@ function render(first) {
   const phone = PHONE.matches, vt = !first && !STILL && !phone && document.startViewTransition;
   const apply = () => { route = next; perch.navAt = performance.now(); paint(); perch.st = 0; perch.dock = false; perch(from); };
   if (vt) document.startViewTransition(apply); else apply();
-  if (phone && !first && !STILL) $("views").animate([{ opacity: 0, transform: "translateY(14px)", filter: "blur(6px)" }, { opacity: 1, transform: "none", filter: "blur(0)" }], { duration: 340, easing: "cubic-bezier(.2,.8,.2,1)" });
+  if (phone && !first && !STILL) $("views").animate(noBlur([{ opacity: 0, transform: "translateY(14px)", filter: "blur(6px)" }, { opacity: 1, transform: "none", filter: "blur(0)" }]), { duration: 340, easing: "cubic-bezier(.2,.8,.2,1)" });
   if (window.innerWidth < 900 && !$("mPanel").hidden && !docked()) closeM();
 }
 let shownView = "";
@@ -2485,7 +2499,7 @@ const SHRED = ["polygon(0 8%,100% 0,92% 100%,6% 88%)", "polygon(10% 0,100% 18%,8
   "polygon(0 0,100% 0,100% 40%,85% 55%,100% 70%,100% 100%,0 100%)", "polygon(5% 10%,95% 0,100% 90%,0 100%)"];
 function paperBurst(x, y, inward) {
   const wrap = document.createElement("div"); wrap.className = "paper-burst"; wrap.style.left = x + "px"; wrap.style.top = y + "px"; document.body.appendChild(wrap);
-  const n = 22;
+  const n = TOUCH ? 12 : 22;   // a phone draws about half the scraps: each one is its own moving layer, two bursts per page change
   for (let i = 0; i < n; i++) {
     const p = document.createElement("i"), a = (i / n) * Math.PI * 2 + Math.random() * .5, d = 26 + Math.random() * 62;
     const w = 3 + Math.random() * 8, h = w * (.6 + Math.random() * 1.8);   // strips and flakes
@@ -2506,14 +2520,14 @@ function paperBurst(x, y, inward) {
 function hop(b, from, to) {
   const dx = from.left - to.left, dy = from.top - to.top, up = Math.min(-70, Math.min(dy, 0) - 60), tilt = dx > 0 ? -10 : 10;
   const k = Math.min(1.6, Math.hypot(dx, dy) / 260 + .5);   // longer jumps blur and stretch a little more
-  b.animate([
+  b.animate(noBlur([
     { transform: `translate(${dx}px, ${dy}px) scale(1.08, .88)`, filter: "blur(0)", offset: 0 },
     { transform: `translate(${dx}px, ${dy - 8}px) scale(.9, 1.14)`, filter: `blur(${.6 * k}px)`, offset: .12 },
     { transform: `translate(${dx * .5}px, ${dy * .55 + up}px) rotate(${tilt}deg) scale(.94, 1.08)`, filter: `blur(${1.8 * k}px)`, offset: .48 },
     { transform: `translate(${dx * .08}px, ${dy * .1 - 18}px) rotate(${-tilt * .3}deg) scale(.92, 1.12)`, filter: `blur(${1.1 * k}px)`, offset: .82 },
     { transform: "translate(0, 0) scale(1.16, .84)", filter: "blur(0)", offset: .92 },
     { transform: "none", filter: "blur(0)", offset: 1 }
-  ], { duration: 640, easing: "cubic-bezier(.33,.0,.25,1)" }).onfinish = () => { act($("mSvg"), "land", 450); fx("drag"); };
+  ]), { duration: 640, easing: "cubic-bezier(.33,.0,.25,1)" }).onfinish = () => { act($("mSvg"), "land", 450); fx("drag"); };
 }
 // on a wide screen the chat opens on 小M's side of the screen, or where you last dragged it (by its top bar)
 let mpPos = store.get("mpPos", null);
