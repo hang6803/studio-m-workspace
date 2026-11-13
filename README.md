@@ -2,7 +2,7 @@
 
 Studio M's team app for Mac (Tauri 2) and, later, phone (the same pages as a web app). The GitHub repo keeps its old name.
 
-- **PIN lock** → **Home**: one sentence (your jobs not backed up, your next shoot) and a 3D graph of the year —
+- **PIN lock** → **Home** (on a phone, Home is the Ask M chat and there is no graph): one sentence (your jobs not backed up, your next shoot) and a 3D graph of the year —
   drives (orange), editors (white), jobs (green backed up, red not backed up), upcoming shoots (hollow).
   Drag to turn, click a dot to pin it, click again to open its page. Year arrows and "Only not backed up" filter.
 - **Sidebar** (phone: Home / Calendar / Search / Drives tabs) — Not backed up, each drive and editor with counts.

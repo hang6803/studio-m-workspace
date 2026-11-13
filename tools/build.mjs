@@ -69,6 +69,8 @@ html.m-scenes body::before, html.m-scenes body::after { display: none !important
 html.m-scenes body > *:not(.bd-ov):not(.fx-layer):not(script):not(style) { display: none !important }   /* the rest of the page is not drawn at all (was only invisible, and still animating) */
 html.m-scenes body > .bd-ov, html.m-scenes body > .fx-layer { visibility: visible !important }
 html.m-scenes .fx-layer { position: fixed !important; inset: 0 !important; height: auto !important; -webkit-mask-image: none !important; mask-image: none !important }
+/* phones: the greeting card's blur of the whole app behind it was redrawn every frame of the scene (it stuttered); a deeper tint instead */
+@media (pointer: coarse) { html.m-scenes .bd-ov { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; background: color-mix(in srgb, var(--bg) 86%, transparent) !important } }
 </style>\n`;
 const M_WRITE = `<script>
 // The Workspace's own job form saves through this page: it fills this page's form and presses this page's Save,
