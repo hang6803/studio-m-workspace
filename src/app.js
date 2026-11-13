@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.10";
+const APP_VER = "0.9.11";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -327,7 +327,7 @@ async function slow(work) {
   const b = $("boot"); let shown = false;
   const t = setTimeout(() => { shown = true; b.classList.remove("breathe"); b.hidden = false; }, 600);
   try { return await work; }
-  finally { clearTimeout(t); if (shown) { b.classList.add("breathe"); setTimeout(() => { if (b.classList.contains("breathe")) b.hidden = true; }, 1500); } }
+  finally { clearTimeout(t); if (shown) { b.classList.add("breathe"); setTimeout(() => { if (b.classList.contains("breathe")) b.hidden = true; }, 1000); } }
 }
 
 // After the PIN the loading stays up until Home is whole: the data is in and the graph has drawn it (settled, every dot
@@ -340,7 +340,7 @@ function holdBoot() {
   const out = () => {
     if (done) return; done = true; booting = false; graphReady = null; clearTimeout(cap);
     if (!session) return;
-    b.classList.add("breathe"); setTimeout(() => { if (b.classList.contains("breathe")) b.hidden = true; }, 1500);
+    b.classList.add("breathe"); setTimeout(() => { if (b.classList.contains("breathe")) b.hidden = true; }, 1000);
     if (route.name === "home" && graph) setTimeout(() => graph.reset(), 650);   // the graph breathes as the loading lifts
   };
   const cap = setTimeout(out, 8000);
@@ -372,11 +372,11 @@ addEventListener("online", () => { if (session && session.offline) lock("Back on
 const PIN_LEN = 6;
 let entered = "", team = [], who = null, legacyT = 0;
 function lock(msg) {
-  session = null; entered = ""; clearTimeout(legacyT);
+  session = null; entered = ""; clearTimeout(legacyT); preload = null;
   $("shell").hidden = true; $("setup").hidden = true; $("lock").hidden = false;
   $("lockMsg").textContent = msg || ""; drawDots();
   $("backupFrame").removeAttribute("src"); backupLoaded = false; scenes(false); festKey = "";
-  closeM(true); MBTN.hidden = true; if (graph) graph.stop();
+  undockM(); closeM(true); MBTN.hidden = true; if (graph) graph.stop();
   closeShoot(); if (streaming) streaming.abort(); gKey = ""; teamOk = false; closeJob(true);
   ppl = null; logRows = null; pplAt = 0; editOpen = null; if (data) data.me = null; shownView = "";
   loadWho();
@@ -401,6 +401,7 @@ async function signIn(pin) {
   const done = () => { dots.classList.remove("checking"); $("pad").inert = false; };
   try {
     session = await M.api("login", [pin]); done();
+    if (!session.upgrade) preload = loadData();   // the data starts coming now, while 小M cheers, not after
     keepPin(pin, session.name); store.set("mUser", session.name);
     store.set("mLen4", pin.length === 4);
     entered = ""; drawDots(); setTimeout(() => lockMood("yay"), 300);
@@ -509,10 +510,16 @@ function unlock() {
   $("meBtn").textContent = $("meBtn2").textContent = session.name[0].toUpperCase();
   $("menuName").textContent = $("sideName").textContent = session.name;
   $("demoBadge").hidden = !DEMO;
-  if (!graph) graph = Graph3D($("graph"), { onPin: drawPin, onOpen: n => { location.hash = hrefOf(n); }, onReady: q => graphReady && graphReady(q) });
+  if (!PHONE.matches) makeGraph();
   if (!location.hash || location.hash === "#/") history.replaceState(null, "", "#/home");
   const loaded = holdBoot();
   showM(); drawAll(); render(true); refresh().then(loaded);   // festivals / birthdays start once the first refresh brings the birthdays (festAfterData)
+}
+// the 3D graph is made the first time a computer-sized Home needs it; on a phone Home is Ask M and the graph is never built
+function makeGraph() {
+  if (graph) return;
+  graph = Graph3D($("graph"), { onPin: drawPin, onOpen: n => { location.hash = hrefOf(n); }, onReady: q => graphReady && graphReady(q) });
+  gKey = ""; drawHome();
 }
 function parse(h) {
   const p = String(h || "").replace(/^#\/?/, "").split("/").map(s => { try { return decodeURIComponent(s); } catch (e) { return s; } });
@@ -534,7 +541,7 @@ function render(first) {
   const apply = () => { route = next; perch.navAt = performance.now(); paint(); perch.st = 0; perch.dock = false; perch(from); };
   if (vt) document.startViewTransition(apply); else apply();
   if (phone && !first && !STILL) $("views").animate([{ opacity: 0, transform: "translateY(14px)", filter: "blur(6px)" }, { opacity: 1, transform: "none", filter: "blur(0)" }], { duration: 340, easing: "cubic-bezier(.2,.8,.2,1)" });
-  if (window.innerWidth < 900 && !$("mPanel").hidden) closeM();
+  if (window.innerWidth < 900 && !$("mPanel").hidden && !docked()) closeM();
 }
 let shownView = "";
 function paint() {
@@ -546,7 +553,8 @@ function paint() {
   $("topTitle").textContent = route.name === "drive" ? dName(route.key) : route.name === "editor" ? route.key : route.name === "job" ? "Job" : TITLES[route.name] || "";
   document.body.dataset.route = route.name;
   markNav();
-  if (v === "home") { graph.start(); graph.theme(); if (!booting) graph.reset(); } else if (graph) graph.stop();
+  if (v === "home" && !PHONE.matches) { makeGraph(); graph.start(); graph.theme(); if (!booting) graph.reset(); } else if (graph) graph.stop();
+  dockM();
   if (v === "list") { const lk = route.name + ":" + route.key; if (lk !== drawList.key) { drawList.key = lk; listUn = false; } drawList(); }
   if (v === "job") drawJob();
   if (v === "calendar") { if (route.key && parseYmd(route.key)) { selDay = route.key; const d = parseYmd(route.key); calY = d.getFullYear(); calM = d.getMonth(); } drawCal(); }
@@ -576,10 +584,14 @@ const toProfile = () => { if (location.hash !== "#/team") location.hash = "#/tea
 $("meBtn").addEventListener("click", toProfile); $("meBtn2").addEventListener("click", toProfile);
 document.querySelectorAll(".logout").forEach(b => b.addEventListener("click", () => { fx("close"); lock("Logged out."); }));
 
+// the first load after the PIN was already started by signIn (preload); every later one asks the server again
+let preload = null;
+const loadData = () => { const p = Promise.all([M.api("getAll"), M.api("getShoots")]); p.catch(() => {}); return p; };
 async function refresh() {
   if (session && session.offline) { const c = offlineCopy(); if (c) useCopy(c); drawAll(); festAfterData(); return; }
+  const pre = preload; preload = null;
   try {
-    const [all, sh] = await Promise.all([M.api("getAll"), M.api("getShoots")]);
+    const [all, sh] = await (pre || loadData());
     data = all; team = all.team || []; shoots = sh || [];
     teamOk = Array.isArray(all.team) && all.team.length > 0 && !!all.birthdays && typeof all.birthdays === "object";
     birthdays = Object.assign({}, all.birthdays || {});
@@ -2097,6 +2109,7 @@ function showM() {
 }
 function centerOf(el) { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height }; }
 function openM(text) {
+  if (PHONE.matches && session && route.name !== "home") { dockM.text = text; location.hash = "#/home"; return; }
   if (mOpen) { if (text != null) setInput(text); $("aiIn").focus(); return; }
   mOpen = true; fx("open"); status(""); fanHide(true);
   if (mAnim) { mAnim.forEach(a => a.cancel()); mAnim = null; }
@@ -2121,8 +2134,30 @@ function openM(text) {
   mAnim[2].onfinish = () => { b.style.visibility = "hidden"; $("mpAv").style.visibility = ""; act($("mpAv"), "land", 450); };
   if (!phoneW()) setTimeout(() => $("aiIn").focus({ preventScroll: true }), 120);   // phone: the keyboard comes up when you tap the box, not mid-animation
 }
+// Phone: Home is Ask M. The chat is not a pop-up there but the page itself, between the top bar and the tab bar
+// (the 3D graph stays on the computer). Leave Home and it goes back to being 小M's pop-up; Ask M from anywhere comes back here.
+const docked = () => document.body.classList.contains("m-dock");
+function dockM() {
+  const p = $("mPanel"), want = !!session && PHONE.matches && route.name === "home";
+  if (!want) { undockM(); return; }
+  if (!docked()) {
+    if (mOpen) { if (mAnim) mAnim.forEach(a => a.cancel()); mAnim = null; }
+    document.body.classList.add("m-dock"); $("v-home").append(p);
+    mOpen = true; fanHide(true); status("");
+    p.hidden = false; p.style.left = p.style.right = p.style.top = p.style.bottom = "";
+    MBTN.style.visibility = "hidden"; MBTN.setAttribute("aria-expanded", "true"); $("mpAv").style.visibility = "";
+    drawChat();
+  }
+  if (dockM.text != null) { setInput(dockM.text); dockM.text = null; }
+}
+function undockM() {
+  if (!docked()) return;
+  const p = $("mPanel");
+  document.body.classList.remove("m-dock"); MBTN.after(p);
+  mOpen = true; closeM(true);
+}
 function closeM(now) {
-  if (!mOpen) return;
+  if (!mOpen || docked()) return;   // docked on the phone's Home: it is the page, there is nothing to close
   mOpen = false; fx("close"); $("mpHist").hidden = true; $("histBtn").setAttribute("aria-expanded", "false");
   const b = MBTN, p = $("mPanel");
   b.setAttribute("aria-expanded", "false"); document.body.classList.remove("m-open");
@@ -2194,6 +2229,7 @@ const seat = document.createElement("div"); seat.className = "m-seat";
 // stations: as you scroll, he blinks from panel to panel so he is always in view. Team and Drives are all cards (the first
 // card is his first spot); on the other pages his first spot is the page's own (PERCH), then the panels and rows below it.
 const PHONE = matchMedia("(max-width: 899px)");
+PHONE.addEventListener("change", () => { if (session) render(true); });   // turned / resized across the phone size: Home swaps between Ask M and the graph
 const STATIONS = { team: "#teamGrid > .tm", drives: "#listRows .drive-card" };
 const SCROLL = { calendar: "#day", backup: "#bkList .bk-row", settings: "#v-settings .card", job: "#v-job .facts ~ *, #v-job .bk-row",
   list: "#listRows .bk-row, #listRows .drive-card, #listRows .row" };
@@ -2520,7 +2556,7 @@ document.addEventListener("keydown", e => {
     if (!$("jobScrim").hidden) { if (!$("jfCfm").hidden) $("jfCfmNo").click(); else closeJob(); return; }
     if (!$("chkScrim").hidden) { closeChk(); return; }
     if (!$("shootScrim").hidden) { closeShoot(); return; }
-    if (mOpen) { closeM(); MBTN.focus(); return; }
+    if (mOpen && !docked()) { closeM(); MBTN.focus(); return; }
     if (graph && graph.pinned) graph.pin(null);
   }
 });
@@ -2938,4 +2974,4 @@ if ("serviceWorker" in navigator && !window.__TAURI__ && (location.protocol === 
 drawTheme(); themeBar(); drawAI(); drawVoice();
 // Studio M loading: the beam sweeps the logo, it breathes out, then the PIN screen
 lock();
-setTimeout(() => { $("boot").classList.add("breathe"); setTimeout(() => { $("boot").hidden = true; }, 1500); }, 1700);
+setTimeout(() => { $("boot").classList.add("breathe"); setTimeout(() => { $("boot").hidden = true; }, 1000); }, 1200);   // one sweep of the beam, then the PIN pad

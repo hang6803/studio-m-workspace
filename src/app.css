@@ -56,8 +56,8 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round
 @keyframes bootIn { from { opacity: 0; transform: translateY(8px) scale(.97) } to { opacity: 1; transform: none } }
 .boot.breathe .boot-beam { opacity: 0; transition: opacity .3s ease .2s }
 .boot.breathe .boot-base { animation: litUp .7s cubic-bezier(.33,0,.2,1) both }
-.boot.breathe .boot-logo { animation: exhale 1.4s cubic-bezier(.37,0,.25,1) both }
-.boot.breathe { animation: bootOut .7s cubic-bezier(.4,0,.2,1) .75s both }
+.boot.breathe .boot-logo { animation: exhale 1s cubic-bezier(.37,0,.25,1) both }
+.boot.breathe { animation: bootOut .5s cubic-bezier(.4,0,.2,1) .45s both }   /* out in under 1 s (was 1.45 s): signing in felt slow */
 @keyframes litUp { from { opacity: .5 } to { opacity: 1 } }
 @keyframes exhale { 0% { transform: scale(1); opacity: 1 } 50% { transform: scale(1.045); opacity: 1 } 100% { transform: scale(1.09); opacity: 0 } }
 @keyframes bootOut { to { opacity: 0; visibility: hidden } }
@@ -560,12 +560,15 @@ body.cal-dragging, body.cal-dragging * { cursor: grabbing !important; user-selec
 .cele[hidden] { display: none }
 .cele.out { animation: celeOut .35s ease-in both }
 .cele-card { background: var(--panel, #161616); border: 1px solid rgba(255, 255, 255, .08); border-radius: 22px; padding: 18px 18px 16px; text-align: center; box-shadow: 0 30px 80px rgba(0, 0, 0, .5); animation: celePop .5s cubic-bezier(.3, 1.4, .5, 1) both }
-.cele-stage { position: relative; width: 229px; height: 200px; zoom: 1.5; overflow: hidden; border-radius: 12px; margin: 0 auto }
-.cele-stage:empty { display: none }
+/* the card is scaled up with transform, not zoom: zoom on a 3D scene is slow on phones and Safari can leave some
+   of 小M's layers undrawn. The box keeps the scaled size in the layout */
+.cele-box { --k: 1.5; width: calc(229px * var(--k)); height: calc(200px * var(--k)); margin: 0 auto }
+.cele-box:has(.cele-stage:empty) { display: none }
+.cele-stage { position: relative; width: 229px; height: 200px; transform: scale(var(--k)); transform-origin: 0 0; overflow: hidden; border-radius: calc(12px / var(--k)) }
 .cele-t { margin: 14px 0 2px; font-weight: 700; font-size: 18px; letter-spacing: .04em }
 .cele-s { margin: 0; color: var(--muted, #8a8a8a); font-size: 13px }
 .cele-s:empty { display: none }
-@media (max-width: 420px) { .cele-stage { zoom: 1.2 } }
+@media (max-width: 420px) { .cele-box { --k: 1.2 } }
 @keyframes celeIn { from { opacity: 0 } }
 @keyframes celeOut { to { opacity: 0 } }
 @keyframes celePop { from { transform: scale(.85) translateY(20px); opacity: 0 } }
@@ -1294,3 +1297,14 @@ body.lamp-tap.lamp-off .light .lamp { opacity: 0; transition: opacity .7s ease-o
   .tabs a { max-height: 48px }
 }
 a, [role="tab"] { -webkit-tap-highlight-color: transparent }   /* no blue box on a tapped tab or link: the app draws its own press */
+
+/* phone: Home is Ask M. The chat sits in the page between the top bar and the tab bar; the graph is only on the computer */
+@media (max-width: 899px) {
+  body.m-dock #v-home { padding: 0; gap: 0 }
+  body.m-dock #v-home > :not(.mpanel) { display: none }
+  body.m-dock #v-home > .mpanel { position: relative; inset: auto; z-index: auto; flex: 1; min-height: 0; width: auto; height: auto; padding-top: 0; border: 0; border-radius: 0; background: none; box-shadow: none }
+  body.m-dock #v-home .mp-head { border-bottom: 0; padding-top: 4px }
+  body.m-dock #mClose { display: none }
+  body.m-dock #v-home .composer { margin-bottom: 10px }
+  body.m-dock #v-home .mp-hist { top: 52px }
+}
