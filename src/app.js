@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.13";
+const APP_VER = "0.9.14";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -284,7 +284,6 @@ function act(host, name, ms) {
 // pixel, and every slice is one more 3D layer the phone re-sorts on every frame of his breathing and blinking. So on a touch
 // screen, a small 小M keeps every second plain slice (front, back, outlined and other distinct slices always stay): the same
 // picture, half the layers. The big 小M of festival scenes is never touched.
-const THIN = TOUCH;
 function thinOne(m) {
   m.dataset.thin = "1";
   const groups = new Set(); m.querySelectorAll(".slice").forEach(sl => groups.add(sl.parentElement));
@@ -298,7 +297,7 @@ function thinOne(m) {
 // Each new 小M is decided once, the first time it has a size (ResizeObserver: no forced layout). This used to measure every
 // 小M not yet thinned on every change anywhere on the page, and a hidden one (0 wide) was measured again each time, forever:
 // on a phone that was the biggest single cost of changing pages.
-if (THIN && window.ResizeObserver) {
+if (TOUCH && window.ResizeObserver) {
   const ro = new ResizeObserver(es => es.forEach(e => {
     const m = e.target, w = e.contentRect.width; if (!w) return;
     ro.unobserve(m); if (m.dataset.thin) return;
@@ -307,7 +306,8 @@ if (THIN && window.ResizeObserver) {
   const seen = new WeakSet();
   const scan = n => { if (n.nodeType !== 1) return; const list = n.classList.contains("m25") ? [n] : n.querySelectorAll(".m25");
     list.forEach(m => { if (!seen.has(m) && !m.dataset.thin) { seen.add(m); ro.observe(m); } }); };
-  new MutationObserver(ms => ms.forEach(r => r.addedNodes.forEach(scan))).observe(document.body, { childList: true, subtree: true });
+  const drop = n => { if (n.nodeType !== 1) return; (n.classList.contains("m25") ? [n] : n.querySelectorAll(".m25")).forEach(m => ro.unobserve(m)); };   // removed while still 0 wide: let it go
+  new MutationObserver(ms => ms.forEach(r => { r.removedNodes.forEach(drop); r.addedNodes.forEach(scan); })).observe(document.body, { childList: true, subtree: true });
   scan(document.body);
 }
 $("mSvg").innerHTML = face(false);
@@ -336,12 +336,14 @@ function lockTurn(back) {
 }
 
 // ---------------------------------------------------------------- Studio M loading
+// the loading breathes out and is gone (the 1 s matches .boot.breathe in app.css: .45 s delay + .5 s fade)
+function bootOut(b) { b.classList.add("breathe"); setTimeout(() => { if (b.classList.contains("breathe")) b.hidden = true; }, 1000); }
 // Shows the loading only if the work takes longer than 600ms, so a fast sign-in never flashes it
 async function slow(work) {
   const b = $("boot"); let shown = false;
   const t = setTimeout(() => { shown = true; b.classList.remove("breathe"); b.hidden = false; }, 600);
   try { return await work; }
-  finally { clearTimeout(t); if (shown) { b.classList.add("breathe"); setTimeout(() => { if (b.classList.contains("breathe")) b.hidden = true; }, 1000); } }
+  finally { clearTimeout(t); if (shown) bootOut(b); }
 }
 
 // After the PIN the loading stays up until Home is whole: the data is in and the graph has drawn it (settled, every dot
@@ -354,7 +356,7 @@ function holdBoot() {
   const out = () => {
     if (done) return; done = true; booting = false; graphReady = null; clearTimeout(cap);
     if (!session) return;
-    b.classList.add("breathe"); setTimeout(() => { if (b.classList.contains("breathe")) b.hidden = true; }, 1000);
+    bootOut(b);
     if (route.name === "home" && graph) setTimeout(() => graph.reset(), 650);   // the graph breathes as the loading lifts
   };
   const cap = setTimeout(out, 8000);
@@ -533,7 +535,7 @@ function unlock() {
 function makeGraph() {
   if (graph) return;
   graph = Graph3D($("graph"), { onPin: drawPin, onOpen: n => { location.hash = hrefOf(n); }, onReady: q => graphReady && graphReady(q) });
-  gKey = ""; drawHome();
+  gKey = "";
 }
 function parse(h) {
   const p = String(h || "").replace(/^#\/?/, "").split("/").map(s => { try { return decodeURIComponent(s); } catch (e) { return s; } });
@@ -555,7 +557,7 @@ function render(first) {
   const apply = () => { route = next; perch.navAt = performance.now(); paint(); perch.st = 0; perch.dock = false; perch(from); };
   if (vt) document.startViewTransition(apply); else apply();
   if (phone && !first && !STILL) $("views").animate(noBlur([{ opacity: 0, transform: "translateY(14px)", filter: "blur(6px)" }, { opacity: 1, transform: "none", filter: "blur(0)" }]), { duration: 340, easing: "cubic-bezier(.2,.8,.2,1)" });
-  if (window.innerWidth < 900 && !$("mPanel").hidden && !docked()) closeM();
+  if (phone && !$("mPanel").hidden) closeM();
 }
 let shownView = "";
 function paint() {
@@ -567,7 +569,7 @@ function paint() {
   $("topTitle").textContent = route.name === "drive" ? dName(route.key) : route.name === "editor" ? route.key : route.name === "job" ? "Job" : TITLES[route.name] || "";
   document.body.dataset.route = route.name;
   markNav();
-  if (v === "home" && !PHONE.matches) { makeGraph(); graph.start(); graph.theme(); if (!booting) graph.reset(); } else if (graph) graph.stop();
+  if (v === "home" && !PHONE.matches) { if (!graph) { makeGraph(); drawHome(); } graph.start(); graph.theme(); if (!booting) graph.reset(); } else if (graph) graph.stop();
   dockM();
   if (v === "list") { const lk = route.name + ":" + route.key; if (lk !== drawList.key) { drawList.key = lk; listUn = false; } drawList(); }
   if (v === "job") drawJob();
@@ -1190,7 +1192,7 @@ function sheetHide(sc) {
   const sh = sc.querySelector(".sheet"); if (STILL || !sh) { sc.hidden = true; afterSheet(); return; }
   sc._closing = true;
   if (DESK.matches) {   // computer: the dialog sinks back into the page, softening as it goes; 小M hops off it straight away
-    sc._anims = [sh.animate([{ transform: "none", opacity: 1, filter: "blur(0)" }, { transform: "translateY(10px) scale(.95)", opacity: 0, filter: "blur(6px)" }], { duration: 240, easing: "cubic-bezier(.4,0,.7,.2)", fill: "forwards" }),
+    sc._anims = [sh.animate(noBlur([{ transform: "none", opacity: 1, filter: "blur(0)" }, { transform: "translateY(10px) scale(.95)", opacity: 0, filter: "blur(6px)" }]), { duration: 240, easing: "cubic-bezier(.4,0,.7,.2)", fill: "forwards" }),
       sc.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 260, fill: "forwards" })];
     if (typeof perch === "function" && !MBTN.hidden) { const b = MBTN, from = b.getBoundingClientRect(); setTimeout(() => perch(from, "hop"), 0); }
   } else {
@@ -2158,7 +2160,7 @@ function dockM() {
     if (mOpen) { if (mAnim) mAnim.forEach(a => a.cancel()); mAnim = null; }
     document.body.classList.add("m-dock"); $("v-home").append(p);
     mOpen = true; fanHide(true); status("");
-    p.hidden = false; p.style.left = p.style.right = p.style.top = p.style.bottom = "";
+    p.hidden = false; anchorPanel();
     MBTN.style.visibility = "hidden"; MBTN.setAttribute("aria-expanded", "true"); $("mpAv").style.visibility = "";
     drawChat();
   }
@@ -2168,7 +2170,7 @@ function undockM() {
   if (!docked()) return;
   const p = $("mPanel");
   document.body.classList.remove("m-dock"); MBTN.after(p);
-  mOpen = true; closeM(true);
+  closeM(true);
 }
 function closeM(now) {
   if (!mOpen || docked()) return;   // docked on the phone's Home: it is the page, there is nothing to close
@@ -2988,4 +2990,4 @@ if ("serviceWorker" in navigator && !window.__TAURI__ && (location.protocol === 
 drawTheme(); themeBar(); drawAI(); drawVoice();
 // Studio M loading: the beam sweeps the logo, it breathes out, then the PIN screen
 lock();
-setTimeout(() => { $("boot").classList.add("breathe"); setTimeout(() => { $("boot").hidden = true; }, 1000); }, 1200);   // one sweep of the beam, then the PIN pad
+setTimeout(() => bootOut($("boot")), 1200);   // one sweep of the beam, then the PIN pad

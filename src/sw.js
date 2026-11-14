@@ -17,17 +17,17 @@ self.addEventListener("fetch", e => {
   if (req.method !== "GET" || url.origin !== location.origin) return;
   // pages: the newest when online, the kept copy when not; files: the kept copy at once, refreshed in the background
   if (req.mode === "navigate") {
-    // a page request can't take options itself, so it is asked again by its address. An error page (404, server down) is
-    // never kept: the copy already on the phone opens instead
+    // asked by its address (a page request can't take options itself). An error page (404, server down) is never kept:
+    // the copy already on the phone opens instead
     const kept = () => caches.match(req, { ignoreSearch: true }).then(r => r || caches.match("index.html"));
-    e.respondWith(fetch(new Request(req.url, { cache: "no-cache" })).then(r => {
+    e.respondWith(fetch(req.url, { cache: "no-cache" }).then(r => {
       if (!r.ok) return kept().then(k => k || r);
       const c = r.clone(); caches.open(CACHE).then(k => k.put(req, c)); return r;
     }).catch(kept));
     return;
   }
   e.respondWith(caches.match(req).then(hit => {
-    const net = fetch(req, { cache: "no-cache" }).then(r => { if (r.ok) { const c = r.clone(); caches.open(CACHE).then(k => k.put(req, c)); } return r; });
+    const net = fetch(req).then(r => { if (r.ok) { const c = r.clone(); caches.open(CACHE).then(k => k.put(req, c)); } return r; });
     return hit ? (net.catch(() => {}), hit) : net;
   }));
 });
