@@ -75,6 +75,14 @@ html.m-scenes .fx-layer { position: fixed !important; inset: 0 !important; heigh
 const M_WRITE = `<script>
 // The Workspace's own job form saves through this page: it fills this page's form and presses this page's Save,
 // so adding, editing, backing up, deleting, the outbox and history are this page's own code, exactly as before.
+// The Workspace's Export: this page's own styled Excel file (the original Studio M_Backup layout) for one year, handed back
+// as a file for the Workspace to save
+window.mExport = async function (y) {
+  await loadXlsx();
+  const wb = new ExcelJS.Workbook(); wb.creator = "Studio M Backup"; wb.created = new Date();
+  yearSheets(String(y)).forEach(function (s) { addStyledSheet(wb, s.sheet, s.blocks); });
+  return { name: "Studio M_Backup " + y + ".xlsx", data: await wb.xlsx.writeBuffer() };
+};
 window.mReady = function () {
   try {
     if (document.body.classList.contains("booting") || typeof openForm !== "function" || typeof rows === "undefined" || !db) return { ready: false };
