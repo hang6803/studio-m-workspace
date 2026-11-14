@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.15";
+const APP_VER = "0.9.16";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -2909,6 +2909,30 @@ $("demoBday").addEventListener("click", () => {
   location.hash = "#/home"; refresh();   // the new birthday changes festKey, so refresh plays it once
 });
 $("ver").textContent = "Studio M Workspace v" + APP_VER + (DEMO ? " (demo)" : "");
+
+// ---------------------------------------------------------------- Mac app: updates
+// The Mac app updates itself from GitHub Releases (latest.json, signed: an update that isn't signed with the studio's key
+// is refused). It looks once a few seconds after opening, and again on Settings → Check for updates. A new version is
+// offered, not forced: Update downloads it, installs it and restarts the app.
+const UPD = window.__TAURI__ && window.__TAURI__.updater;
+let updFound = null;
+async function updInstall() {
+  const u = updFound; if (!u) return;
+  $("updBtn").classList.add("busy"); $("updMsg").textContent = `Downloading ${u.version}…`;
+  try { await u.downloadAndInstall(); $("updMsg").textContent = "Installed. Restarting…"; await window.__TAURI__.process.relaunch(); }
+  catch (e) { $("updMsg").textContent = "Couldn't update: " + (e && e.message || e); $("updBtn").classList.remove("busy"); }
+}
+async function updCheck(manual) {
+  if (!UPD) return;
+  if (manual) $("updMsg").textContent = "Checking…";
+  try {
+    const u = await UPD.check();
+    if (!u) { if (manual) $("updMsg").textContent = `You have the newest version (v${APP_VER}).`; return; }
+    updFound = u; $("updMsg").textContent = `Version ${u.version} is ready (you have v${APP_VER}).`; $("updBtn").textContent = `Update to ${u.version}`;
+    if (!manual) toast(`M app ${u.version} is ready`, "Update", updInstall);
+  } catch (e) { if (manual) $("updMsg").textContent = "Couldn't check for updates: " + (e && e.message || e); }
+}
+if (UPD) { $("updCard").hidden = false; $("updBtn").addEventListener("click", () => updFound ? updInstall() : updCheck(true)); setTimeout(() => updCheck(false), 8000); }
 
 // ---------------------------------------------------------------- 小M's hooks for the Classic Backup page and the scenes layer
 // The Backup page's own 小M is hidden; its moods and moves (worried about unbacked jobs, hops, shrugs…) show on this one,

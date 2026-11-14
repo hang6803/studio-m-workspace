@@ -1,8 +1,16 @@
 name: Build Mac app
+# Builds the Mac app (universal: Apple silicon + Intel) and publishes it as the GitHub Release "v<version>" with the .dmg,
+# the update bundle and latest.json. The installed app reads latest.json to update itself (Settings → Updates).
+# Run it from the Actions tab (Run workflow), or push a v* tag. Bump the version first: a release for a version that
+# already exists is updated in place.
+# Needs the secret TAURI_SIGNING_PRIVATE_KEY: the private half of the updater key (its public half is in tauri.conf.json).
+# Updates that aren't signed with it are refused by the app.
 on:
   workflow_dispatch:
   push:
     tags: ["v*"]
+permissions:
+  contents: write
 jobs:
   mac:
     runs-on: macos-latest
@@ -17,8 +25,16 @@ jobs:
       - run: npm run build:web
         env:
           M_API_URL: ${{ secrets.M_API_URL }}
-      - run: npx tauri build --target universal-apple-darwin
-      - uses: actions/upload-artifact@v4
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
-          name: M-app-mac
-          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          tauriScript: npx tauri
+          args: --target universal-apple-darwin
+          tagName: v__VERSION__
+          releaseName: M app v__VERSION__
+          releaseBody: "What's new: see CHANGELOG.md. Install: open the .dmg and drag M app into Applications. Already installed: the app updates itself."
+          releaseDraft: false
+          prerelease: false

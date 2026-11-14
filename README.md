@@ -46,6 +46,8 @@ Google Sheet "Studio M Backup Data" stays the only source. Jobs columns never ch
 
 Unsigned (no Apple Developer account yet): the first time, right-click the app → Open.
 
+**Mac updates:** Actions → Build Mac app → Run workflow builds the app and publishes the GitHub Release `v<version>` (bump the version first). Installed apps (0.9.16 and later) find it by themselves and offer to update; Settings → Updates checks on demand. The release is signed with the updater key: its public half is in `src-tauri/tauri.conf.json`, the private half is the repo secret `TAURI_SIGNING_PRIVATE_KEY` (keep a copy somewhere safe: without it, no update can be published to installed apps).
+
 ## Phone app (PWA)
 - Every push to `main` publishes `dist/` to GitHub Pages (`.github/workflows/pages.yml`), with the address from the secret `M_API_URL` built in. The API key is not in the page. The PIN signs you in; the session token is what the server checks after that. Turn it on once: Settings → Pages → Source "GitHub Actions".
 - On the phone: open the Pages link → Share → Add to Home Screen (iPhone) or Install app (Android).
