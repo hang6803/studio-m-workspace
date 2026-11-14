@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.14";
+const APP_VER = "0.9.15";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -1608,15 +1608,26 @@ const closeChk = () => { sheetHide($("chkScrim")); };
 $("chkClose").addEventListener("click", closeChk);
 $("chkScrim").addEventListener("click", e => { if (e.target === $("chkScrim") || e.target.closest(".chk-item")) closeChk(); });
 
-// Export: every job of the year in the Sheet's Jobs columns, as a CSV file that opens in Excel or Numbers
+// Export: the year as the original Studio M_Backup Excel file, laid out by Classic Backup's own export (title bars, orange
+// headers, red rows for not backed up, dates, links, print setup). If that can't run (offline: the Excel library comes from
+// the internet), a plain CSV of the Sheet's Jobs columns instead.
 const FIELDS = ["id", "year", "section", "sec", "ord", "no", "name", "parts", "date", "drive", "editor", "backupDate", "backedUp", "notes", "link", "secTitle", "sheet", "history", "createdBy", "createdAt", "updatedBy", "updatedAt"];
-$("bkExport").addEventListener("click", () => {
-  const rows = bkRows().filter(r => String(r.year) === bk.year);
+const saveFile = (blob, name) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); };
+$("bkExport").addEventListener("click", async () => {
+  const b = $("bkExport"); if (b.classList.contains("busy")) return;
+  const y = bk.year, rows = bkRows().filter(r => String(r.year) === y), w = classicWin();
+  b.classList.add("busy");
+  try {
+    if (classicState().ready && w && w.mExport) {
+      const out = await w.mExport(y);
+      saveFile(new Blob([out.data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), out.name);
+      toast(`Exported ${rows.length} jobs from ${y}`); buzz(); return;
+    }
+  } catch (e) {} finally { b.classList.remove("busy"); }
   const cell = v => { v = v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
-  const csv = "﻿" + [FIELDS.join(","), ...rows.map(r => FIELDS.map(f => cell(r[f])).join(","))].join("\r\n");
-  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = `Studio M Backup ${bk.year}.csv`;
-  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-  toast(`Exported ${rows.length} rows from ${bk.year}`); buzz();
+  saveFile(new Blob(["\ufeff" + [FIELDS.join(","), ...rows.map(r => FIELDS.map(f => cell(r[f])).join(","))].join("\r\n")], { type: "text/csv" }), `Studio M Backup ${y}.csv`);
+  toast(`Excel layout unavailable (offline?), exported ${rows.length} rows from ${y} as CSV`); buzz();
 });
 
 // ---------------------------------------------------------------- team
@@ -2153,8 +2164,11 @@ function openM(text) {
 // Phone: Home is Ask M. The chat is not a pop-up there but the page itself, between the top bar and the tab bar
 // (the 3D graph stays on the computer). Leave Home and it goes back to being 小M's pop-up; Ask M from anywhere comes back here.
 const docked = () => document.body.classList.contains("m-dock");
+// the chat's own place in the page, outside every view: undocked it goes back there. (It used to go next to 小M, who may be
+// standing on a card; a redraw of that page then threw the chat away with the card, and Home showed "null" in its place.)
+const M_PANEL = $("mPanel"), M_PANEL_AT = M_PANEL.nextSibling;
 function dockM() {
-  const p = $("mPanel"), want = !!session && PHONE.matches && route.name === "home";
+  const p = M_PANEL, want = !!session && PHONE.matches && route.name === "home";
   if (!want) { undockM(); return; }
   if (!docked()) {
     if (mOpen) { if (mAnim) mAnim.forEach(a => a.cancel()); mAnim = null; }
@@ -2168,8 +2182,7 @@ function dockM() {
 }
 function undockM() {
   if (!docked()) return;
-  const p = $("mPanel");
-  document.body.classList.remove("m-dock"); MBTN.after(p);
+  document.body.classList.remove("m-dock"); document.body.insertBefore(M_PANEL, M_PANEL_AT);
   closeM(true);
 }
 function closeM(now) {
