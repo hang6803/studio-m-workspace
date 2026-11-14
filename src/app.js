@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.14";
+const APP_VER = "0.9.15";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -2153,8 +2153,11 @@ function openM(text) {
 // Phone: Home is Ask M. The chat is not a pop-up there but the page itself, between the top bar and the tab bar
 // (the 3D graph stays on the computer). Leave Home and it goes back to being 小M's pop-up; Ask M from anywhere comes back here.
 const docked = () => document.body.classList.contains("m-dock");
+// the chat's own place in the page, outside every view: undocked it goes back there. (It used to go next to 小M, who may be
+// standing on a card; a redraw of that page then threw the chat away with the card, and Home showed "null" in its place.)
+const M_PANEL = $("mPanel"), M_PANEL_AT = M_PANEL.nextSibling;
 function dockM() {
-  const p = $("mPanel"), want = !!session && PHONE.matches && route.name === "home";
+  const p = M_PANEL, want = !!session && PHONE.matches && route.name === "home";
   if (!want) { undockM(); return; }
   if (!docked()) {
     if (mOpen) { if (mAnim) mAnim.forEach(a => a.cancel()); mAnim = null; }
@@ -2168,8 +2171,7 @@ function dockM() {
 }
 function undockM() {
   if (!docked()) return;
-  const p = $("mPanel");
-  document.body.classList.remove("m-dock"); MBTN.after(p);
+  document.body.classList.remove("m-dock"); document.body.insertBefore(M_PANEL, M_PANEL_AT);
   closeM(true);
 }
 function closeM(now) {
