@@ -1165,7 +1165,9 @@ h1, h2, h3, .tm-name b { text-wrap: balance }
 .small, .muted.small { line-height: 1.5 }
 .card > p.muted.small, .setup-card > p.muted { letter-spacing: .005em }
 
-/* 2) every entrance comes into focus as it arrives */
+/* 2) every entrance comes into focus as it arrives. Not on touch screens: a moving blur is redrawn from scratch every frame,
+   which is what stuttered on phones, so there the plain versions above (fade and slide only) stay in force */
+@media not all and (pointer: coarse) {
 @keyframes rise { from { opacity: 0; transform: translateY(8px); filter: blur(6px) } }
 @keyframes pop { from { opacity: 0; transform: scale(.94); filter: blur(8px) } }
 @keyframes cardIn { from { opacity: 0; transform: translateY(-8px) scale(.96); filter: blur(8px) } }
@@ -1174,6 +1176,7 @@ h1, h2, h3, .tm-name b { text-wrap: balance }
 @keyframes wzin { from { opacity: 0; transform: translateX(28px); filter: blur(6px) } } @keyframes wzback { from { opacity: 0; transform: translateX(-28px); filter: blur(6px) } }
 @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 12px) scale(.96); filter: blur(6px) } }
 @keyframes fade { from { opacity: 0; filter: blur(4px) } }
+}
 /* long lists: only the rows you can see blur in (the rest just fade), so a 300-row list opens as fast as before */
 @keyframes riseLite { from { opacity: 0; transform: translateY(8px) } }
 :is(#listRows, .rows, .bk-rows) > :nth-child(n+25) { animation-name: riseLite }
@@ -1258,7 +1261,8 @@ body.lamp-tap.lamp-off .light .lamp { opacity: 0; transition: opacity .7s ease-o
 
 /* ---- 0.9.6: on a computer, pop-ups are dialogs in the middle, not drawers. They rise in from a soft blur with a little
    spring and sink back the same way; no grab handle, no drag-to-close. The page behind goes out of focus. ---- */
-@keyframes dlgIn { 0% { opacity: 0; transform: translateY(18px) scale(.94); filter: blur(10px) } 60% { opacity: 1; filter: blur(0) } 100% { transform: none } }
+@keyframes dlgIn { 0% { opacity: 0; transform: translateY(18px) scale(.94) } 60% { opacity: 1 } 100% { transform: none } }
+@media not all and (pointer: coarse) { @keyframes dlgIn { 0% { opacity: 0; transform: translateY(18px) scale(.94); filter: blur(10px) } 60% { opacity: 1; filter: blur(0) } 100% { transform: none } } }
 @media (min-width: 900px) {
   .scrim, .scrim[class] { place-items: center; padding: 32px; backdrop-filter: blur(6px) saturate(1.1); -webkit-backdrop-filter: blur(6px) saturate(1.1) }
   .scrim > .sheet { max-height: min(84vh, calc(100vh - 64px)); border-radius: var(--r-sheet); border-bottom: 1px solid var(--rim, var(--line));
@@ -1302,27 +1306,15 @@ a, [role="tab"] { -webkit-tap-highlight-color: transparent }   /* no blue box on
 @media (max-width: 899px) {
   body.m-dock #v-home { padding: 0; gap: 0 }
   body.m-dock #v-home > :not(.mpanel) { display: none }
-  body.m-dock #v-home > .mpanel { position: relative; inset: auto; z-index: auto; flex: 1; min-height: 0; width: auto; height: auto; padding-top: 0; border: 0; border-radius: 0; background: none; box-shadow: none }
+  body.m-dock #v-home > .mpanel { position: relative; inset: auto; z-index: auto; flex: 1; min-height: 0; padding-top: 0; background: none; box-shadow: none }
   body.m-dock #v-home .mp-head { border-bottom: 0; padding-top: 4px }
   body.m-dock #mClose { display: none }
   body.m-dock #v-home .composer { margin-bottom: 10px }
   body.m-dock #v-home .mp-hist { top: 52px }
 }
 
-/* ---- 0.9.12 touch screens: the same moves, without the moving blur ----
-   A blur that changes is redrawn from scratch every frame; on a phone that is what stuttered (page changes, cards, sheets,
-   toasts, wizard steps, a job unfolding). Here each entrance only fades and slides. Computers keep the soft focus. */
+/* ---- 0.9.12 touch screens: the same moves, without the moving blur (the entrance keyframes skip their blur above) ---- */
 @media (pointer: coarse) {
-  @keyframes rise { from { opacity: 0; transform: translateY(8px) } }
-  @keyframes pop { from { opacity: 0; transform: scale(.94) } }
-  @keyframes cardIn { from { opacity: 0; transform: translateY(-8px) scale(.96) } }
-  @keyframes vtOut { to { opacity: 0; transform: translateX(-14px) } }
-  @keyframes vtIn { from { opacity: 0; transform: translateX(18px) } }
-  @keyframes wzin { from { opacity: 0; transform: translateX(28px) } }
-  @keyframes wzback { from { opacity: 0; transform: translateX(-28px) } }
-  @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 12px) scale(.96) } }
-  @keyframes fade { from { opacity: 0 } }
-  @keyframes dlgIn { 0% { opacity: 0; transform: translateY(18px) scale(.94) } 60% { opacity: 1 } 100% { transform: none } }
   .bk-det, .bk-det[class], .tm-edit { filter: none }
   .scrim, .scrim[class] { -webkit-backdrop-filter: none !important; backdrop-filter: none !important }
   /* the key light sat over the whole app as a blend layer, so every moving thing meant blending the full screen again;
