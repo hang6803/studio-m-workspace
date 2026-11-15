@@ -1319,3 +1319,12 @@ a, [role="tab"] { -webkit-tap-highlight-color: transparent }   /* no blue box on
      behind the page it still warms the background, and nothing in front has to be re-blended */
   .light { z-index: -1 }
 }
+
+/* ==== 0.9.19 deeper dark: true black instead of a grey haze. The film grain and the cool side glow lifted every black
+   to grey; now the background is near-black, the grain is a trace, the glow is warm only, and panels sit clearly above
+   it with a brighter top edge, so the page has contrast and depth ==== */
+:root[data-theme="dark"] { --bg: #070707; --panel: #0b0b0b; --muted: #a8a8a3; --glow-a: rgba(245, 130, 31, .13); --glow-b: transparent;
+  --raised: #171716; --rim: rgba(255, 255, 255, .055); --edge: rgba(255, 255, 255, .16);
+  --sheen: linear-gradient(180deg, rgba(255, 255, 255, .075), rgba(255, 255, 255, 0) 38%);
+  --vignette: radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(0, 0, 0, .55)) }
+:root[data-theme="dark"] body::after { background-image: var(--vignette), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .016 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E") }
