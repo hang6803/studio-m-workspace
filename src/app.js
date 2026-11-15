@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.17";
+const APP_VER = "0.9.18";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -346,18 +346,19 @@ async function slow(work) {
   finally { clearTimeout(t); if (shown) bootOut(b); }
 }
 
-// After the PIN the loading stays up until Home is whole: the data is in and the graph has drawn it (settled, every dot
-// there). Then it breathes out onto the finished graph, which takes one small zoom-out breath. 8 s at most.
+// After the PIN (computer only: the phone's Home is Ask M and needs no data to open) Home waits until it is whole: the
+// data is in and the graph has drawn it. The loading logo only comes back if that takes longer than 600 ms, so a quick
+// sign-in goes straight from the PIN to Home without a second logo. 8 s at most.
 let graphReady = null, booting = false;
 function holdBoot() {
   const b = $("boot"); booting = true;
-  b.classList.remove("breathe"); b.hidden = false;
-  let done = false;
+  let done = false, shown = false;
+  const show = setTimeout(() => { if (done || !session) return; shown = true; b.classList.remove("breathe"); b.hidden = false; }, 600);
   const out = () => {
-    if (done) return; done = true; booting = false; graphReady = null; clearTimeout(cap);
+    if (done) return; done = true; booting = false; graphReady = null; clearTimeout(cap); clearTimeout(show);
     if (!session) return;
-    bootOut(b);
-    if (route.name === "home" && graph) setTimeout(() => graph.reset(), 650);   // the graph breathes as the loading lifts
+    if (shown) bootOut(b);
+    if (route.name === "home" && graph) setTimeout(() => graph.reset(), shown ? 650 : 0);   // the graph breathes as the loading lifts
   };
   const cap = setTimeout(out, 8000);
   return () => {   // the data is in
@@ -528,7 +529,7 @@ function unlock() {
   $("demoBadge").hidden = !DEMO;
   if (!PHONE.matches) makeGraph();
   if (!location.hash || location.hash === "#/") history.replaceState(null, "", "#/home");
-  const loaded = holdBoot();
+  const loaded = graph ? holdBoot() : () => {};
   showM(); drawAll(); render(true); refresh().then(loaded);   // festivals / birthdays start once the first refresh brings the birthdays (festAfterData)
 }
 // the 3D graph is made the first time a computer-sized Home needs it; on a phone Home is Ask M and the graph is never built
@@ -3019,7 +3020,8 @@ if ("serviceWorker" in navigator && !window.__TAURI__ && (location.protocol === 
       const busy = !$("jobScrim").hidden || !$("shootScrim").hidden || (mOpen && $("aiIn").value.trim());
       // reloading in front of you is a white flash: right at start (still on the loading screen) it's fine; later it waits
       // until the app goes to the background, and the next time you open it it is the new version
-      if (busy || performance.now() > 4000) { addEventListener("visibilitychange", () => { if (document.hidden) location.reload(); }); if (busy) toast("A new version is ready. It opens next time."); }
+      // only before the start-up logo has gone (1.2 s): reloading on the PIN screen showed the logo a second time
+      if (busy || performance.now() > 1000) { addEventListener("visibilitychange", () => { if (document.hidden) location.reload(); }); if (busy) toast("A new version is ready. It opens next time."); }
       else location.reload();
     });
     document.addEventListener("visibilitychange", () => { if (!document.hidden) reg.update().catch(() => {}); });   // back from the background: look for one
