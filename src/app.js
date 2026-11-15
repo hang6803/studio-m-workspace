@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.20";
+const APP_VER = "0.9.21";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -3035,7 +3035,7 @@ async function updCheck(manual) {
     const u = await UPD.check();
     if (!u) { if (manual) $("updMsg").textContent = `You have the newest version (v${APP_VER}).`; return; }
     updFound = u; $("updMsg").textContent = `Version ${u.version} is ready (you have v${APP_VER}).`; $("updBtn").textContent = `Update to ${u.version}`;
-    if (!manual) toast(`M app ${u.version} is ready`, "Update", updInstall);
+    if (!manual) toast(`M Workspace ${u.version} is ready`, "Update", updInstall);
   } catch (e) { if (manual) $("updMsg").textContent = "Couldn't check for updates: " + (e && e.message || e); }
 }
 if (UPD) { $("updCard").hidden = false; $("updBtn").addEventListener("click", () => updFound ? updInstall() : updCheck(true)); setTimeout(() => updCheck(false), 8000); }
