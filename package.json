@@ -1,7 +1,7 @@
 {
   "name": "studio-m-workspace",
   "private": true,
-  "version": "0.9.22",
+  "version": "0.9.23",
   "scripts": {
     "test": "node --test tools/test-build.mjs tools/test-apps-script-scope.mjs tools/test-brain.mjs",
     "build:web": "node tools/build.mjs",
