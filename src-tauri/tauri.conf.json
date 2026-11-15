@@ -42,7 +42,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg3NUI0RUE1MkE2QkIwNEMKUldSTXNHc3FwVTViaCtDQnRNTnZsaG56eWMwMzg1dTZKVWMzMW0zek5hLytPYlZTSDFSakphWlkK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI4MTAyMEJFQzQxMzY4NTQKUldSVWFCUEV2aUFRS0xiRG04Qkcxb1MrTGlvQ2tGNmJjclhiNWpHdW1uZFJYTHB1bWZJOWp6OFMK",
       "endpoints": [
         "https://github.com/hang6803/studio-m-workspace/releases/latest/download/latest.json"
       ]

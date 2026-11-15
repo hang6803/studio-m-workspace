@@ -26,7 +26,8 @@ jobs:
         env:
           M_API_URL: ${{ secrets.M_API_URL }}
       # The key is pasted into the secret by hand: spaces, line breaks and quotes picked up on the way are removed, and a
-      # key that still isn't valid stops here in seconds (with its length, never its content) instead of after the build
+      # key that still isn't whole stops here in seconds (with its length, never its content) instead of after the build.
+      # Both layers are checked: the file's base64, and the key inside it.
       - name: Check the signing key
         env:
           RAW: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -34,14 +35,16 @@ jobs:
           k=$(printf %s "$RAW" | tr -d ' \r\n\t"'"'"'')
           echo "::add-mask::$k"
           if [ -z "$k" ]; then echo "::error::The secret TAURI_SIGNING_PRIVATE_KEY is empty."; exit 1; fi
-          if ! printf %s "$k" | base64 -d 2>/dev/null | head -c 80 | grep -q "secret key"; then
-            echo "::error::TAURI_SIGNING_PRIVATE_KEY is not a valid key: ${#k} characters after cleaning (a whole key is about 348). Paste the whole file again."; exit 1; fi
+          if ! K="$k" python3 -c 'import base64,os; t=base64.b64decode(os.environ["K"],validate=True).decode().splitlines(); assert "secret key" in t[0]; base64.b64decode(t[1],validate=True)' 2>/dev/null; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is not a whole key: ${#k} characters after cleaning (a whole key is 348). Paste the whole file again, from a computer."; exit 1; fi
           echo "Signing key OK (${#k} characters)."
           echo "TAURI_SIGNING_PRIVATE_KEY=$k" >> "$GITHUB_ENV"
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          # the key's own password. Not a secret: the key it unlocks is. (A key with an empty password can't be read back
+          # by this Tauri version: "Wrong password for that key".)
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: studio-m-updater
         with:
           tauriScript: npx tauri
           args: --target universal-apple-darwin
