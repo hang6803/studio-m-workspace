@@ -230,6 +230,7 @@ copyFileSync(at("src/app.js"), at("dist/app.js"));
 copyFileSync(at("src/app.css"), at("dist/app.css"));
 copyFileSync(at("src/graph.js"), at("dist/graph.js"));
 copyFileSync(at("src/fx.js"), at("dist/fx.js"));
+copyFileSync(at("src/brain.js"), at("dist/brain.js"));
 // 小M and the festival / birthday modules come from hang6803/xiaom-module (vendor/xiaom/SOURCE has the commit)
 for (const f of ["xiaom.js", "festivals.js", "festival-theme.js", "celebrate.js", "sfx.js"]) copyFileSync(at("vendor/xiaom/" + f), at("dist/" + f));
 writeFileSync(at("dist/backup.html"), backup);

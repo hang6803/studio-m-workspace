@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.19";
+const APP_VER = "0.9.20";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -1860,7 +1860,8 @@ const AI_PROVIDERS = {
   openai: { label: "OpenAI", url: "https://api.openai.com/v1", model: "gpt-4o-mini", hint: "Paste an OpenAI API key." },
   anthropic: { label: "Claude (Anthropic)", url: "https://api.anthropic.com/v1", model: "claude-sonnet-5-5", hint: "Paste an Anthropic API key." },
   openrouter: { label: "OpenRouter", url: "https://openrouter.ai/api/v1", model: "nousresearch/hermes-4-70b", hint: "Paste an OpenRouter API key." },
-  custom: { label: "Other (OpenAI-compatible)", url: "", model: "", hint: "Any server with /v1/chat/completions." }
+  custom: { label: "Other (OpenAI-compatible)", url: "", model: "", hint: "Any server with /v1/chat/completions." },
+  off: { label: "M only (no AI)", url: "", model: "", hint: "No AI: M answers on this device from its own brain (backups, shoots, drives, who's free, summaries, adding a shoot). Instant, free, works offline." }
 };
 const aiCfg = () => {
   const c = store.get("mAI", null);
@@ -1907,7 +1908,7 @@ ${found.join("\n") || "none matched; ask them for the event name, couple's name,
 // Streams the reply (Server-Sent Events) and calls onText with the text so far; falls back to one plain reply
 async function callModel(messages, onText, signal) {
   if (!DEMO) return callServer(messages, onText, signal);
-  try { return await callServer(messages, onText, signal); } catch (e) { if (signal && signal.aborted) throw e; throw Object.assign(new Error("demo"), { local: false }); }
+  try { return await callServer(messages, onText, signal); } catch (e) { if ((signal && signal.aborted) || e.mOnly) throw e; throw Object.assign(new Error("demo"), { local: false }); }
 }
 // DeepSeek through MApp.gs: one reply, written out quickly so it still reads as M typing
 async function callStudio(messages, onText, signal) {
@@ -1924,6 +1925,7 @@ async function callStudio(messages, onText, signal) {
 async function callServer(messages, onText, signal) {
   const c = aiCfg();
   if (c.prov === "studio") return callStudio(messages, onText, signal);
+  if (c.prov === "off") throw Object.assign(new Error("M only"), { mOnly: true });
   const url = c.url.replace(/\/+$/, "") + "/chat/completions";
   const headers = { "Content-Type": "application/json" }; if (c.key) headers.Authorization = "Bearer " + c.key;
   const res = await net(url, { method: "POST", headers, signal, body: JSON.stringify({ model: c.model, messages, temperature: 0.4, stream: true }) });
@@ -1991,11 +1993,25 @@ function intentOf(q) {
   const d = learnDb(), g = grams(q); let best = null, sim = 0;
   d.ex.forEach(x => { const s = dice(g, grams(x.t)); if (s > sim) { sim = s; best = x; } });
   if (best && sim >= .62) return best.i;   // said like something the AI handled before
-  if (datesIn(q).length && /拍|shoot|婚礼|wedding|活动|发布会|gala|event|launch|dinner|party|晚宴/i.test(q) && !/[?？]|什么|哪|几|where|which|what|when|any/i.test(q)) return "add";
+  if (datesIn(q).length && /拍|shoot|婚礼|wedding|活动|发布会|gala|event|launch|dinner|party|晚宴/i.test(q) && !/[?？]|什么|哪|几|谁|有空|where|which|what|when|any|who|free/i.test(q)) return "add";
+  const b = brainOf(q); if (b && b.score >= .15) return b.intent;   // M's own brain (src/brain.js): a few hundred examples
   for (const [k, re] of RULES) if (re.test(q)) return k;
   if (best && sim >= .45) return best.i;
   return findJobs(q, 1).length ? "find" : "help";
 }
+// the brain sees names, drives and job names as placeholders, from the data on this device
+function brainOf(q) {
+  if (!window.MBrain) return null;
+  const jobs = new Set(); (data.rows || []).forEach(r => (String(r.name || "").toLowerCase().match(/[a-z][a-z&']{2,}/g) || []).forEach(w => jobs.add(w)));
+  shoots.forEach(x => (String(x.name || "").toLowerCase().match(/[a-z][a-z&']{2,}/g) || []).forEach(w => jobs.add(w)));
+  const drives = [...new Set((data.rows || []).flatMap(drivesOf))];
+  return MBrain.classify(q, { names: [...team, ...Object.keys(learnDb().nick)], drives, jobs });
+}
+const drivesNamed = q => { const low = q.toLowerCase(), all = [...new Set((data.rows || []).flatMap(drivesOf))].sort((a, b) => b.length - a.length);
+  const hit = all.filter(d => low.includes(d.toLowerCase())); if (hit.length) return [hit[0]];
+  const m = low.match(/\bm\s?(\d{1,2})\b/); if (!m) return []; const y = (q.match(/\b(20\d\d)\b/) || [])[1] || String(new Date().getFullYear());
+  const re = new RegExp("^m\\s?" + m[1] + "\\b", "i"), c = all.filter(d => re.test(d)); return c.length ? [c.find(d => d.includes(y)) || c[c.length - 1]] : []; };
+const go = (h, zh, en, cn) => { setTimeout(() => { location.hash = h; }, 700); return zh ? `好，打开 ${cn || en}。` : `Opening ${en}.`; };
 // people named in the text: team names, learned nicknames, and "me / 我"
 function namesIn(q) {
   const d = learnDb(), low = q.toLowerCase(), out = team.filter(n => low.includes(n.toLowerCase()));
@@ -2036,11 +2052,13 @@ function spanIn(q) {
   const ds = datesIn(q); if (ds.length) return [ds[0], ds[ds.length - 1], ds.length > 1 ? `${fmtDay(ymd(ds[0]))}–${fmtDay(ymd(ds[ds.length - 1]))}` : fmtDay(ymd(ds[0]))];
   return [t, add(t, 13), isZh(q) ? "接下来两周" : "the next two weeks"];
 }
+// a job's Video and Photo rows are one job in M's answers (listed once)
+const oneEach = rs => { const seen = new Set(); return rs.filter(r => { const k = r.year + "|" + baseOf(sectionOf(r)) + "|" + normName(r.name); return !seen.has(k) && seen.add(k); }); };
 const jobLink = r => `[${r.name}](#/job/${encodeURIComponent(r.id)})`;
 function localM(q) {
   const zh = isZh(q), who = namesIn(q), it = intentOf(q), year = (q.match(/\b(20\d\d)\b/) || [])[1] || String(new Date().getFullYear());
   if (it === "unbacked") {
-    let rs = rowsOf(year).filter(unbacked); const drv = (q.match(/\bm\s?(\d)\b/i) || [])[1];
+    let rs = oneEach(rowsOf(year).filter(unbacked)); const drv = (q.match(/\bm\s?(\d)\b/i) || [])[1];
     if (who.length) rs = rs.filter(r => who.includes(r.editor)); if (drv) rs = rs.filter(r => new RegExp("^M" + drv + "\\b", "i").test(r.drive || ""));
     const head = who.length ? who.join(", ") + " " : "";
     if (!rs.length) return zh ? `${head}${year} 年都备份好了 👍` : `${head ? head + "has" : "Everything in " + year + " is"} backed up 👍`;
@@ -2056,7 +2074,7 @@ function localM(q) {
       return `- [${fmtDay(d[0])}](#/calendar/${d[0]})${d.length > 1 ? "–" + fmtDay(d[d.length - 1]) : ""} **${s.name}**${s.location ? ", " + s.location : ""} (${crewOf(s).join(", ") || "-"})`; }).join("\n");
   }
   if (it === "find") {
-    const rs = findJobs(q, 6);
+    const rs = oneEach(findJobs(q, 12)).slice(0, 6);
     if (!rs.length) return zh ? "没找到。告诉我活动名、新人名字、硬盘或剪辑师，我再找。" : "Nothing matched. Tell me the event, the couple's names, the drive or the editor.";
     return rs.map(r => `- ${jobLink(r)}: ${r.drive || (zh ? "没写硬盘" : "no drive yet")}, ${r.editor || "-"}, ${unbacked(r) ? (zh ? "**还没备份**" : "**not backed up**") : (zh ? "已备份" : "backed up")}`).join("\n");
   }
@@ -2072,10 +2090,84 @@ function localM(q) {
     const card = { name: name || (zh ? "新拍摄" : "New shoot"), dates: ds, location: loc, type, crew: who.length ? who : [session.name], notes: "" };
     return (zh ? (ds.length ? "好，帮你排好了，确认一下：" : "日期没听清楚，点 Edit 选日期：") : (ds.length ? "Got it. Check this and tap Add:" : "I couldn't catch the date. Tap Edit to pick it:")) + "\n```shoot\n" + JSON.stringify(card) + "\n```";
   }
-  const hits = findJobs(q, 4);
+  const today = ymd(new Date());
+  if (it === "drive") {
+    const dv = drivesNamed(q);
+    if (!dv.length) { const ys = yearsAll().slice().reverse(), list = ys.flatMap(y => drivesIn(y).map(d => ({ ...d, y })));
+      if (!list.length) return zh ? "还没有硬盘资料。" : "No drives yet.";
+      return (zh ? `一共 ${list.length} 颗硬盘：\n` : `${list.length} drives:\n`) + list.slice(0, 15).map(d => `- [${dName(d.name)}](#/drive/${encodeURIComponent(d.name)}): ${d.n} job${d.un ? (zh ? `，${d.un} 个没备份` : `, ${d.un} not backed up`) : ""}`).join("\n"); }
+    const d = dv[0], rs = oneEach((data.rows || []).filter(r => drivesOf(r).includes(d)).sort(byDate)), un = rs.filter(unbacked);
+    if (!rs.length) return zh ? `${d} 里还没有 job。` : `Nothing on ${d} yet.`;
+    return (zh ? `**${dName(d)}** 有 ${rs.length} 个 job${un.length ? `，${un.length} 个没备份` : "，全部备份好了 👍"}：\n` : `**${dName(d)}** has ${rs.length} jobs${un.length ? `, ${un.length} not backed up` : ", all backed up 👍"}:\n`) +
+      rs.slice(0, 10).map(r => `- ${jobLink(r)} (${r.editor || "-"}${unbacked(r) ? (zh ? "，**没备份**" : ", **not backed up**") : ""})`).join("\n") + (rs.length > 10 ? `\n[${zh ? "看全部" : "See all"}](#/drive/${encodeURIComponent(d)})` : "");
+  }
+  if (it === "editor") {
+    const p = who[0] || session.name, rs = oneEach(rowsOf(year).filter(r => r.editor === p).sort(byDate)), un = rs.filter(unbacked);
+    if (!rs.length) return zh ? `${p} ${year} 年还没有 job。` : `${p} has no jobs in ${year}.`;
+    return (zh ? `**${p}** ${year} 年剪了 ${rs.length} 个 job${un.length ? `，${un.length} 个没备份` : "，全部备份好了 👍"}：\n` : `**${p}** has ${rs.length} jobs in ${year}${un.length ? `, ${un.length} not backed up` : ", all backed up 👍"}:\n`) +
+      rs.slice(0, 10).map(r => `- ${jobLink(r)} (${r.drive || "-"}${unbacked(r) ? (zh ? "，**没备份**" : ", **not backed up**") : ""})`).join("\n") + (rs.length > 10 ? `\n[${zh ? "看全部" : "See all"}](#/editor/${encodeURIComponent(p)})` : "");
+  }
+  if (it === "count") {
+    const rs = rowsOf(year), un = rs.filter(unbacked), secs = {}; rs.forEach(r => { const k = baseOf(sectionOf(r)); secs[k] = (secs[k] || 0) + 1; });
+    const up = shoots.filter(x => datesOf(x).some(d => d >= today)).length, eds = editorsIn(year).filter(e => e.n).sort((a, b) => b.n - a.n);
+    return zh ? `**${year} 年**\n- ${rs.length} 个 job，${un.length} 个没备份\n- ${Object.entries(secs).map(([k, n]) => `${k} ${n}`).join("，") || "-"}\n- ${drivesIn(year).length} 颗硬盘\n- 剪辑：${eds.map(e => `${e.name} ${e.n}`).join("，") || "-"}\n- 接下来 ${up} 场拍摄`
+      : `**${year}**\n- ${rs.length} jobs, ${un.length} not backed up\n- ${Object.entries(secs).map(([k, n]) => `${k} ${n}`).join(", ") || "-"}\n- ${drivesIn(year).length} drives\n- Editors: ${eds.map(e => `${e.name} ${e.n}`).join(", ") || "-"}\n- ${up} shoots coming up`;
+  }
+  if (it === "go") {
+    const l = q.toLowerCase();
+    if (/classic/.test(l)) return go("#/classic", zh, "Classic Backup");
+    if (/not backed|unbacked|没备份/.test(l)) return go("#/unbacked", zh, "Not backed up", "没备份列表");
+    if (/calendar|日历|行事历|日程/.test(l)) return go("#/calendar", zh, "Calendar", "日历");
+    if (/drive|硬盘/.test(l)) return go("#/drives", zh, "Drives", "硬盘");
+    if (/setting|设置|设定/.test(l)) return go("#/settings", zh, "Settings", "设置");
+    if (/team|团队|成员/.test(l)) return go("#/team", zh, "Team", "团队");
+    if (/backup|备份/.test(l)) return go("#/backup", zh, "Backup", "备份");
+    return go("#/home", zh, "Home", "首页");
+  }
+  if (it === "birthday") {
+    const t0 = new Date(); t0.setHours(0, 0, 0, 0);
+    const list = Object.entries(birthdays).map(([n, v]) => { const m = /(\d{1,2})-(\d{1,2})$/.exec(String(v || "")); if (!m) return null;
+      let d = new Date(t0.getFullYear(), m[1] - 1, +m[2]); if (d < t0) d = new Date(t0.getFullYear() + 1, m[1] - 1, +m[2]); return { n, d, in: Math.round((d - t0) / 864e5) }; })
+      .filter(Boolean).filter(x => !who.length || who.includes(x.n)).sort((a, b) => a.d - b.d);
+    if (!list.length) return zh ? "还没有生日资料。在 Team 里可以填。" : "No birthdays saved yet. Add them in Team.";
+    const when = x => x.in === 0 ? (zh ? "**今天！** 🎂" : "**today!** 🎂") : x.in === 1 ? (zh ? "明天" : "tomorrow") : zh ? `${x.in} 天后` : `in ${x.in} days`;
+    return (zh ? "生日：\n" : "Birthdays:\n") + list.slice(0, 6).map(x => `- **${x.n}** ${fmtDay(ymd(x.d))}, ${when(x)}`).join("\n");
+  }
+  if (it === "free") {
+    const crew = team.filter(n => n !== "M");
+    if (who.length && !datesIn(q).length) {
+      const p = who[0], busy = shoots.filter(x => crewOf(x).includes(p)).flatMap(datesOf).filter(d => d >= today).sort().slice(0, 10);
+      return busy.length ? (zh ? `${p} 有拍摄的日子：${busy.map(fmtDay).join("、")}。其他天都有空。` : `${p} is shooting on ${busy.map(fmtDay).join(", ")}. Free on the other days.`)
+        : (zh ? `${p} 接下来都没有拍摄，都有空。` : `${p} has no shoots coming up: free.`);
+    }
+    const ds = (datesIn(q).length ? datesIn(q) : [new Date()]).map(ymd);
+    return ds.slice(0, 7).map(d => { const on = shoots.filter(x => datesOf(x).includes(d)), busy = new Set(on.flatMap(crewOf));
+      const free = (who.length ? who : crew).filter(n => !busy.has(n)), taken = (who.length ? who : crew).filter(n => busy.has(n));
+      return `**${fmtDay(d)}**: ` + (zh ? `有空 ${free.join("、") || "没有人"}${taken.length ? `；在拍 ${taken.join("、")}（${on.map(x => x.name).join("、")}）` : ""}` : `free ${free.join(", ") || "nobody"}${taken.length ? `; shooting ${taken.join(", ")} (${on.map(x => x.name).join(", ")})` : ""}`); }).join("\n");
+  }
+  if (it === "recent") {
+    const rs = oneEach((data.rows || []).slice().sort(byDate)).slice(0, 8);
+    if (!rs.length) return zh ? "还没有 job。" : "No jobs yet.";
+    return (zh ? "最近的 job：\n" : "Latest jobs:\n") + rs.map(r => `- ${jobLink(r)} ${r.date ? fmtDay(r.date) : ""} (${r.editor || "-"}, ${r.drive || "-"})`).join("\n");
+  }
+  if (it === "newjob") { setTimeout(() => newJob(), 600); return zh ? "好，打开新增 job。" : "Opening a new job."; }
+  if (it === "theme") {
+    const l = q.toLowerCase(), cur = document.documentElement.getAttribute("data-theme");
+    const t = /light|white|day|浅|白|亮|cerah/.test(l) ? "light" : /dark|black|night|深|黑|暗|夜|gelap/.test(l) ? "dark" : cur === "dark" ? "light" : "dark";
+    setTimeout(() => { const b = document.querySelector(`#themeSeg [data-t="${t}"]`); if (b) b.click(); }, 500);
+    return zh ? (t === "dark" ? "换成深色。" : "换成浅色。") : `Switching to ${t} mode.`;
+  }
+  if (it === "date") {
+    const n = new Date(), on = shoots.filter(x => datesOf(x).includes(today));
+    return (zh ? `今天是 ${fmtDay(today)}，星期${"日一二三四五六"[n.getDay()]}，${String(n.getHours()).padStart(2, "0")}:${String(n.getMinutes()).padStart(2, "0")}。` : `Today is ${WD[(n.getDay() + 6) % 7]} ${fmtDay(today)}, ${String(n.getHours()).padStart(2, "0")}:${String(n.getMinutes()).padStart(2, "0")}.`) +
+      (on.length ? (zh ? `今天有拍摄：${on.map(x => x.name).join("、")}。` : ` Shooting today: ${on.map(x => x.name).join(", ")}.`) : "");
+  }
+  if (it === "greet") return zh ? `嗨 ${session.name}！我是 M。问我没备份的、拍摄、硬盘、谁有空都可以。` : `Hi ${session.name}! I'm M. Ask me about backups, shoots, drives or who's free.`;
+  if (it === "thanks") return zh ? "不客气 😊" : "Any time 😊";
+  const hits = it === "help" ? [] : findJobs(q, 4);
   if (hits.length) return (zh ? "可能是这些：\n" : "Maybe one of these:\n") + hits.map(r => `- ${jobLink(r)} (${r.drive || "-"})`).join("\n");
-  return zh ? "我现在离线，可以帮你：\n- 看还没备份的（「Mun 还有哪些没备份」）\n- 看拍摄（「下周拍什么」）\n- 找资料在哪个硬盘（「Rinjani 在哪」）\n- 加拍摄（「12月5日 在 Ipoh 拍 Lim 婚礼」）"
-    : "I'm offline right now, but I can still:\n- list what isn't backed up (\"what has Mun not backed up?\")\n- show shoots (\"shoots next week\")\n- find a job's drive (\"where is Rinjani?\")\n- set up a shoot (\"Lim wedding on 5 Dec at Ipoh\")";
+  return zh ? "没有 AI 我也可以帮你：\n- 没备份的（「Mun 还有哪些没备份」）\n- 拍摄（「下周拍什么」）\n- 找 job（「Rinjani 在哪」）\n- 加拍摄（「12月5日 在 Ipoh 拍 Lim 婚礼」）\n- 硬盘（「M1 有什么」）、某人的 job（「Mun 剪了哪些」）\n- 统计（「今年几个 job」）、谁有空（「周六谁有空」）、生日\n- 最近的 job、新增 job、打开页面（「打开日历」）、换深色/浅色"
+    : "Without the AI I can still:\n- list what isn't backed up (\"what has Mun not backed up?\")\n- show shoots (\"shoots next week\")\n- find a job (\"where is Rinjani?\")\n- set up a shoot (\"Lim wedding on 5 Dec at Ipoh\")\n- show a drive (\"what's on M1\") or someone's jobs (\"Mun's jobs\")\n- give a summary (\"how many jobs this year\"), who's free (\"who's free Saturday\"), birthdays\n- latest jobs, a new job, open a page (\"open calendar\"), dark / light mode";
 }
 function drawLearn() { const el = $("learnN"); if (!el) return; const n = learnDb().ex.length;
   el.textContent = n ? `M has learned from ${n} of your requests, so it can still answer offline or when the AI is down.` : "M learns from each request you make, so it can still answer offline or when the AI is down."; }
@@ -2711,7 +2803,7 @@ async function ask(text) {
     if (e.name === "AbortError") { if (!bot.content) bot.content = "_Stopped._"; }
     else {   // no internet, or the AI is down: M answers from what it has learned and the data on this device
       const zh = isZh(text);
-      bot.content = localM(text) + "\n\n_" + (e.local ? (zh ? "离线回答，用的是手机里的资料。" : "Offline answer, from the data on this phone.") : DEMO ? (zh ? "Demo 模式：这是 M 自己的离线回答。" : "Demo mode: this is M's own offline answer.") : (zh ? "AI 暂时连不上，这是我自己学过的回答。" : "The AI can't be reached right now, so this is M's own answer.")) + "_";
+      bot.content = localM(text) + (e.mOnly ? "" : "\n\n_" + (e.local ? (zh ? "离线回答，用的是手机里的资料。" : "Offline answer, from the data on this phone.") : DEMO ? (zh ? "Demo 模式：这是 M 自己的离线回答。" : "Demo mode: this is M's own offline answer.") : (zh ? "AI 暂时连不上，这是我自己学过的回答。" : "The AI can't be reached right now, so this is M's own answer.")) + "_");
       bot.local = true; fillBot(d, bot, i, false); mood("happy");
     }
   }
@@ -2898,13 +2990,14 @@ $("aiProv").addEventListener("change", () => {   // a preset fills address + mod
   if (p.url) $("aiUrl").value = p.url; $("aiName").value = p.model; $("aiKey").value = ""; aiFields();
 });
 // the studio's DeepSeek needs no address, model or key: those fields step aside
-function aiFields() { const st = $("aiProv").value === "studio"; ["aiUrl", "aiName", "aiKey"].forEach(id => { const l = $(id).closest("label"); if (l) l.hidden = st; $(id).required = !st && id !== "aiKey"; }); }
+function aiFields() { const st = $("aiProv").value === "studio" || $("aiProv").value === "off"; ["aiUrl", "aiName", "aiKey"].forEach(id => { const l = $(id).closest("label"); if (l) l.hidden = st; $(id).required = !st && id !== "aiKey"; }); }
 const aiForm = () => ({ prov: $("aiProv").value, url: $("aiUrl").value.trim(), model: $("aiName").value.trim(), key: $("aiKey").value.trim() });
 $("aiSet").addEventListener("submit", e => {
   e.preventDefault(); store.set("mAI", aiForm());
   drawAI(); $("aiMsg").textContent = ""; toast("AI model saved");
 });
 $("aiTest").addEventListener("click", async () => {
+  if ($("aiProv").value === "off") { $("aiMsg").textContent = "M only: works on this device, nothing to connect."; return; }
   const keep = aiCfg(); store.set("mAI", aiForm());
   $("aiMsg").textContent = "Testing…";
   try { await callModel([{ role: "user", content: 'Reply with {"action":"reply","text":"ok"}' }]); $("aiMsg").textContent = "Connected."; }
