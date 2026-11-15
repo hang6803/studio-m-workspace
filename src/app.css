@@ -53,6 +53,8 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round
   transform: skewX(45deg) translateX(30%); animation: lit 1.6s cubic-bezier(.45,.05,.55,.95) .15s infinite }
 @keyframes beam { 0% { transform: translateX(-250%) skewX(-45deg) } 75%, 100% { transform: translateX(1083%) skewX(-45deg) } }
 @keyframes lit { 0% { transform: skewX(45deg) translateX(30%) } 75%, 100% { transform: skewX(45deg) translateX(-130%) } }
+/* opened from the home screen: the launch screen already shows the logo, so the loading takes over without fading in */
+.pwa .boot-logo { animation: none }
 @keyframes bootIn { from { opacity: 0; transform: translateY(8px) scale(.97) } to { opacity: 1; transform: none } }
 .boot.breathe .boot-beam { opacity: 0; transition: opacity .3s ease .2s }
 .boot.breathe .boot-base { animation: litUp .7s cubic-bezier(.33,0,.2,1) both }

@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.23";
+const APP_VER = "0.9.24";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -3114,7 +3114,7 @@ document.addEventListener("pointerdown", e => {
 });
 addEventListener("resize", () => { if (session) markNav(); });
 
-function themeBar() { const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = document.documentElement.getAttribute("data-theme") === "light" ? "#ffffff" : "#0e0e0e"; }
+function themeBar() { const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = document.documentElement.getAttribute("data-theme") === "light" ? "#ffffff" : "#070707"; }
 // the phone app's offline shell (not inside the Mac app, which has its files already)
 if ("serviceWorker" in navigator && !window.__TAURI__ && (location.protocol === "https:" || /^(localhost|127\.0\.0\.1)$/.test(location.hostname)))
   addEventListener("load", () => navigator.serviceWorker.register("sw.js").then(reg => {
