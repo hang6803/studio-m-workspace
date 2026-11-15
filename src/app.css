@@ -182,7 +182,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round
 
 .main { min-width: 0; min-height: 0; display: flex; flex-direction: column }
 .top { flex: none; display: flex; align-items: center; gap: 12px; padding: calc(16px + env(safe-area-inset-top, 0px)) 28px 0; min-height: 60px }
-.top-logo, .top .top-me, .top .back { display: none }
+.top .top-me, .top .back { display: none }
 body:not([data-route="home"]) .top .back { display: grid }
 .top-title { font-weight: 700; font-size: 15px; color: var(--muted) }
 .find { display: flex; align-items: center; gap: 10px; height: 40px; min-width: 280px; padding: 0 8px 0 14px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--muted); position: relative; overflow: hidden; transition: border-color .2s, color .2s }
@@ -269,10 +269,8 @@ body.m-open .find { border-color: var(--accent) }
   .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto }
   .side { display: none }
   .top { padding: calc(8px + env(safe-area-inset-top, 0px)) 12px 0; min-height: 52px; gap: 6px }
-  .top-logo { display: block } .top-logo .logo { height: 20px }
   .top .top-me { display: block; margin-left: auto }
   .find { display: none }
-  body:not([data-route="home"]) .top-logo { display: none }
   .top-title { color: var(--fg); font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
   .menu { left: auto; right: 12px; top: calc(56px + env(safe-area-inset-top, 0px)); bottom: auto; position: fixed }
   .view { padding: 12px 16px 24px }

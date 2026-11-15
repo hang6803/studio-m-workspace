@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.18";
+const APP_VER = "0.9.19";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -545,7 +545,7 @@ function parse(h) {
 }
 const hrefOf = n => n.kind === "drive" ? "#/drive/" + encodeURIComponent(n.key) : n.kind === "editor" ? "#/editor/" + encodeURIComponent(n.key)
   : n.kind === "shoot" ? "#/calendar/" + encodeURIComponent(n.date || "") : "#/job/" + encodeURIComponent(n.key);
-const TITLES = { calendar: "Calendar", team: "Team", unbacked: "Not backed up", drives: "Drives", settings: "Settings", backup: "Backup", classic: "Classic Backup" };
+const TITLES = { home: "Ask M", calendar: "Calendar", team: "Team", unbacked: "Not backed up", drives: "Drives", settings: "Settings", backup: "Backup", classic: "Classic Backup" };
 addEventListener("hashchange", () => { if (session) { fx("nav"); render(false); } });
 // Page changes cross-fade and slide (View Transitions where the system has them); the sidebar marker glides to the new place
 function render(first) {
@@ -555,7 +555,15 @@ function render(first) {
   // phones skip View Transitions: Android squashed the whole screen into its snapshot for a moment (tab bar halfway up,
   // page black). There the new page simply rises in from a soft blur, drawn live, with the bars never leaving their place.
   const phone = PHONE.matches, vt = !first && !STILL && !phone && document.startViewTransition;
-  const apply = () => { route = next; perch.navAt = performance.now(); paint(); perch.st = 0; perch.dock = false; perch(from); };
+  // phone: he doesn't travel between pages (switching tabs all the time made him leap around). He waits out of sight until
+  // the new page has risen into place, then pops up on its spot once, where he stays
+  const quiet = phone && !first && !STILL;
+  const apply = () => { route = next; perch.navAt = performance.now(); paint(); perch.st = 0; perch.dock = false;
+    if (!quiet) { perch(from); return; }
+    clearTimeout(render.popT); b.style.opacity = "0"; perch();
+    render.popT = setTimeout(() => { b.style.opacity = ""; if (!session || b.hidden) return;
+      b.getAnimations().forEach(a => { if (!a.effect || a.effect.getComputedTiming().iterations !== Infinity) a.cancel(); }); unliftM(true); perch();
+      if (!b.classList.contains("space")) b._an([{ transform: "scale(.6)", opacity: 0 }, { transform: "scale(1.04)", opacity: 1, offset: .7 }, { transform: "scale(1)", opacity: 1 }], { duration: 260, easing: "cubic-bezier(.2,.8,.2,1)" }); }, 360); };
   if (vt) document.startViewTransition(apply); else apply();
   if (phone && !first && !STILL) $("views").animate(noBlur([{ opacity: 0, transform: "translateY(14px)", filter: "blur(6px)" }, { opacity: 1, transform: "none", filter: "blur(0)" }]), { duration: 340, easing: "cubic-bezier(.2,.8,.2,1)" });
   if (phone && !$("mPanel").hidden) closeM();
@@ -2487,6 +2495,10 @@ const want1Row = el => el && /grid|flex/.test(getComputedStyle(el).display) && e
 // 闪现, the blink: at the old spot he jumps, spins and bursts into paper letters and is gone; at the new spot paper letters
 // burst, he springs out of them and lands with a bounce. The old spot is played by a copy of him, so the page never waits.
 function blink(b, from, to) {
+  // phone: changing page is something you do all the time, so he doesn't leap across the screen each time: he just
+  // appears on the new page's spot (a small pop), no spin, no paper, no sound
+  if (PHONE.matches) { b.animate([{ transform: "scale(.6)", opacity: 0 }, { transform: "scale(1.04)", opacity: 1, offset: .7 }, { transform: "scale(1)", opacity: 1 }],
+    { duration: 260, easing: "cubic-bezier(.2,.8,.2,1)" }); return; }
   // one 小M, one continuous motion (no copy of him: a copy is hundreds of 3D slices more for the phone to draw). He starts
   // where he was (shifted back there), crouches, leaps and spins away into the burst; a beat later he pops out of the
   // burst at the new spot, arcs up, falls and lands with a squash and two small bounces. Each step has its own easing,
