@@ -9,7 +9,7 @@
 // There is no shared API key in the build. M_API_KEY and config.local.json "apiKey" are ignored so a
 // leftover key cannot be copied into dist/ or GitHub Pages.
 // Usage: node tools/build.mjs
-import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 
 const at = p => new URL("../" + p, import.meta.url);
@@ -238,6 +238,8 @@ writeFileSync(at("dist/backup.html"), backup);
 // 7) phone app (PWA): manifest, icons, and the offline shell; its cache name changes whenever any shell file does
 mkdirSync(at("dist/icons"), { recursive: true });
 for (const f of ["icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png"]) copyFileSync(at("src/icons/" + f), at("dist/icons/" + f));
+mkdirSync(at("dist/splash"), { recursive: true });
+for (const f of readdirSync(at("src/splash"))) copyFileSync(at("src/splash/" + f), at("dist/splash/" + f));   // iPhone launch screens
 copyFileSync(at("src/manifest.webmanifest"), at("dist/manifest.webmanifest"));
 const shellHash = createHash("sha256");
 for (const f of ["index.html", "app.js", "app.css", "fx.js", "graph.js", "xiaom.js", "festivals.js", "festival-theme.js", "celebrate.js", "sfx.js", "backup.html", "manifest.webmanifest"]) shellHash.update(readFileSync(at("dist/" + f)));
