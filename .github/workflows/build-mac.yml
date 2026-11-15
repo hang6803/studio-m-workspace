@@ -49,7 +49,7 @@ jobs:
           tauriScript: npx tauri
           args: --target universal-apple-darwin
           tagName: v__VERSION__
-          releaseName: M app v__VERSION__
-          releaseBody: "What's new: see CHANGELOG.md. Install: open the .dmg and drag M app into Applications. Already installed: the app updates itself."
+          releaseName: M Workspace v__VERSION__
+          releaseBody: "What's new: see CHANGELOG.md. Install: open the .dmg and drag M Workspace into Applications. Already installed: the app updates itself."
           releaseDraft: false
           prerelease: false
