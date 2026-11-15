@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.21";
+const APP_VER = "0.9.22";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -1889,7 +1889,7 @@ function aiSystem(q) {
   const notBacked = rowsOf(year).filter(unbacked).slice(0, 60)
     .map(r => `${r.name} (${sectionOf(r)}, editor ${r.editor || "-"}, drive ${r.drive || "-"})`);
   const found = findJobs(q).map(jobLine);
-  return `You are M, the assistant in Studio M Workspace, the Studio M Production team app (event video and photo). Today is ${today} (${WD[(now.getDay() + 6) % 7]}).
+  return `You are M, the assistant in M Workspace, the Studio M Production team app (event video and photo). Today is ${today} (${WD[(now.getDay() + 6) % 7]}).
 Team: ${team.join(", ")}. You are talking with ${session.name}. Answer in the language they write in; keep it short and friendly; Markdown is fine.
 When they want to add shoots, write one short line, then one block per shoot like this (every day of the shoot):
 \`\`\`shoot
@@ -3014,7 +3014,7 @@ $("demoBday").addEventListener("click", () => {
   try { localStorage.removeItem("bdaySeen"); localStorage.removeItem("xiaom-celebrated"); } catch (e) {}
   location.hash = "#/home"; refresh();   // the new birthday changes festKey, so refresh plays it once
 });
-$("ver").textContent = "Studio M Workspace v" + APP_VER + (DEMO ? " (demo)" : "");
+$("ver").textContent = "M Workspace v" + APP_VER + (DEMO ? " (demo)" : "");
 
 // ---------------------------------------------------------------- Mac app: updates
 // The Mac app updates itself from GitHub Releases (latest.json, signed: an update that isn't signed with the studio's key
