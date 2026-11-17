@@ -268,9 +268,9 @@
           <div class="actions" style="justify-content:flex-start"><button type="button" class="btn" id="remindBtn">Turn on reminders</button></div></div>
         <div class="card" id="festCard"><h3>Festivals &amp; birthdays</h3>
           <p class="muted small" id="festNow"></p>
-          <label>Simulate date<input type="date" id="simDate"></label>
-          <p class="muted small">Pretend today is another day to preview a festival or a birthday. Only on this device. Greeting sounds follow Sound above.</p>
-          <div class="actions"><button type="button" class="btn ghost" id="simClear">Use real date</button><button type="button" class="btn ghost" id="festReplay">Play today again</button></div></div>
+          <div id="simBox" hidden><label>Simulate date<input type="date" id="simDate"></label>
+          <p class="muted small">Pretend today is another day to preview a festival or a birthday. Only on this device, and only for the boss. Greeting sounds follow Sound above.</p></div>
+          <div class="actions"><button type="button" class="btn ghost" id="simClear" hidden>Use real date</button><button type="button" class="btn ghost" id="festReplay">Play today again</button></div></div>
         <div class="card"><h3>Classic Backup</h3><p class="muted small">The old Backup page. Adding, editing and backing up jobs still happens there until the new Backup page can write.</p>
           <div class="actions" style="justify-content:flex-start"><a class="btn ghost" href="#/classic">Open Classic Backup</a></div></div>
         <div class="card" id="demoCard" hidden><h3>Demo</h3><p class="muted small">See your birthday scene: makes today your birthday in the demo data.</p>
