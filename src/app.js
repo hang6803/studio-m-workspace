@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.38";
+const APP_VER = "0.9.39";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -711,7 +711,7 @@ function render(first) {
     render.popT = setTimeout(() => { b.style.opacity = ""; if (!session || b.hidden) return;
       b.getAnimations().forEach(a => { if (!a.effect || a.effect.getComputedTiming().iterations !== Infinity) a.cancel(); }); unliftM(true); perch();
       if (!b.classList.contains("space")) { mFlash(b.getBoundingClientRect(), true);
-        b._an([{ transform: "scale(.3, .2)", opacity: 0 }, { transform: "scale(1.28, 1.18)", opacity: 1, offset: .35 }, { transform: "scale(.88, 1.06)", offset: .6 }, { transform: "scale(1.05, .97)", offset: .8 }, { transform: "scale(1)", opacity: 1 }], { duration: 420, easing: "cubic-bezier(.2,.8,.2,1)" }); } }, 360); };
+        b._an([{ transform: "translateY(0) scale(1.2, .55)", opacity: 0 }, { transform: "translateY(0) scale(1.25, .7)", opacity: 1, offset: .08, easing: "cubic-bezier(.15,.8,.35,1)" }, { transform: "translateY(-46px) scale(.9, 1.14)", offset: .42, easing: "cubic-bezier(.55,0,.85,.4)" }, { transform: "translateY(0) scale(1.2, .8)", offset: .7, easing: "cubic-bezier(.2,.7,.35,1)" }, { transform: "translateY(-8px) scale(.96, 1.04)", offset: .84, easing: "cubic-bezier(.55,0,.85,.4)" }, { transform: "translateY(0) scale(1)", opacity: 1 }], { duration: 640, easing: "linear" }); } }, 360); };
   if (vt) document.startViewTransition(apply); else apply();
   if (phone && !first && !STILL) $("views").animate(noBlur([{ opacity: 0, transform: "translateY(14px)", filter: "blur(6px)" }, { opacity: 1, transform: "none", filter: "blur(0)" }]), { duration: 340, easing: "cubic-bezier(.2,.8,.2,1)" });
   if (phone && !$("mPanel").hidden) closeM();
@@ -2843,16 +2843,16 @@ function blink(b, from, to) {
   setTimeout(() => { const r = b.getBoundingClientRect(); paperBurst(r.left + r.width / 2, r.top + r.height / 2 - 30, true); }, OUT + GAP - 40);
   fx("pin");
 }
-// 闪现 (phone): 小M pops like popcorn. Where he vanishes, a white puff and a handful of popcorn burst out, arc up and fall
-// with a tumble; where he appears, a smaller pop throws a few more as he springs out. No sound.
+// 闪现 (phone): 小M pops like popcorn. Where he vanishes, a white puff and lots of small popcorn burst out, arc up and fall
+// with a tumble; where he appears, a pop throws more as he jumps up out of it and lands. No sound.
 function mFlash(r, into) {
   if (!r || !r.width || STILL) return;
   const x = r.left + r.width / 2, y = r.top + r.height / 2, f = document.createElement("div"); f.className = "m-flash" + (into ? " in" : "");
   f.style.left = x + "px"; f.style.top = y + "px"; f.innerHTML = "<i class=\"puff\"></i>";
-  const n = into ? 7 : 10, rnd = (a, b) => a + Math.random() * (b - a);
+  const n = into ? 12 : 18, rnd = (a, b) => a + Math.random() * (b - a);
   for (let i = 0; i < n; i++) {
-    const k = document.createElement("i"); k.className = "pc" + (i % 3 ? "" : " b"); f.appendChild(k);
-    const ang = (-90 + (i / (n - 1) - .5) * 200 + rnd(-12, 12)) * Math.PI / 180, v = rnd(into ? 34 : 46, into ? 60 : 84);
+    const k = document.createElement("i"); k.className = "pc" + (i % 4 ? "" : " b"); f.appendChild(k);
+    const ang = (-90 + (i / (n - 1) - .5) * 200 + rnd(-12, 12)) * Math.PI / 180, v = rnd(into ? 26 : 34, into ? 62 : 86);
     const dx = Math.cos(ang) * v, dy = Math.sin(ang) * v, fall = rnd(50, 90), spin = rnd(-540, 540), sc = rnd(.75, 1.15);
     k.animate([
       { transform: "translate(0,0) rotate(0) scale(.2)", opacity: 1 },

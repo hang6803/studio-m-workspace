@@ -1359,9 +1359,9 @@ a, [role="tab"] { -webkit-tap-highlight-color: transparent }   /* no blue box on
 .m-flash .puff { width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%; background: radial-gradient(circle, #fff 0, rgba(255,246,220,.9) 40%, rgba(255,230,170,0) 70%); animation: mfPuff .45s ease-out both }
 .m-flash.in .puff { width: 46px; height: 46px; margin: -23px 0 0 -23px }
 /* a popcorn: a cream kernel with fluffy lumps around it and a speck of golden hull */
-.m-flash .pc { width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50% 45% 50% 40%; background: #fffaf0;
-  box-shadow: 5px -2px 0 -1px #fff8ea, -4px -3px 0 -1px #fff4dc, 1px -6px 0 -2px #fffdf6, -2px 4px 0 -1px #fff1d2, 3px 3px 0 -3px #e9b44c, 0 0 5px rgba(255,214,140,.55) }
-.m-flash .pc.b { width: 13px; height: 12px; margin: -6px 0 0 -6px }
+.m-flash .pc { width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50% 45% 50% 40%; background: #fffaf0;
+  box-shadow: 3px -1px 0 -.5px #fff8ea, -2.5px -2px 0 -.5px #fff4dc, .5px -3.5px 0 -1px #fffdf6, -1px 2.5px 0 -.5px #fff1d2, 2px 2px 0 -1.5px #e9b44c, 0 0 3px rgba(255,214,140,.5) }
+.m-flash .pc.b { width: 8px; height: 7px; margin: -4px 0 0 -4px }
 @keyframes mfPuff { 0% { transform: scale(.3); opacity: 1 } 40% { transform: scale(1.1); opacity: .9 } 100% { transform: scale(1.5); opacity: 0 } }
 @media (prefers-reduced-motion: reduce) { .m-flash { display: none } }
 /* phone: the Studio M logo top left on every page (the page name is in the tab bar) */
