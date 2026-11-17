@@ -62,10 +62,11 @@
 
 <!-- First time, Register, Forgot PIN (one card at a time) -->
 <section class="lock" id="setup" hidden>
+  <datalist id="teamNames"></datalist>
   <form class="card setup-card" id="setupForm" data-mode="first">
     <h2 id="suTitle">Set up your PIN</h2>
     <p class="muted small" id="suHint">You're on the team but haven't picked a PIN yet.</p>
-    <label id="suNameRow">Who are you?<select id="suName" required></select></label>
+    <label id="suNameRow">Who are you?<input id="suName" list="teamNames" maxlength="40" required autocomplete="off" autocapitalize="words"></label>
     <label id="suStudioRow">Studio PIN<input id="suStudio" type="password" inputmode="numeric" autocomplete="off"></label>
     <label>New PIN (6 digits)<input id="suPin" type="password" inputmode="numeric" maxlength="6" pattern="\d{6}" required autocomplete="new-password"></label>
     <label>New PIN again<input id="suPin2" type="password" inputmode="numeric" maxlength="6" pattern="\d{6}" required autocomplete="new-password"></label>
@@ -91,11 +92,11 @@
   <form class="card setup-card" id="forgotForm" hidden>
     <h2>Forgot PIN</h2>
     <p class="muted small">Ask an admin, the boss or M to type their PIN here. Then pick a new one.</p>
-    <label>Your name<select id="fgName" required></select></label>
+    <label>Your name<input id="fgName" list="teamNames" maxlength="40" required autocomplete="off" autocapitalize="words"></label>
     <label>New PIN (6 digits)<input id="fgPin" type="password" inputmode="numeric" maxlength="6" pattern="\d{6}" required autocomplete="new-password"></label>
     <label>New PIN again<input id="fgPin2" type="password" inputmode="numeric" maxlength="6" pattern="\d{6}" required autocomplete="new-password"></label>
     <fieldset class="vouch"><legend>Approved by</legend>
-      <label>Name<select id="fgBy" required></select></label>
+      <label>Name<input id="fgBy" list="teamNames" maxlength="40" required autocomplete="off" autocapitalize="words" placeholder="Admin, boss or M"></label>
       <label>Their PIN<input id="fgByPin" type="password" inputmode="numeric" maxlength="6" required autocomplete="off"></label>
     </fieldset>
     <p class="msg" id="fgMsg"></p>
@@ -237,6 +238,8 @@
           <p class="msg" id="aiMsg"></p><div class="actions"><button type="button" class="btn ghost" id="aiTest">Test</button><button class="btn">Save</button></div><p class="muted small" id="learnN"></p></form>
 
 
+        <div class="card" id="remindCard"><h3>Reminders</h3><p class="muted small" id="remindMsg"></p>
+          <div class="actions" style="justify-content:flex-start"><button type="button" class="btn" id="remindBtn">Turn on reminders</button></div></div>
         <div class="card" id="festCard"><h3>Festivals &amp; birthdays</h3>
           <p class="muted small" id="festNow"></p>
           <label>Simulate date<input type="date" id="simDate"></label>

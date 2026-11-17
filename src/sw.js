@@ -31,3 +31,24 @@ self.addEventListener("fetch", e => {
     return hit ? (net.catch(() => {}), hit) : net;
   }));
 });
+// Reminders (the app works them out and keeps the list in the "m-remind" cache). On Android, Chrome wakes this now and
+// then while the app is closed; anything due today and not shown yet is shown. A tap opens the app on that page.
+self.addEventListener("periodicsync", e => {
+  if (e.tag !== "m-remind") return;
+  e.waitUntil((async () => {
+    const c = await caches.open("m-remind"), list = await c.match("list").then(r => r ? r.json() : []).catch(() => []);
+    const shown = await c.match("shown").then(r => r ? r.json() : []).catch(() => []);
+    const d = new Date(), t = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const fresh = list.filter(x => x.day === t && !shown.includes(x.id));
+    for (const x of fresh) await self.registration.showNotification(x.title, { body: x.body, tag: x.id, icon: "icons/icon-192.png", badge: "icons/icon-192.png", data: { url: x.url } });
+    if (fresh.length) await c.put("shown", new Response(JSON.stringify([...shown, ...fresh.map(x => x.id)].slice(-300))));
+  })());
+});
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  const url = new URL("./" + ((e.notification.data && e.notification.data.url) || ""), self.registration.scope).href;
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(cs => {
+    const w = cs[0]; if (w) return w.focus().then(() => w.navigate(url)).catch(() => self.clients.openWindow(url));
+    return self.clients.openWindow(url);
+  }));
+});

@@ -55,7 +55,8 @@ test("built pages do not contain an API key", () => {
       if (p.endsWith(".html") || p.endsWith(".js")) assert.equal(text.includes("apiKey"), false, p + " contains apiKey");
     }
 
-    const app = readFileSync(at("dist/app.js"), "utf8");
+    // the source, not the minified copy: minifying turns `? "key" : ""` into `?"key":""`, which reads like a sent key
+    const app = readFileSync(at("src/app.js"), "utf8");
     assert.equal(app.includes("CFG.apiKey"), false);
     assert.equal(app.includes('"key":'), false, "the app still sends a shared key");
 

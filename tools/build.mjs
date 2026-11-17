@@ -226,11 +226,13 @@ for (const v of ["l", "d"]) {
 const shell = read("src/index.html");
 must(shell.includes("<!--M_CONFIG-->"), "shell: <!--M_CONFIG--> missing");
 writeFileSync(at("dist/index.html"), shell.replace("<!--M_CONFIG-->", `<script>window.M_API = ${JSON.stringify(api)};</script>`));
-copyFileSync(at("src/app.js"), at("dist/app.js"));
-copyFileSync(at("src/app.css"), at("dist/app.css"));
-copyFileSync(at("src/graph.js"), at("dist/graph.js"));
-copyFileSync(at("src/fx.js"), at("dist/fx.js"));
-copyFileSync(at("src/brain.js"), at("dist/brain.js"));
+// the app's own code goes out minified (smaller download, faster first open). Without esbuild (npm install not run) it is copied as is.
+let esb = null; try { esb = await import("esbuild"); } catch (e) { console.warn("WARN: esbuild not installed — app files are not minified"); }
+const ship = (src, out) => {
+  const code = read(src); if (!esb) return writeFileSync(at(out), code);
+  writeFileSync(at(out), esb.transformSync(code, { loader: src.endsWith(".css") ? "css" : "js", minify: true, charset: "utf8", legalComments: "none" }).code);
+};
+for (const f of ["app.js", "app.css", "graph.js", "fx.js", "brain.js"]) ship("src/" + f, "dist/" + f);
 // 小M and the festival / birthday modules come from hang6803/xiaom-module (vendor/xiaom/SOURCE has the commit)
 for (const f of ["xiaom.js", "festivals.js", "festival-theme.js", "celebrate.js", "sfx.js"]) copyFileSync(at("vendor/xiaom/" + f), at("dist/" + f));
 writeFileSync(at("dist/backup.html"), backup);
