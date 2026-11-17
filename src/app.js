@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.34";
+const APP_VER = "0.9.35";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -3144,7 +3144,9 @@ function loadBackup() {
 // particles stay all day and 小M plays the festival's scene once. Birthdays: your own scene (Hang, Michael and Mun each have
 // their own), or one line when it's someone else's. Settings → Festivals & birthdays can pretend today is another day.
 const FX = { stop: () => {}, t: 0 };
-const simDate = () => { const v = store.get("mSimDate", ""); return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ""; };
+// Simulate date is the boss's preview tool: only the boss sees it in Settings, and for anyone else a date left on the device is ignored
+const isBoss = () => !!session && (session.role || (data && data.me && data.me.role) || "") === "boss";
+const simDate = () => { if (!isBoss()) return ""; const v = store.get("mSimDate", ""); return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ""; };
 function festStatus() {
   const F = window.XiaoMFestivals; if (!F || !session) return null;
   const people = Object.entries(birthdays || {}).map(([name, birthday]) => ({ name, birthday }));
@@ -3196,7 +3198,7 @@ function festAfterData() {
 function drawFest(s) {
   s = s || festStatus(); const t = s && s.theme, el = $("festNow"); if (!el) return;
   el.textContent = (simDate() ? "Pretending today is " + s.date + ". " : "") + (!t ? "No festival coming up in the next 14 days." : t.daysLeft ? t.en + " in " + t.daysLeft + " day" + (t.daysLeft > 1 ? "s" : "") + "." : "Today: " + t.en + "!");
-  $("simDate").value = simDate();
+  $("simDate").value = simDate(); $("simBox").hidden = $("simClear").hidden = !isBoss();
 }
 $("simDate").addEventListener("change", e => { store.set("mSimDate", e.target.value || ""); festKey = festKeyNow(); scenes(true, true); });
 $("simClear").addEventListener("click", () => { store.set("mSimDate", ""); festKey = festKeyNow(); scenes(true); });
