@@ -1350,3 +1350,19 @@ a, [role="tab"] { -webkit-tap-highlight-color: transparent }   /* no blue box on
 .sw input:focus-visible + i { outline: 2px solid var(--accent, #F48020); outline-offset: 2px }
 .bio-pin { display: flex; gap: 8px; margin-top: 10px }
 .bio-pin input { flex: 1; min-width: 0 }
+/* phone top bar: Settings next to your avatar */
+.top .top-set { display: none }
+@media (max-width: 899px) { .top .top-set { display: grid; width: 36px; height: 36px; margin-left: 4px } }
+/* 小M's 闪现 on the phone: light where he vanishes and where he appears */
+.m-flash { position: fixed; z-index: 60; width: 0; height: 0; pointer-events: none }
+.m-flash i { position: absolute; left: 0; top: 0; border-radius: 50% }
+.m-flash .g { width: 110px; height: 110px; margin: -55px 0 0 -55px; background: radial-gradient(circle, rgba(255,214,160,.95) 0, rgba(244,128,32,.55) 35%, rgba(244,128,32,0) 70%); animation: mfG .55s ease-out both }
+.m-flash .r { width: 70px; height: 70px; margin: -35px 0 0 -35px; border: 2px solid rgba(255,190,120,.9); animation: mfR .6s ease-out both }
+.m-flash .s { width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; background: #ffd9a8; box-shadow: 0 0 6px 2px rgba(244,128,32,.8); animation: mfS .55s ease-out both }
+.m-flash.in .g { animation-name: mfGi } .m-flash.in .s { animation-name: mfSi }
+@keyframes mfG { 0% { transform: scale(.4); opacity: 1 } 40% { transform: scale(1.05); opacity: .95 } 100% { transform: scale(1.6); opacity: 0 } }
+@keyframes mfGi { 0% { transform: scale(1.6); opacity: 0 } 35% { transform: scale(.9); opacity: 1 } 60% { opacity: .9 } 100% { transform: scale(1.35); opacity: 0 } }
+@keyframes mfR { 0% { transform: scale(.3); opacity: 1 } 50% { opacity: .85 } 100% { transform: scale(2); opacity: 0 } }
+@keyframes mfS { 0% { transform: rotate(var(--a)) translateY(0) scale(1); opacity: 1 } 100% { transform: rotate(var(--a)) translateY(-46px) scale(.3); opacity: 0 } }
+@keyframes mfSi { 0% { transform: rotate(var(--a)) translateY(-50px) scale(.4); opacity: 0 } 60% { opacity: 1 } 100% { transform: rotate(var(--a)) translateY(0) scale(1); opacity: 0 } }
+@media (prefers-reduced-motion: reduce) { .m-flash { display: none } }
