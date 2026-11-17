@@ -174,9 +174,16 @@ function audit_(action, target, detail, who) {
   } catch (e) {}
 }
 
-// Who is on the team and who has set a PIN yet (sign-in and first-time screens). No PINs or hashes leave the server.
+// What the sign-in screens need, with no names: anyone can call this, so the team list is not given out here
+// (signed-in people get it from getAll / people). Names are typed in First time and Forgot PIN and matched by nameOf_.
 function teamStatus_() {
-  return { members: teamNames_().map(n => ({ name: n, hasPin: !!pinOf_(n) })), xiaom: !!xiaomPin_(), studioPin: !!props_().getProperty("PIN"), pinLength: 6 };
+  const names = teamNames_();
+  return { members: [], count: names.length, noPin: names.filter(n => !pinOf_(n)).length, xiaom: !!xiaomPin_(), studioPin: !!props_().getProperty("PIN"), pinLength: 6 };
+}
+// a typed name as the team has it: case and extra spaces don't matter; "" when nobody is called that
+function nameOf_(name, list) {
+  const k = String(name || "").trim().replace(/\s+/g, " ").toLowerCase();
+  return k ? (list || signers_()).find(n => n.toLowerCase() === k) || "" : "";
 }
 
 // Wrong PINs only (a successful sign-in is not counted). 5 for one name in 15 minutes locks that name.
@@ -244,8 +251,9 @@ function sessionName_(token) {
 
 // First time: auth = the studio PIN (or nothing if the studio has none). Changing: auth = the person's current PIN.
 function setMyPin_(name, auth, newPin) {
-  name = String(name || "").trim(); auth = String(auth || ""); newPin = String(newPin || "");
-  if (signers_().indexOf(name) < 0) throw new Error("Not on the team: " + name);
+  const typed = String(name || "").trim(); auth = String(auth || ""); newPin = String(newPin || "");
+  name = nameOf_(typed);
+  if (!name) throw new Error("No one on the team is called " + typed + ". Type your name as the team has it.");
   if (!PIN_RE.test(newPin)) throw new Error("PIN is 6 digits");
   if (tooMany_(name)) throw new Error("Too many tries. Wait 15 minutes.");
   const lock = LockService.getScriptLock(); lock.waitLock(20000);
@@ -264,8 +272,9 @@ function setMyPin_(name, auth, newPin) {
 
 // Forgot PIN: someone with a role of admin or above vouches with their own name and PIN, on the spot
 function resetPin_(name, newPin, byName, byPin) {
-  name = String(name || "").trim(); byName = String(byName || "").trim(); newPin = String(newPin || "");
-  if (teamNames_().indexOf(name) < 0) throw new Error("Not on the team: " + name);
+  const typed = String(name || "").trim(); newPin = String(newPin || "");
+  name = nameOf_(typed, teamNames_()); byName = nameOf_(byName) || String(byName || "").trim();
+  if (!name) throw new Error("No one on the team is called " + typed + ". Type your name as the team has it.");
   if (!PIN_RE.test(newPin)) throw new Error("PIN is 6 digits");
   if (tooMany_(byName)) throw new Error("Too many tries. Wait 15 minutes.");
   if (!checkWho_(byName, byPin)) { failed_(byName); audit_("PIN reset refused", name, "wrong PIN for " + byName, byName); throw new Error("That admin PIN is wrong"); }
@@ -459,4 +468,28 @@ function ask_(messages) {
   }
   const o = JSON.parse(body), c = o.choices && o.choices[0];
   return { text: String(c && c.message && c.message.content || "") };
+}
+
+
+// ---- Daily copy of the whole spreadsheet in Drive ----
+// Run setUpDailyBackup once (Apps Script editor: pick it, press Run, allow Drive). From then on, every night around
+// 3 am Malaysia time a copy of the sheet goes to the Drive folder "M Workspace backups"; the newest 30 are kept.
+// To get data back: open a copy, or File → Make a copy of it. Turning it off: Triggers (clock icon) → delete dailyBackup.
+const MBACKUP_FOLDER = "M Workspace backups", MBACKUP_KEEP = 30, MBACKUP_TZ = "Asia/Kuala_Lumpur";
+function dailyBackup() {
+  const ss = book_(), it = DriveApp.getFoldersByName(MBACKUP_FOLDER);
+  const folder = it.hasNext() ? it.next() : DriveApp.createFolder(MBACKUP_FOLDER);
+  const name = ss.getName() + " " + Utilities.formatDate(new Date(), MBACKUP_TZ, "yyyy-MM-dd");
+  const same = folder.getFilesByName(name); while (same.hasNext()) same.next().setTrashed(true);   // one a day: a rerun replaces it
+  DriveApp.getFileById(ss.getId()).makeCopy(name, folder);
+  const all = [], files = folder.getFiles(); while (files.hasNext()) all.push(files.next());
+  all.sort((a, b) => b.getDateCreated() - a.getDateCreated()).slice(MBACKUP_KEEP).forEach(f => f.setTrashed(true));
+  return name;
+}
+function setUpDailyBackup() {
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === "dailyBackup").forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger("dailyBackup").timeBased().everyDays(1).atHour(3).inTimezone(MBACKUP_TZ).create();
+  const first = dailyBackup();
+  console.log("Daily backup is on. First copy: " + first);
+  return first;
 }

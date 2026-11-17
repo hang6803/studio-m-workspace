@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.24";
+const APP_VER = "0.9.25";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -403,8 +403,7 @@ async function loadWho() {
   try { who = await M.api("team"); store.set("mWho", who); } catch (e) { who = store.get("mWho", null); }
   drawWho();
 }
-const signers = () => who ? who.members.filter(m => m.hasPin).map(m => m.name).concat(who.xiaom ? ["M"] : []) : [];
-function drawWho() { $("lockTitle").textContent = "Enter your PIN"; }
+function drawWho() { $("lockTitle").textContent = "Enter your PIN"; padWait(); }
 function drawDots() {
   [...$("dots").children].forEach((d, i) => d.classList.toggle("on", i < entered.length));
   $("dots").classList.toggle("old", entered.length === 4);
@@ -417,7 +416,7 @@ async function signIn(pin) {
   const dots = $("dots"); dots.classList.remove("bad"); dots.classList.add("checking"); $("pad").inert = true; $("lockMsg").textContent = "";
   const done = () => { dots.classList.remove("checking"); $("pad").inert = false; };
   try {
-    session = await M.api("login", [pin]); done();
+    session = await M.api("login", [pin]); done(); store.set(BAD_KEY, null);
     if (!session.upgrade) preload = loadData();   // the data starts coming now, while 小M cheers, not after
     keepPin(pin, session.name); store.set("mUser", session.name);
     store.set("mLen4", pin.length === 4);
@@ -427,16 +426,33 @@ async function signIn(pin) {
   } catch (e) {
     done();
     const off = isNetErr(e) && await offlineName(pin);
-    if (off) { session = { name: off, token: "", offline: true }; entered = ""; drawDots(); setTimeout(() => lockMood("yay"), 300); setTimeout(unlock, 900); return; }
+    if (off) { store.set(BAD_KEY, null); session = { name: off, token: "", offline: true }; entered = ""; drawDots(); setTimeout(() => lockMood("yay"), 300); setTimeout(unlock, 900); return; }
     if (isNetErr(e) && !DEMO) e = new Error(store.get("mPins", null) ? "No connection, and that PIN doesn't match. Try again." : "No connection. Sign in once with internet, then it opens offline too.");
     // wrong: the dots flash red and shake, a buzz, M shakes its head; the dots clear after the shake
     dots.classList.remove("shake"); void dots.offsetWidth; dots.classList.add("shake", "bad"); fx("err");
     $("lockMsg").textContent = e.message; setTimeout(() => lockMood("no"), 120);
+    if (isNetErr(e) ? !!store.get("mPins", null) : /wrong pin/i.test(e.message)) badPin();
     setTimeout(() => { dots.classList.remove("bad"); entered = ""; drawDots(); }, 520);
   }
 }
+// wrong PINs on this device: 5 in a row pause the pad for a minute, 10 for 5 minutes, then 15 (the server keeps its own limit too)
+const BAD_KEY = "mBad";
+function badPin() {
+  const b = store.get(BAD_KEY, null) || { n: 0, until: 0 }; b.n++;
+  if (b.n >= 5 && b.n % 5 === 0) b.until = Date.now() + (b.n >= 15 ? 15 : b.n >= 10 ? 5 : 1) * 60e3;
+  store.set(BAD_KEY, b); padWait();
+}
+function padWait() {
+  clearTimeout(padWait.t); const b = store.get(BAD_KEY, null), left = b ? Math.ceil((b.until - Date.now()) / 1000) : 0;
+  $("pad").classList.toggle("wait", left > 0);
+  if (left <= 0) { if (padWait.on) { padWait.on = false; $("lockMsg").textContent = ""; } return; }
+  padWait.on = true; $("lockMsg").textContent = `Too many wrong PINs. Try again in ${left >= 60 ? Math.ceil(left / 60) + " min" : left + " s"}.`;
+  padWait.t = setTimeout(padWait, 1000);
+}
+const padLocked = () => { const b = store.get(BAD_KEY, null); return !!b && b.until > Date.now(); };
 function key(k) {
   clearTimeout(legacyT);
+  if (padLocked()) { padWait(); return; }
   if (k === "del") entered = entered.slice(0, -1);
   else if (k === "ok") { if (entered.length === 4) signIn(entered); return; }
   else if (entered.length < PIN_LEN && /\d/.test(k)) entered += k;
@@ -462,23 +478,22 @@ function showForm(id) {
 document.querySelectorAll("[data-form]").forEach(b => b.addEventListener("click", () => openForm(b.dataset.form)));
 $("setup").addEventListener("click", e => { if (e.target.closest("[data-back]")) { fx("close"); lock(); } });
 const sixOk = (a, b, msg) => { if (!/^\d{6}$/.test(a)) { msg.textContent = "PIN is 6 digits"; return false; } if (a !== b) { msg.textContent = "The two PINs are different"; return false; } return true; };
-const opts = (list, pick) => list.map(n => `<option${n === pick ? " selected" : ""}>${esc(n)}</option>`).join("");
 async function openForm(id) {
   const f = showForm(id);
   if (id === "regForm") return;
   try { who = await M.api("team"); store.set("mWho", who); } catch (e) { f.querySelector(".msg").textContent = e.message; return; }
-  const me = store.get("mUser", "");
+  // names are typed (the server no longer lists the team to someone not signed in); this device suggests the ones it knows
+  const me = store.get("mUser", ""), ms = who.members || [], known = store.get("mNames", []) || [];
+  const fill = list => { $("teamNames").innerHTML = [...new Set(list)].map(n => `<option value="${esc(n)}">`).join(""); };
   if (id === "setupForm") {
-    f.dataset.mode = "first"; $("suTitle").textContent = "Set up your PIN"; $("suHint").textContent = "You're on the team but haven't picked a PIN yet.";
-    $("suNameRow").hidden = false; $("suName").required = true;
-    const free = who.members.filter(m => !m.hasPin).map(m => m.name);
-    $("suName").innerHTML = free.length ? opts(free, me) : `<option value="">Everyone has a PIN. Use Forgot PIN.</option>`;
+    f.dataset.mode = "first"; $("suTitle").textContent = "Set up your PIN"; $("suHint").textContent = "You're on the team but haven't picked a PIN yet. Type your name as the team has it.";
+    $("suNameRow").hidden = false; $("suName").required = true; $("suName").value = me;
+    fill(ms.length ? ms.filter(m => !m.hasPin).map(m => m.name) : known);
     $("suStudioRow").hidden = !who.studioPin; $("suStudioRow").firstChild.textContent = "Studio PIN";
   }
   if (id === "forgotForm") {
-    const has = who.members.filter(m => m.hasPin).map(m => m.name);
-    $("fgName").innerHTML = opts(has, me);
-    $("fgBy").innerHTML = `<option value="">Pick who approves</option>` + opts(has.concat(who.xiaom ? ["M"] : []));
+    fill((ms.length ? ms.filter(m => m.hasPin).map(m => m.name) : known).concat(who.xiaom ? ["M"] : []));
+    $("fgName").value = me; $("fgBy").value = "";
   }
 }
 // an old 4-digit PIN worked: pick the new 6-digit one now (the old one is the "current PIN")
@@ -490,7 +505,7 @@ function openUpgrade(old) {
 $("setupForm").addEventListener("submit", async e => {
   e.preventDefault(); const f = e.target, msg = $("suMsg"), pin = $("suPin").value;
   if (!sixOk(pin, $("suPin2").value, msg)) return;
-  const up = f.dataset.mode === "upgrade", name = up ? session.name : $("suName").value;
+  const up = f.dataset.mode === "upgrade", name = up ? session.name : $("suName").value.trim();
   if (!name) return;
   try { session = await slow(M.api("setMyPin", [name, up ? f.dataset.old : $("suStudio").value, pin])); }
   catch (err) { msg.textContent = err.message; fx("err"); return; }
@@ -509,10 +524,10 @@ $("regForm").addEventListener("submit", async e => {
   showForm("regSent"); fx("ok");
 });
 $("forgotForm").addEventListener("submit", async e => {
-  e.preventDefault(); const msg = $("fgMsg"), pin = $("fgPin").value, by = $("fgBy").value;
+  e.preventDefault(); const msg = $("fgMsg"), pin = $("fgPin").value, by = $("fgBy").value.trim();
   if (!sixOk(pin, $("fgPin2").value, msg)) return;
   if (!by) { msg.textContent = "Pick who approves"; return; }
-  try { session = await slow(M.api("resetPin", [$("fgName").value, pin, by, $("fgByPin").value])); }
+  try { session = await slow(M.api("resetPin", [$("fgName").value.trim(), pin, by, $("fgByPin").value])); }
   catch (err) { msg.textContent = err.message; fx("err"); return; }
   keepPin(pin, session.name); store.set("mUser", session.name); store.set("mLen4", false);
   e.target.reset(); fx("ok"); toast("PIN reset"); unlock();
@@ -587,7 +602,7 @@ function paint() {
   if (v === "classic") loadBackup(); else if (v === "backup" && !backupLoaded) (window.requestIdleCallback || (g => setTimeout(g, 600)))(() => { if (session) loadBackup(); }, { timeout: 1500 });   // after the list has drawn   // Backup saves through Classic Backup, kept ready in the background
   if (v === "team") { if (shownView !== "team") { $("teamLog").hidden = true; loadPeople(true).then(loadLog); } drawTeam(); }
   shownView = v;
-  if (v === "settings") { drawTheme(); drawAI(); drawVoice(); drawFx(); drawFest(); drawLearn(); }
+  if (v === "settings") { drawTheme(); drawAI(); drawVoice(); drawFx(); drawFest(); drawLearn(); drawRemind(); }
 }
 function markNav() {
   const key = route.name === "drive" || route.name === "editor" ? route.name + ":" + route.key : route.name === "job" ? "" : route.name === "classic" ? "backup" : route.name;
@@ -635,7 +650,55 @@ function drawAll() {
   if (route.name === "team") drawTeam();
   if (typeof perch === "function" && session) requestAnimationFrame(() => perch());   // a redraw can take 小M's spot away
   if (route.name === "backup") drawBackup();
+  clearTimeout(remind.t); remind.t = setTimeout(remind, 1500);
+  if (team.length) store.set("mNames", team.slice(0, 80));   // suggested in First time / Forgot PIN on this device
 }
+
+// ---------------------------------------------------------------- reminders: a phone notification for shoots, birthdays and backups
+// Worked out on this device from the data it has. The list is kept for the offline service worker too, which on Android
+// (Chrome, installed app) can show them while the app is closed. Each one shows once.
+const REMIND_KEY = "mRemind";
+const canRemind = () => "Notification" in window && "serviceWorker" in navigator && !window.__TAURI__;
+function remindList() {
+  if (!session) return [];
+  const me = session.name, d0 = new Date(), t = ymd(d0), d1 = new Date(d0); d1.setDate(d0.getDate() + 1); const tm = ymd(d1), out = [];
+  shoots.forEach(s => { const ds = datesOf(s), mine = crewOf(s).includes(me), who = mine ? "You're on the crew" : crewOf(s).join(", ");
+    if (ds.includes(tm) && !ds.includes(t)) out.push({ id: `shoot:${s.id}:${tm}`, day: t, title: `Shoot tomorrow: ${s.name}`, body: [s.location, who].filter(Boolean).join(" · "), url: `#/calendar/${tm}` });
+    if (ds.includes(t) && mine) out.push({ id: `shoot:${s.id}:${t}`, day: t, title: `Shooting today: ${s.name}`, body: s.location || "", url: `#/calendar/${t}` }); });
+  Object.entries({ ...(data.birthdays || {}), ...birthdays }).forEach(([n, b]) => { if (String(b).slice(5) === t.slice(5)) out.push({ id: `bday:${n}:${t}`, day: t, title: n === me ? "Happy birthday 🎂" : `It's ${n}'s birthday today 🎂`, body: n === me ? "From M and the whole studio!" : "Don't forget to wish them", url: "#/home" }); });
+  const un = oneEach((data.rows || []).filter(r => r.editor === me && unbacked(r)));
+  if (un.length) out.push({ id: `unb:${me}:${t}`, day: t, title: `${un.length} of your jobs aren't backed up`, body: un.slice(0, 3).map(r => r.name).join(", ") + (un.length > 3 ? "…" : ""), url: "#/unbacked" });
+  return out;
+}
+async function remind() {
+  if (!canRemind() || !session || !store.get(REMIND_KEY, false) || Notification.permission !== "granted") return;
+  try {
+    const reg = await navigator.serviceWorker.ready, c = await caches.open("m-remind");
+    const list = remindList(); await c.put("list", new Response(JSON.stringify(list)));
+    const shown = await c.match("shown").then(r => r ? r.json() : []).catch(() => []);
+    const fresh = list.filter(x => !shown.includes(x.id));
+    for (const x of fresh) await reg.showNotification(x.title, { body: x.body, tag: x.id, icon: "icons/icon-192.png", badge: "icons/icon-192.png", data: { url: x.url } });
+    if (fresh.length) await c.put("shown", new Response(JSON.stringify([...shown, ...fresh.map(x => x.id)].slice(-300))));
+  } catch (e) {}
+}
+async function remindOn(on) {
+  if (on) {
+    if (!canRemind()) { toast("This device can't show notifications"); return false; }
+    const p = await Notification.requestPermission();
+    if (p !== "granted") { toast("Notifications are blocked. Allow them for M Workspace in the phone's settings."); return false; }
+    try { const reg = await navigator.serviceWorker.ready; if (reg.periodicSync) await reg.periodicSync.register("m-remind", { minInterval: 4 * 3600e3 }); } catch (e) {}
+  }
+  store.set(REMIND_KEY, on); drawRemind(); if (on) { remind(); toast("Reminders on"); } return true;
+}
+function drawRemind() {
+  const b = $("remindBtn"), m = $("remindMsg"); if (!b) return;
+  const on = store.get(REMIND_KEY, false) && canRemind() && Notification.permission === "granted";
+  b.textContent = on ? "Turn off" : "Turn on reminders"; b.classList.toggle("ghost", on);
+  m.textContent = !canRemind() ? (window.__TAURI__ ? "Reminders are on the phone app for now." : "This browser can't show notifications. On iPhone, add the app to the Home Screen first.")
+    : on ? "On: tomorrow's shoots, birthdays, and your jobs not backed up yet. Each one once a day." : "Your phone tells you about tomorrow's shoots, birthdays, and your jobs not backed up yet.";
+}
+document.addEventListener("click", e => { if (e.target.id === "remindBtn") remindOn(!(store.get(REMIND_KEY, false) && Notification.permission === "granted")); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) remind(); });
 
 // ---------------------------------------------------------------- sidebar: drives and editors of the year on Home
 function yearsAll() { const s = new Set((data.rows || []).map(r => String(r.year)).filter(Boolean)); s.add(String(new Date().getFullYear())); return [...s].sort(); }
@@ -2166,9 +2229,28 @@ function localM(q) {
   if (it === "thanks") return zh ? "不客气 😊" : "Any time 😊";
   const hits = it === "help" ? [] : findJobs(q, 4);
   if (hits.length) return (zh ? "可能是这些：\n" : "Maybe one of these:\n") + hits.map(r => `- ${jobLink(r)} (${r.drive || "-"})`).join("\n");
+  // didn't get it: offer M's best guesses; a tap teaches M this sentence (kept on this device) and answers it
+  const askedHelp = /help|帮助|帮忙|你会|能做什么|会什么|what can you|tolong/i.test(q), b = brainOf(q);
+  const guesses = askedHelp || !b ? [] : b.top.map(x => x.intent).filter(x => TEACH[x]).slice(0, 3);
+  if (guesses.length) { teachQ = q; return (zh ? "我还没学会这句 🤔 你是想：\n" : "I haven't learned that one yet 🤔 Did you mean:\n") + guesses.map(x => `- [${TEACH[x][zh ? 0 : 1]}](#/teach/${x})`).join("\n") + (zh ? "\n\n点一个，我就记住了。" : "\n\nTap one and I'll remember it."); }
   return zh ? "没有 AI 我也可以帮你：\n- 没备份的（「Mun 还有哪些没备份」）\n- 拍摄（「下周拍什么」）\n- 找 job（「Rinjani 在哪」）\n- 加拍摄（「12月5日 在 Ipoh 拍 Lim 婚礼」）\n- 硬盘（「M1 有什么」）、某人的 job（「Mun 剪了哪些」）\n- 统计（「今年几个 job」）、谁有空（「周六谁有空」）、生日\n- 最近的 job、新增 job、打开页面（「打开日历」）、换深色/浅色"
     : "Without the AI I can still:\n- list what isn't backed up (\"what has Mun not backed up?\")\n- show shoots (\"shoots next week\")\n- find a job (\"where is Rinjani?\")\n- set up a shoot (\"Lim wedding on 5 Dec at Ipoh\")\n- show a drive (\"what's on M1\") or someone's jobs (\"Mun's jobs\")\n- give a summary (\"how many jobs this year\"), who's free (\"who's free Saturday\"), birthdays\n- latest jobs, a new job, open a page (\"open calendar\"), dark / light mode";
 }
+// what each of M's skills is called when M offers its guesses
+const TEACH = { unbacked: ["没备份的", "What isn't backed up"], shoots: ["看拍摄", "Shoots"], find: ["找 job", "Find a job"], add: ["加拍摄", "Add a shoot"],
+  drive: ["硬盘里有什么", "What's on a drive"], editor: ["某人的 job", "Someone's jobs"], count: ["统计", "A summary"], go: ["打开页面", "Open a page"],
+  birthday: ["生日", "Birthdays"], free: ["谁有空", "Who's free"], recent: ["最近的 job", "Latest jobs"], newjob: ["新增 job", "A new job"],
+  theme: ["换深色/浅色", "Dark / light mode"], date: ["今天日期", "Today's date"] };
+let teachQ = "";
+// a guess tapped: M keeps "this sentence means that" and answers it now
+function teach(intent) {
+  const q = teachQ; if (!q || !TEACH[intent] || !cur || streaming) return;
+  const d = learnDb(); d.ex = [{ t: q.slice(0, 160), i: intent, at: Date.now() }, ...d.ex.filter(x => normQ(x.t) !== normQ(q))].slice(0, 400);
+  store.set(LEARN_KEY, d); drawLearn(); teachQ = "";
+  const bot = { role: "assistant", content: (isZh(q) ? "记住了 👍\n\n" : "Got it, I'll remember that 👍\n\n") + localM(q), local: true };
+  cur.msgs.push(bot); const i = cur.msgs.length - 1, el = addMsg(bot, i); fillBot(el, bot, i, false); saveChats(); scrollEnd(); fx("ok");
+}
+document.addEventListener("click", e => { const a = e.target.closest && e.target.closest('a[href^="#/teach/"]'); if (!a) return; e.preventDefault(); teach(a.getAttribute("href").slice(8)); }, true);
 function drawLearn() { const el = $("learnN"); if (!el) return; const n = learnDb().ex.length;
   el.textContent = n ? `M has learned from ${n} of your requests, so it can still answer offline or when the AI is down.` : "M learns from each request you make, so it can still answer offline or when the AI is down."; }
 
