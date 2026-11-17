@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.33";
+const APP_VER = "0.9.34";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -3217,16 +3217,16 @@ function drawFx() {
 // Animations: follow the phone's "reduce motion" (battery saver can turn it on), or always animate. Takes effect on reload.
 const phoneStill = () => { try { return document.documentElement.classList.contains("motion-on") ? null : STILL; } catch (e) { return STILL; } };
 function drawMotion() {
-  let v = "auto"; try { v = localStorage.getItem("mMotion") === "on" ? "on" : "auto"; } catch (e) {}
+  let v = "on"; try { v = localStorage.getItem("mMotion") === "auto" ? "auto" : "on"; } catch (e) {}
   document.querySelectorAll("#motionSeg button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
-  $("motionMsg").textContent = v === "on" ? "Always on: 小M and the app move even when the phone asks for less motion." :
+  $("motionMsg").textContent = v === "on" ? "Always on: 小M, birthdays and festivals move even when the phone asks for less motion (battery saver)." :
     phoneStill() ? "Your phone asks for less motion (battery saver or \"remove animations\"), so 小M stands still. Pick Always on to bring him back." : "Follows the phone: when it asks for less motion (battery saver), 小M stands still.";
 }
 $("motionSeg").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
-  let cur = "auto"; try { cur = localStorage.getItem("mMotion") === "on" ? "on" : "auto"; } catch (err) {}
+  let cur = "on"; try { cur = localStorage.getItem("mMotion") === "auto" ? "auto" : "on"; } catch (err) {}
   if (b.dataset.v === cur) return;
-  try { if (b.dataset.v === "on") localStorage.setItem("mMotion", "on"); else localStorage.removeItem("mMotion"); } catch (err) {}
+  try { localStorage.setItem("mMotion", b.dataset.v); } catch (err) {}
   drawMotion(); toast("Restarting to apply…"); setTimeout(() => location.reload(), 700);
 });
 function drawTheme() { const t = document.documentElement.getAttribute("data-theme"); document.querySelectorAll("#themeSeg button").forEach(b => b.classList.toggle("on", b.dataset.t === t)); }
