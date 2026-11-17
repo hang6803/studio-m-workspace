@@ -6,6 +6,24 @@
 <title>M Workspace</title>
 <meta name="theme-color" content="#070707">
 <style>html { background: #0e0e0e } html[data-theme="light"] { background: #ffffff }</style>
+<script>
+// Animations "On" in Settings: the app animates even when the phone asks for less motion (battery saver, "remove animations").
+// The phone's setting is hidden from the app's code and its stylesheets' reduced-motion rules are taken out.
+(function () {
+  var on = false; try { on = localStorage.getItem("mMotion") === "on"; } catch (e) {}
+  if (!on || !window.matchMedia) return;
+  document.documentElement.classList.add("motion-on");
+  var RM = /prefers-reduced-motion\s*:\s*reduce/i, mm = window.matchMedia.bind(window), no = function () {};
+  window.matchMedia = function (q) { return RM.test(q) ? { matches: false, media: q, onchange: null, addEventListener: no, removeEventListener: no, addListener: no, removeListener: no, dispatchEvent: function () { return false; } } : mm(q); };
+  function strip() {
+    for (var i = 0; i < document.styleSheets.length; i++) { var sh = document.styleSheets[i], rs; try { rs = sh.cssRules; } catch (e) { continue; }
+      for (var j = rs.length - 1; j >= 0; j--) { var r = rs[j]; if (r.media && RM.test(r.media.mediaText)) { try { sh.deleteRule(j); } catch (e) {} } } }
+  }
+  strip(); document.addEventListener("DOMContentLoaded", strip); addEventListener("load", strip);
+  new MutationObserver(strip).observe(document.documentElement, { childList: true, subtree: true });
+  document.addEventListener("load", function (e) { if (e.target && e.target.tagName === "LINK") strip(); }, true);
+})();
+</script>
 <script>(function () { var t = "dark"; try { t = localStorage.getItem("theme") === "light" ? "light" : "dark"; } catch (e) {} document.documentElement.setAttribute("data-theme", t); if (navigator.standalone || (window.matchMedia && matchMedia("(display-mode: standalone)").matches)) document.documentElement.classList.add("pwa"); if (t === "light") document.querySelector('meta[name="theme-color"]').content = "#ffffff"; })();</script>
 <link rel="stylesheet" href="app.css">
 <link rel="manifest" href="manifest.webmanifest">
@@ -229,6 +247,7 @@
       <section class="view page" id="v-settings" hidden>
         <div class="card"><h3>Theme</h3><div class="seg" id="themeSeg"><button type="button" data-t="dark">Dark</button><button type="button" data-t="light">Light</button></div></div>
         <div class="card"><h3>Sound &amp; touch</h3><p class="muted small">A soft sound and a tap you can feel on every press. Sound follows M's mute.</p><div class="fx-set"><span>Sound</span><div class="seg" id="sndSeg"><button type="button" data-v="1">On</button><button type="button" data-v="0">Off</button></div><span id="hapLbl">Haptics</span><div class="seg" id="hapSeg"><button type="button" data-v="1">On</button><button type="button" data-v="0">Off</button></div></div></div>
+        <div class="card"><h3>Animations</h3><p class="muted small" id="motionMsg">小M and the app's motion.</p><div class="seg" id="motionSeg"><button type="button" data-v="auto">Follow phone</button><button type="button" data-v="on">Always on</button></div></div>
         <div class="card"><h3>Voice</h3><p class="muted small">Language M listens for when you tap the mic.</p><div class="seg" id="voiceSeg"><button type="button" data-l="zh-CN">中文</button><button type="button" data-l="en-MY">English</button><button type="button" data-l="ms-MY">Melayu</button></div></div>
         <form class="card" id="aiSet"><h3>AI model</h3>
           <label>Provider<select id="aiProv"></select></label>
