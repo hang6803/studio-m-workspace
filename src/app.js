@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.25";
+const APP_VER = "0.9.26";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -378,6 +378,87 @@ async function pinHash(pin) {
 }
 async function keepPin(pin, name) { if (DEMO) return; const h = await pinHash(pin); if (!h) return; const m = store.get("mPins", {}) || {}; for (const k in m) if (m[k] === name) delete m[k]; m[h] = name; store.set("mPins", m); }
 async function offlineName(pin) { if (DEMO) return ""; const h = await pinHash(pin), m = store.get("mPins", {}) || {}; return (h && m[h]) || ""; }
+// ---------------------------------------------------------------- fingerprint / Face ID
+// The phone's own lock opens the app instead of typing the PIN. On first use the PIN is encrypted on this device with a
+// key that only the phone's secure chip gives out, and only after the fingerprint or face matches (WebAuthn's PRF):
+// the app never keeps the key, so the stored PIN can't be read without the finger or face. The PIN then signs in as usual.
+// Needs a recent phone (iOS 18+, Chrome on Android). Not in the Mac app. A new PIN turns it off (sign in once to turn it on again).
+const BIO_KEY = "mBio", BIO_NO = "mBioNo";
+const bioName = () => /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent) ? "Face ID" : "fingerprint";
+const b64 = u => btoa(String.fromCharCode(...new Uint8Array(u))), unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const rnd = n => crypto.getRandomValues(new Uint8Array(n));
+let bioOk = null;
+async function bioCan() {
+  if (bioOk !== null) return bioOk;
+  try { bioOk = !DEMO && !window.__TAURI__ && !!window.PublicKeyCredential && isSecureContext && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); }
+  catch (e) { bioOk = false; }
+  return bioOk;
+}
+const bioOn = () => { const b = store.get(BIO_KEY, null); return !!(b && b.id && b.ct); };
+// the 32-byte secret the phone gives after the finger / face matches, for this credential and salt
+async function bioSecret(id, salt) {
+  const a = await navigator.credentials.get({ publicKey: { challenge: rnd(32), allowCredentials: [{ type: "public-key", id: unb64(id) }], userVerification: "required", timeout: 60000,
+    extensions: { prf: { eval: { first: salt } } } } });
+  const r = a && a.getClientExtensionResults().prf, out = r && r.results && r.results.first;
+  if (!out) throw new Error("This phone can't keep the PIN safely for " + bioName());
+  return crypto.subtle.importKey("raw", out, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+async function bioEnroll(pin, name) {
+  const salt = rnd(32);
+  const c = await navigator.credentials.create({ publicKey: { rp: { name: "M Workspace" }, user: { id: rnd(16), name, displayName: name }, challenge: rnd(32),
+    pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }], timeout: 60000,
+    authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "discouraged" },
+    extensions: { prf: { eval: { first: salt } } } } });
+  const id = b64(c.rawId), r = c.getClientExtensionResults().prf;
+  if (!r || r.enabled === false) throw new Error("This phone can't keep the PIN safely for " + bioName());
+  // some phones give the secret right away; the others need one more touch
+  const key = r.results && r.results.first ? await crypto.subtle.importKey("raw", r.results.first, "AES-GCM", false, ["encrypt", "decrypt"]) : await bioSecret(id, salt);
+  const iv = rnd(12), ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(pin));
+  store.set(BIO_KEY, { id, salt: b64(salt), iv: b64(iv), ct: b64(ct), name }); store.set(BIO_NO, false);
+}
+async function bioPin() {
+  const b = store.get(BIO_KEY, null), key = await bioSecret(b.id, unb64(b.salt));
+  return new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(b.iv) }, key, unb64(b.ct)));
+}
+const bioOff = () => { store.set(BIO_KEY, null); drawBio(); };
+// on the PIN screen: the button, and one try by itself when the app opens (a phone that wants a tap first just shows the button)
+async function drawBio(auto) {
+  const btn = $("bioBtn"); if (!btn) return;
+  const on = bioOn() && await bioCan(); btn.hidden = !on;
+  if (on) { btn.querySelector("span").textContent = "Use " + bioName(); if (auto && !drawBio.tried && !$("lock").hidden && !padLocked()) { drawBio.tried = true; bioGo(true); } }
+}
+async function bioGo(quiet) {
+  if (bioGo.busy || padLocked()) return; bioGo.busy = true;
+  let pin = ""; try { pin = await bioPin(); } catch (e) { bioGo.busy = false; if (!quiet && e.name !== "NotAllowedError" && e.name !== "AbortError") $("lockMsg").textContent = e.message || "Couldn't check. Use your PIN."; return; }
+  bioGo.busy = false; bioUsed = true; entered = ""; signIn(pin);
+}
+let bioUsed = false;
+// after a PIN sign-in: offer it once (and again only from Settings)
+async function bioOffer(pin, name) {
+  if (bioOn() || store.get(BIO_NO, false) || !(await bioCan())) return;
+  setTimeout(() => toast(`Sign in with ${bioName()} next time?`, "Turn on", () => bioTurnOn(pin, name)), 2500);
+  store.set(BIO_NO, true);   // asked once; Settings can still turn it on
+}
+async function bioTurnOn(pin, name) {
+  try { await bioEnroll(pin, name); toast(`${bioName()[0].toUpperCase() + bioName().slice(1)} sign-in is on`); fx("ok"); }
+  catch (e) { if (e.name !== "NotAllowedError" && e.name !== "AbortError") toast(e.message || "Couldn't turn it on"); }
+  drawBioSet();
+}
+let lastPin = "";
+// a new PIN: the one kept for the fingerprint is old now
+function newPin(pin) { lastPin = pin; if (bioOn()) { bioOff(); store.set(BIO_NO, false); } bioOffer(pin, session.name); }   // the PIN of this sign-in, kept in memory only, so Settings can turn the fingerprint on
+async function drawBioSet() {
+  const c = $("bioCard"); if (!c) return;
+  const can = await bioCan(); c.hidden = !can; if (!can) return;
+  const nm = bioName(), on = bioOn();
+  c.querySelector("h3").textContent = nm === "Face ID" ? "Face ID" : "Fingerprint";
+  $("bioMsg").textContent = on ? `On: the PIN screen asks for ${nm} first. Your PIN still works.` : `Open the app with ${nm} instead of typing your PIN.` + (lastPin ? "" : " Sign in with your PIN first to turn it on.");
+  const b = $("bioSetBtn"); b.textContent = on ? "Turn off" : "Turn on"; b.classList.toggle("ghost", on); b.disabled = !on && !lastPin;
+}
+document.addEventListener("click", e => {
+  if (e.target.closest && e.target.closest("#bioBtn")) bioGo(false);
+  if (e.target.id === "bioSetBtn") { if (bioOn()) { bioOff(); drawBioSet(); toast("Turned off"); } else if (lastPin && session) bioTurnOn(lastPin, session.name); }
+});
 const offlineCopy = () => { const c = store.get("mCache", null); return c && c.all && Array.isArray(c.all.rows) ? c : null; };
 function useCopy(c) { data = c.all; team = c.all.team || []; shoots = c.sh || []; teamOk = false; birthdays = Object.assign({}, c.all.birthdays || {});
   const d = new Date(c.at); toast(`Offline. Showing what was saved ${fmtShort(ymd(d))} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}.`); }
@@ -389,7 +470,7 @@ addEventListener("online", () => { if (session && session.offline) lock("Back on
 const PIN_LEN = 6;
 let entered = "", team = [], who = null, legacyT = 0;
 function lock(msg) {
-  session = null; entered = ""; clearTimeout(legacyT); preload = null;
+  session = null; entered = ""; clearTimeout(legacyT); preload = null; lastPin = "";
   $("shell").hidden = true; $("setup").hidden = true; $("lock").hidden = false;
   $("lockMsg").textContent = msg || ""; drawDots();
   $("backupFrame").removeAttribute("src"); backupLoaded = false; scenes(false); festKey = "";
@@ -403,7 +484,7 @@ async function loadWho() {
   try { who = await M.api("team"); store.set("mWho", who); } catch (e) { who = store.get("mWho", null); }
   drawWho();
 }
-function drawWho() { $("lockTitle").textContent = "Enter your PIN"; padWait(); }
+function drawWho() { $("lockTitle").textContent = "Enter your PIN"; padWait(); drawBio(true); }
 function drawDots() {
   [...$("dots").children].forEach((d, i) => d.classList.toggle("on", i < entered.length));
   $("dots").classList.toggle("old", entered.length === 4);
@@ -417,6 +498,7 @@ async function signIn(pin) {
   const done = () => { dots.classList.remove("checking"); $("pad").inert = false; };
   try {
     session = await M.api("login", [pin]); done(); store.set(BAD_KEY, null);
+    if (pin.length === 6) { lastPin = pin; if (!bioUsed) bioOffer(pin, session.name); } bioUsed = false;
     if (!session.upgrade) preload = loadData();   // the data starts coming now, while 小M cheers, not after
     keepPin(pin, session.name); store.set("mUser", session.name);
     store.set("mLen4", pin.length === 4);
@@ -426,12 +508,14 @@ async function signIn(pin) {
   } catch (e) {
     done();
     const off = isNetErr(e) && await offlineName(pin);
-    if (off) { store.set(BAD_KEY, null); session = { name: off, token: "", offline: true }; entered = ""; drawDots(); setTimeout(() => lockMood("yay"), 300); setTimeout(unlock, 900); return; }
+    if (off) { lastPin = pin; bioUsed = false; store.set(BAD_KEY, null); session = { name: off, token: "", offline: true }; entered = ""; drawDots(); setTimeout(() => lockMood("yay"), 300); setTimeout(unlock, 900); return; }
     if (isNetErr(e) && !DEMO) e = new Error(store.get("mPins", null) ? "No connection, and that PIN doesn't match. Try again." : "No connection. Sign in once with internet, then it opens offline too.");
     // wrong: the dots flash red and shake, a buzz, M shakes its head; the dots clear after the shake
     dots.classList.remove("shake"); void dots.offsetWidth; dots.classList.add("shake", "bad"); fx("err");
     $("lockMsg").textContent = e.message; setTimeout(() => lockMood("no"), 120);
-    if (isNetErr(e) ? !!store.get("mPins", null) : /wrong pin/i.test(e.message)) badPin();
+    if (bioUsed && !isNetErr(e) && /wrong pin/i.test(e.message)) { bioOff(); $("lockMsg").textContent = `Your PIN changed. Type the new one, then turn ${bioName()} on again in Settings.`; }
+    else if (isNetErr(e) ? !!store.get("mPins", null) : /wrong pin/i.test(e.message)) badPin();
+    bioUsed = false;
     setTimeout(() => { dots.classList.remove("bad"); entered = ""; drawDots(); }, 520);
   }
 }
@@ -509,6 +593,7 @@ $("setupForm").addEventListener("submit", async e => {
   if (!name) return;
   try { session = await slow(M.api("setMyPin", [name, up ? f.dataset.old : $("suStudio").value, pin])); }
   catch (err) { msg.textContent = err.message; fx("err"); return; }
+  newPin(pin);
   keepPin(pin, session.name); store.set("mUser", session.name); store.set("mLen4", false);
   f.reset(); delete f.dataset.old; fx("ok"); unlock();
 });
@@ -529,6 +614,7 @@ $("forgotForm").addEventListener("submit", async e => {
   if (!by) { msg.textContent = "Pick who approves"; return; }
   try { session = await slow(M.api("resetPin", [$("fgName").value.trim(), pin, by, $("fgByPin").value])); }
   catch (err) { msg.textContent = err.message; fx("err"); return; }
+  newPin(pin);
   keepPin(pin, session.name); store.set("mUser", session.name); store.set("mLen4", false);
   e.target.reset(); fx("ok"); toast("PIN reset"); unlock();
 });
@@ -602,7 +688,7 @@ function paint() {
   if (v === "classic") loadBackup(); else if (v === "backup" && !backupLoaded) (window.requestIdleCallback || (g => setTimeout(g, 600)))(() => { if (session) loadBackup(); }, { timeout: 1500 });   // after the list has drawn   // Backup saves through Classic Backup, kept ready in the background
   if (v === "team") { if (shownView !== "team") { $("teamLog").hidden = true; loadPeople(true).then(loadLog); } drawTeam(); }
   shownView = v;
-  if (v === "settings") { drawTheme(); drawAI(); drawVoice(); drawFx(); drawFest(); drawLearn(); drawRemind(); }
+  if (v === "settings") { drawTheme(); drawAI(); drawVoice(); drawFx(); drawFest(); drawLearn(); drawRemind(); drawBioSet(); }
 }
 function markNav() {
   const key = route.name === "drive" || route.name === "editor" ? route.name + ":" + route.key : route.name === "job" ? "" : route.name === "classic" ? "backup" : route.name;
@@ -3058,7 +3144,7 @@ $("voiceSeg").addEventListener("click", e => { const b = e.target.closest("butto
 $("pinForm").addEventListener("submit", async e => {
   e.preventDefault(); const n = $("pfNew").value;
   if (!sixOk(n, $("pfNew2").value, $("pfMsg"))) return;
-  try { session = await M.api("setMyPin", [session.name, $("pfOld").value, n]); keepPin(n, session.name); store.set("mLen4", false); e.target.reset(); $("pfMsg").textContent = ""; fx("ok"); toast("PIN changed"); }
+  try { session = await M.api("setMyPin", [session.name, $("pfOld").value, n]); keepPin(n, session.name); store.set("mLen4", false); newPin(n); drawBioSet(); e.target.reset(); $("pfMsg").textContent = ""; fx("ok"); toast("PIN changed"); }
   catch (err) { $("pfMsg").textContent = err.message; }
 });
 $("aiProv").innerHTML = Object.entries(AI_PROVIDERS).map(([k, p]) => `<option value="${k}">${esc(p.label)}</option>`).join("");
