@@ -1332,3 +1332,9 @@ a, [role="tab"] { -webkit-tap-highlight-color: transparent }   /* no blue box on
 :root[data-theme="dark"] body::after { background-image: var(--vignette), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .016 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E") }
 /* 0.9.25: too many wrong PINs, the pad rests for a moment */
 #pad.wait { opacity: .35; pointer-events: none; transition: opacity .3s }
+/* fingerprint / Face ID on the PIN screen */
+.bio-btn { display: inline-flex; align-items: center; gap: 8px; margin: -4px auto 0; padding: 9px 16px; border-radius: 999px; border: 1px solid var(--line, rgba(255,255,255,.14));
+  background: transparent; color: var(--accent-text, var(--accent)); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; -webkit-tap-highlight-color: transparent }
+.bio-btn[hidden] { display: none }
+.bio-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round }
+.bio-btn:active { transform: scale(.96) }
