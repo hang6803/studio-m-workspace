@@ -1366,3 +1366,11 @@ a, [role="tab"] { -webkit-tap-highlight-color: transparent }   /* no blue box on
 @keyframes mfS { 0% { transform: rotate(var(--a)) translateY(0) scale(1); opacity: 1 } 100% { transform: rotate(var(--a)) translateY(-46px) scale(.3); opacity: 0 } }
 @keyframes mfSi { 0% { transform: rotate(var(--a)) translateY(-50px) scale(.4); opacity: 0 } 60% { opacity: 1 } 100% { transform: rotate(var(--a)) translateY(0) scale(1); opacity: 0 } }
 @media (prefers-reduced-motion: reduce) { .m-flash { display: none } }
+/* phone: the Studio M logo top left on every page (the page name is in the tab bar) */
+.top .top-logo { display: none }
+@media (max-width: 899px) {
+  .top .top-logo { display: flex; align-items: center; height: 36px; flex: none; -webkit-tap-highlight-color: transparent }
+  .top .top-logo img { height: 22px; width: auto; display: block }
+  :root[data-theme="dark"] .top .top-logo .logo-l, :root:not([data-theme="dark"]) .top .top-logo .logo-d { display: none }
+  .top .top-title { display: none }
+}
