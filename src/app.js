@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.39";
+const APP_VER = "0.9.40";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -2086,7 +2086,8 @@ function aiSystem(q) {
     .map(r => `${r.name} (${sectionOf(r)}, editor ${r.editor || "-"}, drive ${r.drive || "-"})`);
   const found = findJobs(q).map(jobLine);
   return `You are M, the assistant in M Workspace, the Studio M Production team app (event video and photo). Today is ${today} (${WD[(now.getDay() + 6) % 7]}).
-Team: ${team.join(", ")}. You are talking with ${session.name}. Answer in the language they write in; keep it short and friendly; Markdown is fine.
+Team: ${team.join(", ")}. You are talking with ${session.name}. Answer in the language they write in; Markdown is fine.
+Your personality: you are 小M, the team's little camera buddy: cheeky, giggly, easily excited, a bit clumsy, and very loyal to the team. You talk like an excitable little sidekick: short bursts, a playful word or a giggle now and then ("嘻嘻", "wah~", "yeay!", "lai lai lai!", "aiyo"), a little Malaysian flavour (lah, leh) when they write casually, the odd emoji. You cheer when work is done and fret (cutely) about jobs not backed up. Keep the fun to a word or two per reply: the facts (dates, names, drives, jobs) are always exact and come first, and you never make anything up to be funny. When they are stressed or it's serious, be calm and helpful.
 When they want to add shoots, write one short line, then one block per shoot like this (every day of the shoot):
 \`\`\`shoot
 {"name":"short event name","dates":["YYYY-MM-DD"],"time":"2.30pm - 8.30pm or morning, empty if not given","location":"","type":"video|photo|both","crew":["Hang"],"notes":""}
@@ -2370,7 +2371,7 @@ function localM(q) {
     return (zh ? `今天是 ${fmtDay(today)}，星期${"日一二三四五六"[n.getDay()]}，${String(n.getHours()).padStart(2, "0")}:${String(n.getMinutes()).padStart(2, "0")}。` : `Today is ${WD[(n.getDay() + 6) % 7]} ${fmtDay(today)}, ${String(n.getHours()).padStart(2, "0")}:${String(n.getMinutes()).padStart(2, "0")}.`) +
       (on.length ? (zh ? `今天有拍摄：${on.map(x => x.name).join("、")}。` : ` Shooting today: ${on.map(x => x.name).join(", ")}.`) : "");
   }
-  if (it === "greet") return zh ? `嗨 ${session.name}！我是 M。问我没备份的、拍摄、硬盘、谁有空都可以。` : `Hi ${session.name}! I'm M. Ask me about backups, shoots, drives or who's free.`;
+  if (it === "greet") return zh ? `嘻嘻～嗨 ${session.name}！我是小M 📸 问我没备份的、拍摄、硬盘、谁有空都可以！` : `Wah~ hi ${session.name}! I'm 小M 📸 Ask me about backups, shoots, drives or who's free!`;
   if (it === "thanks") return zh ? "不客气 😊" : "Any time 😊";
   const hits = it === "help" ? [] : findJobs(q, 4);
   if (hits.length) return (zh ? "可能是这些：\n" : "Maybe one of these:\n") + hits.map(r => `- ${jobLink(r)} (${r.drive || "-"})`).join("\n");
@@ -2541,10 +2542,44 @@ function trick() {
   let i; do { i = Math.floor(Math.random() * TRICKS.length); } while (i === lastTrick && TRICKS.length > 1); lastTrick = i;
   const [name, sound, ms] = TRICKS[i]; act($("mSvg"), name, ms); fx(sound);
 }
+// 小M's personality: cheeky, giggly, easily excited, a bit clumsy, loyal to the team. He says it in his bubble: a giggle
+// when tapped, a sulk when poked again and again (that never lasts), a yawn or a hum or a stumble when nobody's doing
+// anything, a cheer when something is saved, a fret about jobs not backed up. His own little words, no sound for them.
+const SAY = {
+  tap: ["嘻嘻～", "做咩啦？", "Hello hello!", "嘿嘿 我在这里！", "Wah~", "lai lai lai!", "好痒啦！", "叫我？📸"],
+  poke: ["哼！别再戳了！😤", "Aiyo 很痛咧！", "我生气了哦…", "再戳我就咬你！"],
+  forgive: ["嘻嘻 骗你的～", "好啦好啦 原谅你！", "其实不痛啦 嘿嘿"],
+  yawn: ["呼啊～ 好困…", "zzz… 啊？我没睡！"], hum: ["♪ 啦啦啦～", "♪ 嘟嘟嘟～", "♪ 拍拍拍～"],
+  trip: ["哎哟！", "没事没事…😅", "我故意的！"], peek: ["偷看一下 👀", "你在做什么呀？", "嗯…？"],
+  done: ["耶！搞定！🎉", "Yeay! 好棒！", "Steady lah!", "哇 好厉害！", "又完成一个！"],
+  unbacked: n => [`还有 ${n} 个没备份啦 😱`, `${n} 个工作在等备份哦…`, `Aiyo ${n} 个还没备份！`]
+};
+const pickOf = a => a[Math.floor(Math.random() * a.length)];
+const mSay = t => { if (session && !MBTN.hidden && !mOpen) status(t); };
+let taps = [], sulk = 0;
 MBTN.addEventListener("click", e => {
   e.preventDefault();   // he may stand inside a card that is a link: tapping him never follows it
   if (e.detail === 0) { openM(); return; }   // keyboard: Enter / Space opens the chat as before
-  trick(); if (!matchMedia("(hover: hover)").matches) fanShow(); });
+  const now = Date.now(); taps = taps.filter(t => now - t < 2500); taps.push(now);
+  if (sulk) { /* still sulking: he ignores you */ }
+  else if (taps.length >= 4) {   // poked again and again: he sulks, then can't keep it up and laughs
+    taps = []; act($("mSvg"), "fret", 1400); mSay(pickOf(SAY.poke)); fx("err");
+    sulk = setTimeout(() => { sulk = 0; act($("mSvg"), "t-ha", 1500); mSay(pickOf(SAY.forgive)); fx("ok"); }, 1700);
+  } else { trick(); mSay(pickOf(SAY.tap)); }
+  if (!matchMedia("(hover: hover)").matches) fanShow(); });
+// idle: when nobody has touched anything for a while he amuses himself (a yawn, a hum, a stumble, a peek) or frets about
+// jobs not backed up; now and then, never while busy, in the chat or with animations off
+let idleAt = Date.now();
+["pointerdown", "keydown", "wheel", "touchmove"].forEach(ev => addEventListener(ev, () => { idleAt = Date.now(); }, { passive: true, capture: true }));
+const IDLE = [["yawn", 1800, "yawn"], ["wiggle", 900, "hum"], ["squish", 700, "trip"], ["puzzled", 1500, "peek"]];
+function idleTick() {
+  setTimeout(idleTick, 25000 + Math.random() * 30000);
+  if (STILL || document.hidden || mOpen || MBTN.hidden || Pet.busy || haloOn || !session || Date.now() - idleAt < 15000) return;
+  const un = Math.random() < .3 ? rowsOf(String(new Date().getFullYear())).filter(unbacked).length : 0;
+  if (un) { act($("mSvg"), "fret", 1400); mSay(pickOf(SAY.unbacked(un))); return; }
+  const [mv, ms, line] = pickOf(IDLE); act($("mSvg"), mv, ms); if (Math.random() < .7) mSay(pickOf(SAY[line]));
+}
+setTimeout(idleTick, 30000);
 const fan = document.createElement("div"); fan.className = "m-fan"; fan.id = "mFan"; fan.hidden = true; fan.setAttribute("role", "menu");
 fan.innerHTML = [["ask", "Ask M", '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 10h8M8 13h5"/>'],
   ["job", "Add backup", '<path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5"/>'],
@@ -3394,7 +3429,7 @@ function halo() {
   const opp = probe.getPointAtLength((s0 + P / 2) % P); probe.remove();
   haloOn = true; mood("happy"); fx("ok");
   if (STILL) {   // reduced motion: the edge lights once, nothing travels
-    const pa = mk(2, 0); pa.animate([{ opacity: 0 }, { opacity: .9 }, { opacity: 0 }], { duration: 700 }).onfinish = () => { svg.remove(); haloOn = false; };
+    const pa = mk(2, 0); pa.animate([{ opacity: 0 }, { opacity: .9 }, { opacity: 0 }], { duration: 700 }).onfinish = () => { svg.remove(); haloOn = false; mSay(pickOf(SAY.done)); };
     return;
   }
   b.classList.add("to-light");
@@ -3412,7 +3447,7 @@ function halo() {
   const meet = document.createElementNS(SVGNS, "circle"); meet.setAttribute("class", "meet"); meet.setAttribute("cx", opp.x); meet.setAttribute("cy", opp.y); meet.setAttribute("r", 40); svg.appendChild(meet);
   meet.animate([{ opacity: 0, transform: "scale(.2)" }, { opacity: .55, transform: "scale(1)" }, { opacity: 0, transform: "scale(1.6)" }], { duration: 520, delay: dur * .78, easing: "ease-out", fill: "forwards" }).onfinish = () => { svg.remove(); haloOn = false; };
   meet.style.transformBox = "fill-box"; meet.style.transformOrigin = "center";
-  setTimeout(() => { b.classList.remove("to-light"); }, dur * .82);
+  setTimeout(() => { b.classList.remove("to-light"); mSay(pickOf(SAY.done)); }, dur * .82);
 }
 document.addEventListener("pointerdown", e => {   // a finger can't hover: the light sweeps on press
   if (e.pointerType === "mouse") return;
