@@ -232,7 +232,7 @@ const ship = (src, out) => {
   const code = read(src); if (!esb) return writeFileSync(at(out), code);
   writeFileSync(at(out), esb.transformSync(code, { loader: src.endsWith(".css") ? "css" : "js", minify: true, charset: "utf8", legalComments: "none" }).code);
 };
-for (const f of ["app.js", "app.css", "graph.js", "fx.js", "brain.js"]) ship("src/" + f, "dist/" + f);
+for (const f of ["app.js", "app.css", "graph.js", "fx.js", "brain.js", "sched.js"]) ship("src/" + f, "dist/" + f);
 // 小M and the festival / birthday modules come from hang6803/xiaom-module (vendor/xiaom/SOURCE has the commit)
 for (const f of ["xiaom.js", "festivals.js", "festival-theme.js", "celebrate.js", "sfx.js"]) copyFileSync(at("vendor/xiaom/" + f), at("dist/" + f));
 // the Backup page (and its scenes layer) follows Settings → Animations too: the shell's motion script goes in its <head>

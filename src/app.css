@@ -1379,3 +1379,5 @@ a, [role="tab"] { -webkit-tap-highlight-color: transparent }   /* no blue box on
   .top .back.ibtn { width: 26px; height: 36px; margin: 0 2px 0 -6px; border: 0; border-radius: 8px; background: none !important; box-shadow: none !important }
   .top .back.ibtn svg { width: 22px; height: 22px; stroke-width: 2.4 }
 }
+/* a shoot's time, first on its line in the Calendar */
+.sh-meta .sh-time { color: var(--fg); font-weight: 700 }

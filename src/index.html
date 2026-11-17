@@ -331,7 +331,7 @@
     <h2 id="sfTitle">New shoot</h2>
     <label data-wz="1">Name<input id="sfName" required maxlength="200" placeholder="Wedding · Tan & Lim"></label>
     <div class="row2" data-wz="2"><label>From<input id="sfFrom" type="date" required></label><label>To<input id="sfTo" type="date"></label></div>
-    <label data-wz="2">Location<input id="sfLoc" maxlength="200"></label>
+    <div class="row2" data-wz="2"><label>Time<input id="sfTime" maxlength="80" placeholder="2.30pm – 8.30pm"></label><label>Location<input id="sfLoc" maxlength="200"></label></div>
     <div class="seg" id="sfType" data-wz="3"><button type="button" data-v="video">Video</button><button type="button" data-v="photo">Photo</button><button type="button" data-v="both">Video + Photo</button></div>
     <div data-wz="4"><span class="lbl">Crew</span><div class="chips" id="sfCrew"></div></div>
     <label data-wz="4">Notes<textarea id="sfNotes" rows="2" maxlength="2000"></textarea></label>
@@ -380,6 +380,7 @@
 <script src="sfx.js"></script>
 <script src="graph.js"></script>
 <script src="brain.js"></script>
+<script src="sched.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
