@@ -1381,3 +1381,15 @@ a, [role="tab"] { -webkit-tap-highlight-color: transparent }   /* no blue box on
 }
 /* a shoot's time, first on its line in the Calendar */
 .sh-meta .sh-time { color: var(--fg); font-weight: 700 }
+/* 0.9.37 celebrations: no card. The whole screen dims to a see-through black and the scene floats on it, bigger, its edges
+   fading into the dark instead of a framed box; the greeting glows underneath. */
+.cele { background: rgba(0, 0, 0, .74); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px) }
+.cele-card { background: none; border: 0; border-radius: 0; box-shadow: none; padding: 0 }
+.cele-box { --k: 1.7 }
+.cele-stage { border-radius: 0;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16%, #000 80%, transparent 100%), linear-gradient(to right, transparent 0, #000 14%, #000 86%, transparent 100%);
+  -webkit-mask-composite: source-in; mask-image: linear-gradient(to bottom, transparent 0, #000 16%, #000 80%, transparent 100%), linear-gradient(to right, transparent 0, #000 14%, #000 86%, transparent 100%); mask-composite: intersect }
+.cele-t { margin-top: 6px; font-size: 22px; color: #fff; text-shadow: 0 2px 22px rgba(244, 128, 32, .55), 0 1px 2px rgba(0, 0, 0, .6) }
+.cele-s { color: rgba(255, 255, 255, .72) }
+@media (max-width: 420px) { .cele-box { --k: 1.55 } }
+@media (pointer: coarse) { .cele { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(0, 0, 0, .78) } }
