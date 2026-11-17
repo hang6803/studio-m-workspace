@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.26";
+const APP_VER = "0.9.27";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -2204,8 +2204,55 @@ function spanIn(q) {
 // a job's Video and Photo rows are one job in M's answers (listed once)
 const oneEach = rs => { const seen = new Set(); return rs.filter(r => { const k = r.year + "|" + baseOf(sectionOf(r)) + "|" + normName(r.name); return !seen.has(k) && seen.add(k); }); };
 const jobLink = r => `[${r.name}](#/job/${encodeURIComponent(r.id)})`;
+// A pasted schedule (WhatsApp style): "18 - Livestream test, 11am", or a day on its own line ("20th") with its jobs below,
+// a time line ("2.30pm - 8.30pm") before a name, notes and @mentions under it. Each job becomes a shoot card to confirm.
+// Day numbers without a month are the coming ones (a day already past this month is next month).
+const TIME_RE = /\b(?:\d{1,2}(?:[.:]\d{2})?\s*(?:am|pm)(?:\s*[-–~to]+\s*\d{1,2}(?:[.:]\d{2})?\s*(?:am|pm))?|morning|afternoon|evening|night|full day|half day)\b|上午|下午|晚上|早上/gi;
+function scheduleOf(q) {
+  const lines = String(q).replace(/[⁦-⁩‎‏]/g, "").split(/\r?\n/).map(l => l.trim());
+  // a day: "20th" alone, "18 - text", "21st text"; not "1 Photo" (a count) or "2-3min" (a range)
+  const DAY = /^(\d{1,2})(?:(st|nd|rd|th)\b\s*[-–—:.)]?|\s*[-–—:)]|\s*$)\s*(.*)$/i, t0 = new Date(); t0.setHours(12, 0, 0, 0);
+  const MM = "jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec", mon = (q.toLowerCase().match(new RegExp(`\\b(${MM})[a-z]*\\b(?!\\s*\\d)`)) || [])[1];
+  const dayOf = d => { let y = t0.getFullYear(), m = mon ? MM.split("|").indexOf(mon) : t0.getMonth();
+    if (!mon && d < t0.getDate() - 3) m++; if (m > 11) { m = 0; y++; } const x = new Date(y, m, d, 12); return x.getDate() === d ? ymd(x) : ""; };
+  const lower = Object.fromEntries(team.map(n => [n.toLowerCase(), n]));
+  const crewOfText = t => { const out = new Set(); (t.match(/@\s?([^@\n,，]+?)(?=\s*(?:@|$|,|，|\n))/g) || []).forEach(m => {
+      const w = m.replace(/^@\s?/, "").replace(/\(.*?\)/g, "").trim().toLowerCase(); if (!w) return;
+      if (/^(all|everyone|team|全部|大家)$/.test(w)) team.filter(n => n !== "M").forEach(n => out.add(n));
+      else { const hit = lower[w] || team.find(n => w.includes(n.toLowerCase()) || n.toLowerCase().includes(w)); if (hit) out.add(hit); } }); return [...out]; };
+  const out = []; let day = "", cur = null;
+  const close = () => { if (cur && cur.name) out.push(cur); cur = null; };
+  const start = (d, text, time) => { close(); cur = { day: d, name: "", time: time || "", notes: [], raw: [] }; if (text) addLine(text, true); };
+  const addLine = (l, first) => {
+    if (!cur) return; cur.raw.push(l);
+    if (!cur.name) { const tm = (l.match(TIME_RE) || []).join(" ");
+      const rest = l.replace(/^[^A-Za-z一-鿿]*?(?:(?:\d{1,2}(?:[.:]\d{2})?\s*(?:am|pm)(?:\s*[-–~to]+\s*\d{1,2}(?:[.:]\d{2})?\s*(?:am|pm))?|morning|afternoon|evening|night)\s*[-–:]\s*)/i, "");
+      const name = rest.replace(/@\s?\S.*$/, "").replace(/\b\d{1,2}(?:[.:]\d{2})?\s*(?:am|pm)(?:\s*[-–~to]+\s*\d{1,2}(?:[.:]\d{2})?\s*(?:am|pm))?\b/gi, " ")
+        .replace(/\((?:photo|video|photo\s*&\s*video|both|morning|afternoon|evening|night|full day|half day)\)/ig, " ").replace(/\(\s*\)/g, " ").replace(/[\s,.;:–-]+$/g, "").replace(/^[\s,.;:–-]+/, "").replace(/\s{2,}/g, " ").trim();
+      if (!name) { if (tm) cur.time = [cur.time, tm].filter(Boolean).join(" "); return; }
+      cur.name = name; if (tm) cur.time = [cur.time, tm].filter(Boolean).join(" "); return; }
+    cur.notes.push(l);
+  };
+  lines.forEach(l => {
+    const m = l.match(DAY);
+    if (m && +m[1] >= 1 && +m[1] <= 31 && !(m[3] && !m[2] && /^\d/.test(m[3])) && !/^\d{1,2}\s*(?:am|pm)\b/i.test(l) && !/^\d{1,2}[.:]\d{2}/.test(l)) { close(); day = dayOf(+m[1]); if (m[3]) start(day, m[3]); return; }
+    if (!day) return;
+    if (!l) { if (cur && cur.name) close(); return; }
+    if (!cur) start(day, l); else addLine(l);
+  });
+  close();
+  return out.filter(e => e.day).map(e => {
+    const all = e.raw.join(" "), hasP = /photo|照片|拍照|摄影/i.test(all), hasV = /video|livestream|live stream|视频|录像|摄像/i.test(all);
+    const crew = crewOfText(all);
+    return { name: e.name.slice(0, 120), dates: [e.day], location: "", type: hasP && !hasV ? "photo" : hasV && !hasP ? "video" : "both", crew,
+      notes: [e.time, ...e.notes.map(n => n.replace(/[⁦-⁩]/g, ""))].filter(Boolean).join("\n") };
+  });
+}
 function localM(q) {
-  const zh = isZh(q), who = namesIn(q), it = intentOf(q), year = (q.match(/\b(20\d\d)\b/) || [])[1] || String(new Date().getFullYear());
+  const zh = isZh(q);
+  if (q.split(/\n/).filter(l => l.trim()).length >= 3) { const sch = scheduleOf(q);
+    if (sch.length >= 2) return (zh ? `看懂了，一共 ${sch.length} 个拍摄。确认一下，可以一个一个加，或者全部加：` : `Got it: ${sch.length} shoots. Check them, then add one by one or all at once:`) + sch.map(c => "\n```shoot\n" + JSON.stringify(c) + "\n```").join(""); }
+  const who = namesIn(q), it = intentOf(q), year = (q.match(/\b(20\d\d)\b/) || [])[1] || String(new Date().getFullYear());
   if (it === "unbacked") {
     let rs = oneEach(rowsOf(year).filter(unbacked)); const drv = (q.match(/\bm\s?(\d)\b/i) || [])[1];
     if (who.length) rs = rs.filter(r => who.includes(r.editor)); if (drv) rs = rs.filter(r => new RegExp("^M" + drv + "\\b", "i").test(r.drive || ""));
@@ -2953,6 +3000,8 @@ async function ask(text) {
   try {
     const history = cur.msgs.slice(0, -1).slice(-12).map(m => ({ role: m.role, content: m.content }));
     if (navigator.onLine === false || (session && session.offline)) throw Object.assign(new Error("offline"), { local: true });
+    // a pasted schedule: M reads it here at once (no AI needed, same cards)
+    if (text.split(/\n/).filter(l => l.trim()).length >= 3 && scheduleOf(text).length >= 2) throw Object.assign(new Error("schedule"), { mOnly: true });
     await callModel([{ role: "system", content: aiSystem(text) }, ...history], t => {
       bot.content = t; fillBot(d, bot, i, true);
       const th = $("thread"); if (th.scrollHeight - th.scrollTop - th.clientHeight < 160) th.scrollTop = th.scrollHeight;
@@ -2971,7 +3020,7 @@ async function ask(text) {
     if (e.name === "AbortError") { if (!bot.content) bot.content = "_Stopped._"; }
     else {   // no internet, or the AI is down: M answers from what it has learned and the data on this device
       const zh = isZh(text);
-      bot.content = localM(text) + (e.mOnly ? "" : "\n\n_" + (e.local ? (zh ? "离线回答，用的是手机里的资料。" : "Offline answer, from the data on this phone.") : DEMO ? (zh ? "Demo 模式：这是 M 自己的离线回答。" : "Demo mode: this is M's own offline answer.") : (zh ? "AI 暂时连不上，这是我自己学过的回答。" : "The AI can't be reached right now, so this is M's own answer.")) + "_");
+      bot.content = localM(text) + (e.mOnly ? "" : "\n\n*" + (e.local ? (zh ? "离线回答，用的是手机里的资料。" : "Offline answer, from the data on this phone.") : DEMO ? (zh ? "Demo 模式：这是 M 自己的离线回答。" : "Demo mode: this is M's own offline answer.") : (zh ? "AI 暂时连不上，这是我自己学过的回答。" : "The AI can't be reached right now, so this is M's own answer.")) + "*");
       bot.local = true; fillBot(d, bot, i, false); mood("happy");
     }
   }
