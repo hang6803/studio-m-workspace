@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.37";
+const APP_VER = "0.9.38";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -711,7 +711,7 @@ function render(first) {
     render.popT = setTimeout(() => { b.style.opacity = ""; if (!session || b.hidden) return;
       b.getAnimations().forEach(a => { if (!a.effect || a.effect.getComputedTiming().iterations !== Infinity) a.cancel(); }); unliftM(true); perch();
       if (!b.classList.contains("space")) { mFlash(b.getBoundingClientRect(), true);
-        b._an([{ transform: "scale(.2)", opacity: 0, filter: "brightness(2.2)" }, { transform: "scale(1.12)", opacity: 1, filter: "brightness(1.5)", offset: .55 }, { transform: "scale(.96)", filter: "brightness(1)", offset: .8 }, { transform: "scale(1)", opacity: 1, filter: "brightness(1)" }], { duration: 340, easing: "cubic-bezier(.2,.8,.2,1)" }); } }, 360); };
+        b._an([{ transform: "scale(.3, .2)", opacity: 0 }, { transform: "scale(1.28, 1.18)", opacity: 1, offset: .35 }, { transform: "scale(.88, 1.06)", offset: .6 }, { transform: "scale(1.05, .97)", offset: .8 }, { transform: "scale(1)", opacity: 1 }], { duration: 420, easing: "cubic-bezier(.2,.8,.2,1)" }); } }, 360); };
   if (vt) document.startViewTransition(apply); else apply();
   if (phone && !first && !STILL) $("views").animate(noBlur([{ opacity: 0, transform: "translateY(14px)", filter: "blur(6px)" }, { opacity: 1, transform: "none", filter: "blur(0)" }]), { duration: 340, easing: "cubic-bezier(.2,.8,.2,1)" });
   if (phone && !$("mPanel").hidden) closeM();
@@ -2843,13 +2843,25 @@ function blink(b, from, to) {
   setTimeout(() => { const r = b.getBoundingClientRect(); paperBurst(r.left + r.width / 2, r.top + r.height / 2 - 30, true); }, OUT + GAP - 40);
   fx("pin");
 }
-// 闪现 (phone): a quick burst of light where 小M vanishes (out) or appears (in): a glow, a ring and a few sparks; no paper, no sound
+// 闪现 (phone): 小M pops like popcorn. Where he vanishes, a white puff and a handful of popcorn burst out, arc up and fall
+// with a tumble; where he appears, a smaller pop throws a few more as he springs out. No sound.
 function mFlash(r, into) {
   if (!r || !r.width || STILL) return;
   const x = r.left + r.width / 2, y = r.top + r.height / 2, f = document.createElement("div"); f.className = "m-flash" + (into ? " in" : "");
-  f.style.left = x + "px"; f.style.top = y + "px";
-  f.innerHTML = "<i class=\"g\"></i><i class=\"r\"></i>" + Array.from({ length: 6 }, (_, k) => `<i class="s" style="--a:${k * 60 + (into ? 30 : 0)}deg"></i>`).join("");
-  document.body.appendChild(f); setTimeout(() => f.remove(), 800);
+  f.style.left = x + "px"; f.style.top = y + "px"; f.innerHTML = "<i class=\"puff\"></i>";
+  const n = into ? 7 : 10, rnd = (a, b) => a + Math.random() * (b - a);
+  for (let i = 0; i < n; i++) {
+    const k = document.createElement("i"); k.className = "pc" + (i % 3 ? "" : " b"); f.appendChild(k);
+    const ang = (-90 + (i / (n - 1) - .5) * 200 + rnd(-12, 12)) * Math.PI / 180, v = rnd(into ? 34 : 46, into ? 60 : 84);
+    const dx = Math.cos(ang) * v, dy = Math.sin(ang) * v, fall = rnd(50, 90), spin = rnd(-540, 540), sc = rnd(.75, 1.15);
+    k.animate([
+      { transform: "translate(0,0) rotate(0) scale(.2)", opacity: 1 },
+      { transform: `translate(${dx * .55}px,${dy * .55}px) rotate(${spin * .3}deg) scale(${sc * 1.25})`, opacity: 1, offset: .18, easing: "cubic-bezier(.2,.7,.4,1)" },
+      { transform: `translate(${dx}px,${dy - 6}px) rotate(${spin * .6}deg) scale(${sc})`, opacity: 1, offset: .42, easing: "cubic-bezier(.5,0,.9,.5)" },
+      { transform: `translate(${dx * 1.25}px,${dy + fall}px) rotate(${spin}deg) scale(${sc * .9})`, opacity: 0 }
+    ], { duration: rnd(620, 820), easing: "linear", fill: "both" });
+  }
+  document.body.appendChild(f); setTimeout(() => f.remove(), 900);
 }
 // shredded paper: torn scraps of every shape, thrown out (or sucked in), then fluttering down and turning over as they fall
 const SHRED = ["polygon(0 8%,100% 0,92% 100%,6% 88%)", "polygon(10% 0,100% 18%,80% 100%,0 70%)", "polygon(0 0,100% 30%,70% 100%)", "polygon(0 20%,60% 0,100% 60%,40% 100%)",
