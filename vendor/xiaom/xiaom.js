@@ -40,8 +40,13 @@
 .m25-edge .m25-decal { opacity: 0 }
 .m25s .cm-body { animation: x5bob 2.6s ease-in-out infinite }
 @keyframes x5bob { 50% { transform: translateY(-7px) scale(1.01, 1.02) } }
-.m25s .cm-lid { transform-box: fill-box; transform-origin: 50% 0; transform: scaleY(0); animation: x5blink 4.6s ease-in-out infinite }
-@keyframes x5blink { 0%, 93%, 100% { transform: scaleY(0) } 96% { transform: scaleY(1) } }
+/* the eyelid: a curved lid with a soft lash line, sliding down over the eye (not a flat block squashed from the top). A blink
+   closes fast and opens a little slower; now and then he blinks twice */
+.m25s .cm-lid { transform: translateY(-58px); animation: x5lid 9s infinite }
+.m25s .cm-eyeside-s { animation: x5lidside 9s infinite }
+@keyframes x5lidside { 0%, 32.6%, 34.1%, 86.6%, 87.5%, 88.7%, 89.8%, 100% { background: var(--eye-s, #dcdcdc) } 33%, 33.5%, 87%, 89%, 89.4% { background: #e57519 } }
+.m25.t-sneeze .cm-eyeside-s { animation: none; background: #e57519 }
+@keyframes x5lid { 0%, 32% { transform: translateY(-58px); animation-timing-function: cubic-bezier(.5,0,.9,.5) } 33%, 33.5% { transform: translateY(0); animation-timing-function: cubic-bezier(.2,.6,.4,1) } 35%, 86% { transform: translateY(-58px); animation-timing-function: cubic-bezier(.5,0,.9,.5) } 87% { transform: translateY(0); animation-timing-function: cubic-bezier(.2,.6,.4,1) } 88.2% { transform: translateY(-34px); animation-timing-function: cubic-bezier(.5,0,.9,.5) } 89%, 89.4% { transform: translateY(0); animation-timing-function: cubic-bezier(.2,.6,.4,1) } 91%, 100% { transform: translateY(-58px) } }
 .m25s .cm-pupil { transition: transform .35s cubic-bezier(.2, .7, .3, 1) }
 .m25s .cm-blush { opacity: 0; transition: opacity .35s }
 .m25s .cm-tuft { transform-origin: 0 17px }
@@ -67,14 +72,14 @@
 .m25.worried .cm-sweat { animation: x5sweat 7s ease-in 2s infinite }
 .m25.fret .cm-sweat { animation: x5sweat 1.2s ease-in 0s 2 }
 @keyframes x5sweat { 0%, 70% { opacity: 0; transform: translateY(0) } 75% { opacity: .9 } 95% { opacity: .9; transform: translateY(8px) } 100% { opacity: 0; transform: translateY(10px) } }
-.m25.sleepy .cm-lid { animation: none; transform: scaleY(.62) }
+.m25.sleepy .cm-lid { animation: none; transform: translateY(-21.0px) }
 .m25.sleepy .cm-body { animation-duration: 4.2s }
-.m25.yawn .cm-lid { animation: none; transform: scaleY(.45) }
+.m25.yawn .cm-lid { animation: none; transform: translateY(-28.8px) }
 /* moves */
 .m25.squish .cm-all { animation: x5squish .7s ease-out 1 }
 @keyframes x5squish { 25% { transform: scale3d(1.14, .84, 1.2) rotateX(10deg) } 50% { transform: scale3d(.93, 1.1, .9) rotateX(-6deg) } 72% { transform: scale3d(1.04, .97, 1.04) } }
 .m25.squish .cm-lid { animation: x5wink .35s ease-in-out 1 }
-@keyframes x5wink { 50% { transform: scaleY(1) } }
+@keyframes x5wink { 0%, 100% { transform: translateY(-58px) } 50% { transform: translateY(0) } }
 .m25.squish .cm-burst { animation: x5burst .5s ease-out 1 }
 @keyframes x5burst { 0% { opacity: 1; transform: translateZ(12px) scale(.2) } 100% { opacity: 0; transform: translateZ(12px) scale(3) } }
 .m25.hop .cm-all { animation: x5hop .7s cubic-bezier(.3, .9, .4, 1) 1 }
@@ -89,10 +94,10 @@
 @keyframes x5nod { 50% { transform: translateY(4px) rotateX(-18deg) } }
 .m25.puzzled .cm-all { transform: rotateZ(-7deg) rotateY(-16deg); transition: transform .3s cubic-bezier(.2, .8, .2, 1) }
 .m25.t-ha .cm-all { animation: x5ha .76s ease-in both }
-.m25.t-ha .cm-lid { animation: none; transform: scaleY(.55) }
+.m25.t-ha .cm-lid { animation: none; transform: translateY(-24.2px) }
 @keyframes x5ha { 0% { transform: none } 100% { transform: translateY(-11px) rotateX(-22deg) rotateZ(-4deg) scale(.98, 1.05) } }
 .m25.t-sneeze .cm-all { animation: x5sneeze .9s cubic-bezier(.2, .8, .3, 1) both }
-.m25.t-sneeze .cm-lid { animation: none; transform: scaleY(1) }
+.m25.t-sneeze .cm-lid { animation: none; transform: translateY(0) }
 @keyframes x5sneeze { 0% { transform: translateY(-11px) rotateX(-22deg) rotateZ(-4deg) } 12% { transform: translate3d(0, 7px, 30px) rotateX(28deg) scale3d(1.08, .9, 1.08) } 30% { transform: translate3d(-25px, -22px, -20px) rotateX(-8deg) rotateY(-20deg) } 55% { transform: translate(-11px, 0) rotateY(8deg) } 100% { transform: none } }
 .m25.t-sneeze .cm-tuft { animation: x5tuft .7s ease-out both }
 @keyframes x5tuft { 15% { transform: rotateZ(-38deg) scaleY(1.3) } 35% { transform: rotateZ(30deg) } 55% { transform: rotateZ(-16deg) } 75% { transform: rotateZ(8deg) } 100% { transform: none } }
@@ -100,7 +105,7 @@
 .m25.t-shy .cm-all { animation: x5shy 1.7s cubic-bezier(.3, .7, .3, 1) both }
 .m25.t-shy .cm-lid { animation: x5shyBlink 1.7s ease-in-out both }
 @keyframes x5shy { 0% { transform: none } 18%, 78% { transform: translateX(-25px) rotateY(-38deg) rotateX(10deg) rotateZ(-6deg) scale(.95) } 100% { transform: none } }
-@keyframes x5shyBlink { 0%, 100% { transform: scaleY(0) } 12%, 22% { transform: scaleY(1) } 30%, 50% { transform: scaleY(.45) } 56%, 62% { transform: scaleY(1) } 70%, 90% { transform: scaleY(.45) } }
+@keyframes x5shyBlink { 0%, 100% { transform: translateY(-58px) } 12%, 22% { transform: translateY(0) } 30%, 50% { transform: translateY(-28.8px) } 56%, 62% { transform: translateY(0) } 70%, 90% { transform: translateY(-28.8px) } }
 .m25.t-spin .cm-all { animation: x5spin .9s cubic-bezier(.4, 0, .2, 1) both }
 @keyframes x5spin { 0% { transform: none } 12% { transform: scale(1.05, .92) } 50% { transform: translateY(-40px) rotateY(180deg) } 88% { transform: rotateY(360deg) scale(1.05, .93) } 100% { transform: rotateY(360deg) } }
 @media (prefers-reduced-motion: reduce) {
@@ -811,6 +816,8 @@
   // 小M had: cm-pupil, cm-lid, cm-mouth, cm-brow, cm-sweat, cm-blush, cm-burst, cm-tuft, and the back screen's scr-heart / scr-rec / scr-num
   let uid = 0;
   // the outside wall of a rounded slab (w x h, corner radius r, depth along z), as flat strips standing round its edge
+  // the lens' white sides take the lid's colour while the eye is shut (the lid closes over the whole lens, not only its face); open, each slice keeps its own colour
+  function eyeSide(g) { [...g.children].forEach(c => { c.classList.add('cm-eyeside-s'); c.style.setProperty('--eye-s', c.style.background); }); return g; }
   function rim(parent, { w, h, r, depth, color, x = 0, y = 0, z = 0, n = 4 }) {
     const g = el('abs', 'transform:translate3d(' + x + 'px,' + y + 'px,' + z + 'px)', parent);
     // light from the upper left: a strip facing up-left is lit, one facing down-right is in shade
@@ -826,6 +833,7 @@
         strip(ax * sx + Math.cos(a) * r * Math.cos(Math.PI / 4 / n), ay * sy + Math.sin(a) * r * Math.cos(Math.PI / 4 / n), a * 180 / Math.PI, len);
       }
     });
+    return g;
   }
   function build(m, hat, hold) {
     blob(m, { x: -40, y: H / 2 + 12, z: 16, rx: 20, rz: 22, hgt: 20 }); blob(m, { x: 40, y: H / 2 + 12, z: 16, rx: 20, rz: 22, hgt: 20 });
@@ -849,16 +857,19 @@
       '<g class="scr-rec"><circle cx="62" cy="56" r="6" fill="#f48020"/><text x="74" y="63" font-size="20" font-weight="800" fill="#fff" font-family="Century Gothic,system-ui,sans-serif">REC</text></g>' +
       '<text class="scr-num" x="84" y="68" text-anchor="middle" font-size="30" font-weight="800" fill="#fff" font-family="Century Gothic,system-ui,sans-serif"></text></svg>';
     slab(m, { w: 104, h: 104, r: '50%', depth: 6, z: F + 3, front: 'linear-gradient(135deg, color-mix(in srgb, ' + DEEP + ', #fff 22%), ' + DEEP + ' 50%, color-mix(in srgb, ' + DEEP + ', #000 35%))', side: DEEP }); rim(m, { w: 103, h: 103, r: 51.5, depth: 5, z: F + 3, color: DEEP, n: 6 });
-    rim(m, { w: 91, h: 91, r: 45.5, depth: 15, z: F + 8, color: '#dcdcdc', n: 6 });
+    eyeSide(rim(m, { w: 91, h: 91, r: 45.5, depth: 15, z: F + 8, color: '#dcdcdc', n: 6 }));
     const id = 'm25c' + (++uid);
-    slab(m, { w: 92, h: 92, r: '50%', depth: 16, z: F + 8, front: '#ffffff', side: '#dcdcdc', html: '<svg width="92" height="92" viewBox="37 47 46 46" style="position:absolute;inset:0;overflow:visible"><defs><clipPath id="' + id + '"><circle cx="60" cy="70" r="23"/></clipPath>' +
+    eyeSide(slab(m, { w: 92, h: 92, r: '50%', depth: 16, z: F + 8, front: '#ffffff', side: '#dcdcdc', html: '<svg width="92" height="92" viewBox="37 47 46 46" style="position:absolute;inset:0;overflow:visible"><defs><clipPath id="' + id + '"><circle cx="60" cy="70" r="23"/></clipPath>' +
       '<radialGradient id="' + id + 'w" cx=".4" cy=".35" r=".7"><stop offset=".55" stop-color="#fff"/><stop offset="1" stop-color="#c9c9c9"/></radialGradient>' +
       '<radialGradient id="' + id + 'p" cx=".38" cy=".32" r=".75"><stop offset="0" stop-color="#3a3a3a"/><stop offset=".7" stop-color="#141414"/><stop offset="1" stop-color="#000"/></radialGradient></defs>' +
       '<circle cx="60" cy="70" r="23" fill="url(#' + id + 'w)"/><circle cx="60" cy="70" r="22" fill="none" stroke="#000" stroke-opacity=".14" stroke-width="2"/>' +
       '<path d="M41 76 A20 20 0 0 1 66 50.8" fill="none" stroke="#000" stroke-opacity=".16" stroke-width="5" stroke-linecap="round"/>' +
       '<g class="cm-pupil"><circle cx="60" cy="70" r="12" fill="url(#' + id + 'p)"/><circle cx="64" cy="65" r="3.5" fill="#fff"/><circle cx="56.5" cy="74" r="1.5" fill="#fff"/></g>' +
       '<path d="M44 60 A18 18 0 0 1 58 50" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".9"/>' +
-      '<rect class="cm-lid" x="36" y="46" width="48" height="48" fill="#f48020" clip-path="url(#' + id + ')"/></svg>' });
+      '<linearGradient id="' + id + 'l" x1="0" y1="0" x2="0" y2="1"><stop offset=".55" stop-color="#f7953f"/><stop offset=".86" stop-color="#f48020"/><stop offset="1" stop-color="#cf600c"/></linearGradient>' +
+      '<g clip-path="url(#' + id + ')"><g class="cm-lid"><path d="M30 92 Q60 101 90 92" transform="translate(0 2.6)" fill="none" stroke="#000" stroke-opacity=".2" stroke-width="4" stroke-linecap="round"/>' +
+      '<path d="M30 0 H90 V92 Q60 101 30 92 Z" fill="url(#' + id + 'l)"/><path d="M33 90.4 Q60 98.6 87 90.4" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="1.1"/>' +
+      '<path d="M30 92 Q60 101 90 92" fill="none" stroke="#8a3c06" stroke-width="1.8" stroke-linecap="round"/></g></g></svg>' }));
     (HATS[hat]?.p || []).forEach(p => outfitPart(m, p)); (HOLDS[hold]?.p || []).forEach(p => outfitPart(m, p));
   }
   // a 小M placed where the app's flat scenes put their 100x100 ".mc" box (left / top on the card), with a choreography class
