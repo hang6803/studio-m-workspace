@@ -239,8 +239,9 @@
           <p class="msg" id="aiMsg"></p><div class="actions"><button type="button" class="btn ghost" id="aiTest">Test</button><button class="btn">Save</button></div><p class="muted small" id="learnN"></p></form>
 
 
-        <div class="card" id="bioCard" hidden><h3>Fingerprint</h3><p class="muted small" id="bioMsg"></p>
-          <div class="actions" style="justify-content:flex-start"><button type="button" class="btn" id="bioSetBtn">Turn on</button></div></div>
+        <div class="card" id="bioCard" hidden><div class="bio-head"><h3>Fingerprint</h3><label class="sw"><input type="checkbox" id="bioSw" aria-label="Sign in with fingerprint or Face ID"><i></i></label></div>
+          <p class="muted small" id="bioMsg"></p>
+          <div class="bio-pin" id="bioPinRow" hidden><input id="bioPinIn" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="Your PIN"><button type="button" class="btn" id="bioPinGo">Turn on</button></div></div>
         <div class="card" id="remindCard"><h3>Reminders</h3><p class="muted small" id="remindMsg"></p>
           <div class="actions" style="justify-content:flex-start"><button type="button" class="btn" id="remindBtn">Turn on reminders</button></div></div>
         <div class="card" id="festCard"><h3>Festivals &amp; birthdays</h3>

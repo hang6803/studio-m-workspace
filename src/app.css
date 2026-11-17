@@ -1338,3 +1338,15 @@ a, [role="tab"] { -webkit-tap-highlight-color: transparent }   /* no blue box on
 .bio-btn[hidden] { display: none }
 .bio-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round }
 .bio-btn:active { transform: scale(.96) }
+/* Settings: fingerprint switch */
+.bio-head { display: flex; align-items: center; justify-content: space-between; gap: 12px }
+.bio-head h3 { margin: 0 }
+.sw { position: relative; display: inline-block; width: 50px; height: 30px; flex: none; cursor: pointer }
+.sw input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer }
+.sw i { position: absolute; inset: 0; border-radius: 999px; background: var(--raised, #2a2a2a); border: 1px solid var(--line, rgba(255,255,255,.14)); transition: background .2s }
+.sw i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35); transition: transform .25s var(--spring, ease) }
+.sw input:checked + i { background: var(--accent, #F48020); border-color: transparent }
+.sw input:checked + i::after { transform: translateX(20px) }
+.sw input:focus-visible + i { outline: 2px solid var(--accent, #F48020); outline-offset: 2px }
+.bio-pin { display: flex; gap: 8px; margin-top: 10px }
+.bio-pin input { flex: 1; min-width: 0 }

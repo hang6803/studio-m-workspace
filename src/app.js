@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.28";
+const APP_VER = "0.9.29";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -395,32 +395,44 @@ async function bioCan() {
   return bioOk;
 }
 const bioOn = () => { const b = store.get(BIO_KEY, null); return !!(b && b.id && b.ct); };
-// the 32-byte secret the phone gives after the finger / face matches, for this credential and salt
-async function bioSecret(id, salt) {
+// the 32-byte secret the phone gives after the finger / face matches, for this credential and salt (null: this phone has none)
+async function bioAssert(id, salt) {
   const a = await navigator.credentials.get({ publicKey: { challenge: rnd(32), allowCredentials: [{ type: "public-key", id: unb64(id) }], userVerification: "required", timeout: 60000,
-    extensions: { prf: { eval: { first: salt } } } } });
-  const r = a && a.getClientExtensionResults().prf, out = r && r.results && r.results.first;
-  if (!out) throw new Error("This phone can't keep the PIN safely for " + bioName());
-  return crypto.subtle.importKey("raw", out, "AES-GCM", false, ["encrypt", "decrypt"]);
+    ...(salt ? { extensions: { prf: { eval: { first: salt } } } } : {}) } });
+  // the phone's own flag that the finger / face was checked (bit 2 of the flags byte in authenticatorData)
+  const ad = new Uint8Array(a.response.authenticatorData); if (!(ad[32] & 4)) throw new Error(`${bioName()} wasn't checked. Use your PIN.`);
+  const r = a.getClientExtensionResults().prf; return r && r.results && r.results.first || null;
 }
+const aesOf = raw => crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+// Phones whose passkeys give no secret (some Android ones): the PIN is encrypted with a key made on this phone that can't be
+// copied out of it (kept in its key store, never readable by the app), and the app only uses it after the fingerprint matched.
+const idb = (mode, fn) => new Promise((ok, no) => { const o = indexedDB.open("m-bio", 1); o.onupgradeneeded = () => o.result.createObjectStore("k");
+  o.onerror = () => no(o.error); o.onsuccess = () => { const tx = o.result.transaction("k", mode), r = fn(tx.objectStore("k")); tx.oncomplete = () => ok(r && r.result); tx.onerror = () => no(tx.error); }; });
 async function bioEnroll(pin, name) {
   const salt = rnd(32);
-  const c = await navigator.credentials.create({ publicKey: { rp: { name: "M Workspace" }, user: { id: rnd(16), name, displayName: name }, challenge: rnd(32),
+  const c = await navigator.credentials.create({ publicKey: { rp: { name: "M Workspace" }, user: { id: rnd(16), name: name + " · M Workspace", displayName: name }, challenge: rnd(32),
     pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }], timeout: 60000,
-    authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "discouraged" },
+    authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "required", requireResidentKey: true },
     extensions: { prf: { eval: { first: salt } } } } });
   const id = b64(c.rawId), r = c.getClientExtensionResults().prf;
-  if (!r || r.enabled === false) throw new Error("This phone can't keep the PIN safely for " + bioName());
-  // some phones give the secret right away; the others need one more touch
-  const key = r.results && r.results.first ? await crypto.subtle.importKey("raw", r.results.first, "AES-GCM", false, ["encrypt", "decrypt"]) : await bioSecret(id, salt);
+  let key = null, mode = "prf";
+  if (r && r.results && r.results.first) key = await aesOf(r.results.first);   // given right away
+  else if (r && r.enabled) { const out = await bioAssert(id, salt); if (out) key = await aesOf(out); }   // one more touch
+  if (!key) {   // no secret from this phone: a key kept in its key store instead
+    mode = "dev"; key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+    await idb("readwrite", st => st.put(key, "pin"));
+  }
   const iv = rnd(12), ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(pin));
-  store.set(BIO_KEY, { id, salt: b64(salt), iv: b64(iv), ct: b64(ct), name }); store.set(BIO_NO, false);
+  store.set(BIO_KEY, { id, mode, salt: b64(salt), iv: b64(iv), ct: b64(ct), name }); store.set(BIO_NO, false);
 }
 async function bioPin() {
-  const b = store.get(BIO_KEY, null), key = await bioSecret(b.id, unb64(b.salt));
+  const b = store.get(BIO_KEY, null);
+  let key;
+  if (b.mode === "dev") { await bioAssert(b.id, null); key = await idb("readonly", st => st.get("pin")); if (!key) throw new Error(`Turn ${bioName()} on again in Settings.`); }
+  else { const out = await bioAssert(b.id, unb64(b.salt)); if (!out) throw new Error(`Turn ${bioName()} on again in Settings.`); key = await aesOf(out); }
   return new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(b.iv) }, key, unb64(b.ct)));
 }
-const bioOff = () => { store.set(BIO_KEY, null); drawBio(); };
+const bioOff = () => { store.set(BIO_KEY, null); try { idb("readwrite", st => st.delete("pin")).catch(() => {}); } catch (e) {} drawBio(); };
 // on the PIN screen: the button, and one try by itself when the app opens (a phone that wants a tap first just shows the button)
 async function drawBio(auto) {
   const btn = $("bioBtn"); if (!btn) return;
@@ -440,25 +452,39 @@ async function bioOffer(pin, name) {
   store.set(BIO_NO, true);   // asked once; Settings can still turn it on
 }
 async function bioTurnOn(pin, name) {
-  try { await bioEnroll(pin, name); toast(`${bioName()[0].toUpperCase() + bioName().slice(1)} sign-in is on`); fx("ok"); }
-  catch (e) { if (e.name !== "NotAllowedError" && e.name !== "AbortError") toast(e.message || "Couldn't turn it on"); }
-  drawBioSet();
+  const nm = bioName(), Nm = nm[0].toUpperCase() + nm.slice(1);
+  try { await bioEnroll(pin, name); toast(`${Nm} sign-in is on`); fx("ok"); }
+  catch (e) { if (e.name !== "NotAllowedError" && e.name !== "AbortError") toast(`Couldn't turn on ${nm}: ` + (e.message || e.name)); }
+  drawBioSet(); drawBio();
 }
-let lastPin = "";
+let lastPin = "";   // the PIN of this sign-in, kept in memory only, so Settings can turn the fingerprint on
 // a new PIN: the one kept for the fingerprint is old now
-function newPin(pin) { lastPin = pin; if (bioOn()) { bioOff(); store.set(BIO_NO, false); } bioOffer(pin, session.name); }   // the PIN of this sign-in, kept in memory only, so Settings can turn the fingerprint on
+function newPin(pin) { lastPin = pin; if (bioOn()) { bioOff(); store.set(BIO_NO, false); } bioOffer(pin, session.name); }
+// Settings: one switch. Turning it on asks for the PIN when this sign-in didn't use it (signed in with the fingerprint)
 async function drawBioSet() {
   const c = $("bioCard"); if (!c) return;
   const can = await bioCan(); c.hidden = !can; if (!can) return;
-  const nm = bioName(), on = bioOn();
+  const nm = bioName(), on = bioOn(), sw = $("bioSw");
   c.querySelector("h3").textContent = nm === "Face ID" ? "Face ID" : "Fingerprint";
-  $("bioMsg").textContent = on ? `On: the PIN screen asks for ${nm} first. Your PIN still works.` : `Open the app with ${nm} instead of typing your PIN.` + (lastPin ? "" : " Sign in with your PIN first to turn it on.");
-  const b = $("bioSetBtn"); b.textContent = on ? "Turn off" : "Turn on"; b.classList.toggle("ghost", on); b.disabled = !on && !lastPin;
+  sw.checked = on; $("bioPinRow").hidden = true;
+  $("bioMsg").textContent = on ? `On: the app asks for your ${nm} when it opens. Your PIN still works.` : `Off: open the app with your ${nm} instead of typing the PIN.`;
+}
+async function bioSwitch(on) {
+  if (!on) { bioOff(); drawBioSet(); toast("Turned off"); return; }
+  if (!session) return;
+  if (lastPin) return bioTurnOn(lastPin, session.name);
+  $("bioPinRow").hidden = false; $("bioSw").checked = false; $("bioMsg").textContent = "Type your PIN once to turn it on."; setTimeout(() => $("bioPinIn").focus(), 50);
 }
 document.addEventListener("click", e => {
   if (e.target.closest && e.target.closest("#bioBtn")) bioGo(false);
-  if (e.target.id === "bioSetBtn") { if (bioOn()) { bioOff(); drawBioSet(); toast("Turned off"); } else if (lastPin && session) bioTurnOn(lastPin, session.name); }
+  if (e.target.id === "bioPinGo") (async () => {
+    const pin = $("bioPinIn").value.trim(); if (!/^\d{6}$/.test(pin)) { $("bioMsg").textContent = "PIN is 6 digits"; return; }
+    const who = await offlineName(pin), known = !!store.get("mPins", null);
+    if (known && who !== session.name) { $("bioMsg").textContent = "That's not your PIN"; fx("err"); return; }
+    $("bioPinIn").value = ""; lastPin = pin; bioTurnOn(pin, session.name);
+  })();
 });
+document.addEventListener("change", e => { if (e.target.id === "bioSw") bioSwitch(e.target.checked); });
 const offlineCopy = () => { const c = store.get("mCache", null); return c && c.all && Array.isArray(c.all.rows) ? c : null; };
 function useCopy(c) { data = c.all; team = c.all.team || []; shoots = c.sh || []; teamOk = false; birthdays = Object.assign({}, c.all.birthdays || {});
   const d = new Date(c.at); toast(`Offline. Showing what was saved ${fmtShort(ymd(d))} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}.`); }
