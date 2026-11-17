@@ -1,9 +1,9 @@
 {
   "name": "studio-m-workspace",
   "private": true,
-  "version": "0.9.32",
+  "version": "0.9.33",
   "scripts": {
-    "test": "node --test tools/test-build.mjs tools/test-apps-script-scope.mjs tools/test-brain.mjs",
+    "test": "node --test tools/test-build.mjs tools/test-apps-script-scope.mjs tools/test-brain.mjs tools/test-sched.mjs",
     "build:web": "node tools/build.mjs",
     "icons": "tauri icon src-tauri/icons/app-icon.png",
     "dev": "npm run build:web && tauri dev",

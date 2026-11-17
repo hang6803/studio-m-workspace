@@ -36,7 +36,8 @@ Google Sheet "Studio M Backup Data" stays the only source. Jobs columns never ch
 1. Apps Script → + file `MApp` → paste `api/MApp.gs`. Do not add an API key to the app. After this version is deployed, delete an old Script property `API_KEY` if it is still there.
 2. Deploy → New deployment → Web app, Execute as: Me, Who has access: Anyone → copy the `/exec` link.
 3. Daily backup (once): in the Apps Script editor pick `setUpDailyBackup` → Run → allow Drive. Every night a copy of the sheet goes to Drive → "M Workspace backups" (newest 30 kept).
-4. `config.local.json` (see `config.example.json`) for local builds, or the repo secret `M_API_URL` for GitHub builds. That secret is only the `/exec` address.
+4. Shoots in Google Calendar (once): pick `setUpShootCalendar` → Run → allow Calendar. Then share "Studio M Shoots" with the team in Google Calendar (Settings → the calendar → Share with specific people).
+5. `config.local.json` (see `config.example.json`) for local builds, or the repo secret `M_API_URL` for GitHub builds. That secret is only the `/exec` address.
 
 ## Build
 

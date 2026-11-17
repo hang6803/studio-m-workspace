@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.32";
+const APP_VER = "0.9.33";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -490,6 +490,23 @@ function useCopy(c) { data = c.all; team = c.all.team || []; shoots = c.sh || []
   const d = new Date(c.at); toast(`Offline. Showing what was saved ${fmtShort(ymd(d))} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}.`); }
 addEventListener("online", () => { if (session && session.offline) lock("Back online. Enter your PIN to sync."); });
 
+// ---------------------------------------------------------------- shared into the app
+// Android: WhatsApp (or any app) → Share → M Workspace opens the app with the text (manifest share_target). It waits
+// here through the PIN, then goes to Ask M, which reads it (a pasted schedule becomes shoot cards).
+(function () {
+  const u = new URL(location.href), t = [u.searchParams.get("share_title"), u.searchParams.get("share_text"), u.searchParams.get("share_url")].filter(Boolean).join("\n").trim();
+  if (!u.searchParams.has("share_text") && !u.searchParams.has("share_title") && !u.searchParams.has("share_url")) return;
+  try { if (t) sessionStorage.setItem("mShare", t.slice(0, 20000)); } catch (e) {}
+  ["share_title", "share_text", "share_url"].forEach(k => u.searchParams.delete(k));
+  history.replaceState(null, "", u.pathname + u.search + (u.hash || ""));
+})();
+function takeShare() {
+  let t = ""; try { t = sessionStorage.getItem("mShare") || ""; sessionStorage.removeItem("mShare"); } catch (e) {}
+  if (!t || !session) return;
+  if (location.hash !== "#/home" && location.hash !== "") location.hash = "#/home";
+  setTimeout(() => ask(t), 700);
+}
+
 // ---------------------------------------------------------------- PIN lock
 // Just the 6-digit PIN: the PIN says who you are. An old 4-digit PIN still opens once (press OK, or it goes by itself on
 // a device that used it before), and then asks for a new 6-digit one. First time / Register / Forgot PIN sit below the pad.
@@ -657,7 +674,7 @@ function unlock() {
   if (!PHONE.matches) makeGraph();
   if (!location.hash || location.hash === "#/") history.replaceState(null, "", "#/home");
   const loaded = graph ? holdBoot() : () => {};
-  showM(); drawAll(); render(true); refresh().then(loaded);   // festivals / birthdays start once the first refresh brings the birthdays (festAfterData)
+  showM(); drawAll(); render(true); refresh().then(() => { loaded(); takeShare(); });   // festivals / birthdays start once the first refresh brings the birthdays (festAfterData)
 }
 // the 3D graph is made the first time a computer-sized Home needs it; on a phone Home is Ask M and the graph is never built
 function makeGraph() {
@@ -779,8 +796,8 @@ function remindList() {
   if (!session) return [];
   const me = session.name, d0 = new Date(), t = ymd(d0), d1 = new Date(d0); d1.setDate(d0.getDate() + 1); const tm = ymd(d1), out = [];
   shoots.forEach(s => { const ds = datesOf(s), mine = crewOf(s).includes(me), who = mine ? "You're on the crew" : crewOf(s).join(", ");
-    if (ds.includes(tm) && !ds.includes(t)) out.push({ id: `shoot:${s.id}:${tm}`, day: t, title: `Shoot tomorrow: ${s.name}`, body: [s.location, who].filter(Boolean).join(" · "), url: `#/calendar/${tm}` });
-    if (ds.includes(t) && mine) out.push({ id: `shoot:${s.id}:${t}`, day: t, title: `Shooting today: ${s.name}`, body: s.location || "", url: `#/calendar/${t}` }); });
+    if (ds.includes(tm) && !ds.includes(t)) out.push({ id: `shoot:${s.id}:${tm}`, day: t, title: `Shoot tomorrow: ${s.name}`, body: [timeOf(s), s.location, who].filter(Boolean).join(" · "), url: `#/calendar/${tm}` });
+    if (ds.includes(t) && mine) out.push({ id: `shoot:${s.id}:${t}`, day: t, title: `Shooting today: ${s.name}`, body: [timeOf(s), s.location].filter(Boolean).join(" · "), url: `#/calendar/${t}` }); });
   Object.entries({ ...(data.birthdays || {}), ...birthdays }).forEach(([n, b]) => { if (String(b).slice(5) === t.slice(5)) out.push({ id: `bday:${n}:${t}`, day: t, title: n === me ? "Happy birthday 🎂" : `It's ${n}'s birthday today 🎂`, body: n === me ? "From M and the whole studio!" : "Don't forget to wish them", url: "#/home" }); });
   const un = oneEach((data.rows || []).filter(r => r.editor === me && unbacked(r)));
   if (un.length) out.push({ id: `unb:${me}:${t}`, day: t, title: `${un.length} of your jobs aren't backed up`, body: un.slice(0, 3).map(r => r.name).join(", ") + (un.length > 3 ? "…" : ""), url: "#/unbacked" });
@@ -916,7 +933,7 @@ function drawPin(n) {
       <a class="pc-open" href="${hrefOf(n)}" data-open="${esc(n.id)}">Open job</a>`;
   } else {
     const s = shoots.find(x => x.id === n.key); if (!s) return;
-    html = `<div class="pc-h"><i class="dot hollow"></i><b>${esc(s.name)}</b></div><p>${esc(datesOf(s).map(fmtDay).join(", "))}${s.location ? ", " + esc(s.location) : ""}.</p>
+    html = `<div class="pc-h"><i class="dot hollow"></i><b>${esc(s.name)}</b></div><p>${esc(datesOf(s).map(fmtDay).join(", "))}${timeOf(s) ? ", " + esc(timeOf(s)) : ""}${s.location ? ", " + esc(s.location) : ""}.</p>
       <p>${crewOf(s).map(x => link("editor", x)).join(", ") || "No crew yet"}.</p><a class="pc-open" href="${hrefOf(n)}" data-open="${esc(n.id)}">Open in Calendar</a>`;
   }
   c.innerHTML = html + `<button type="button" class="ibtn plain pc-x" aria-label="Unpin">✕</button>`;
@@ -1122,9 +1139,9 @@ function drawDay(anim) {
     else jobLine = `<p class="muted small">Becomes a job after the shoot.</p>`;
     return `<article class="sh t-${esc(s.type || "both")}" data-id="${esc(s.id)}">
       <div class="sh-top"><b>${esc(s.name)}</b><button type="button" class="ibtn sm" data-edit="${esc(s.id)}" aria-label="Edit ${esc(s.name)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/></svg></button></div>
-      <p class="sh-meta">${esc(TYPE[s.type] || "")}${s.location ? `, ${esc(s.location)}` : ""}${ds.length > 1 ? `, ${esc(dayRange(ds))}` : ""}</p>
+      <p class="sh-meta">${timeOf(s) ? `<span class="sh-time">${esc(timeOf(s))}</span> · ` : ""}${esc(TYPE[s.type] || "")}${s.location ? `, ${esc(s.location)}` : ""}${ds.length > 1 ? `, ${esc(dayRange(ds))}` : ""}</p>
       <p class="sh-crew">${crew.length ? crew.map(n => `<span class="hub ed">${esc(initials(n))}</span>${ed(n)}`).join(" ") : '<span class="muted">No crew yet</span>'}</p>
-      ${s.notes ? `<p class="sh-notes">${esc(s.notes)}</p>` : ""}
+      ${notesOf(s) ? `<p class="sh-notes">${esc(notesOf(s))}</p>` : ""}
       ${jobLine}</article>`;
   };
   const rel = selDay === today ? "Today" : d && Math.round((d - parseYmd(today)) / 864e5) === 1 ? "Tomorrow" : d && Math.round((d - parseYmd(today)) / 864e5) === -1 ? "Yesterday" : "";
@@ -1987,7 +2004,7 @@ function openShoot(s, onSaved) {
   const ds = datesOf(s).sort();
   $("sfTitle").textContent = s.id ? "Edit shoot" : "New shoot";
   $("sfName").value = s.name || ""; $("sfFrom").value = ds[0] || ""; $("sfTo").value = ds.length > 1 ? ds[ds.length - 1] : "";
-  $("sfLoc").value = s.location || ""; $("sfNotes").value = s.notes || ""; $("sfMsg").textContent = "";
+  $("sfLoc").value = s.location || ""; $("sfTime").value = timeOf(s); $("sfNotes").value = notesOf(s); $("sfMsg").textContent = "";
   sfType = s.type || "both"; sfCrew = new Set(crewOf(s));
   drawSeg(); drawCrew(); $("sfDel").hidden = !s.id; sheetShow($("shootScrim"));
   if (!s.id) wizOn($("shootForm"), { titles: ["What's the shoot?", "When and where?", "Video or photo?", "Who's going?"],
@@ -2008,7 +2025,7 @@ $("shootForm").addEventListener("submit", async e => {
   if (!dates.length) { $("sfMsg").textContent = "Pick the date"; return; }
   const now = new Date().toISOString(), old = editing;
   const s = { id: old.id || uid(), name: $("sfName").value.trim(), dates: dates.join(","), location: $("sfLoc").value.trim(), type: sfType,
-    crew: [...sfCrew].join(","), notes: $("sfNotes").value.trim(), jobId: old.jobId || "",
+    crew: [...sfCrew].join(","), notes: MSched.pack($("sfTime").value.trim(), $("sfNotes").value.trim()), jobId: old.jobId || "",
     createdBy: old.createdBy || session.name, createdAt: old.createdAt || now, updatedBy: session.name, updatedAt: now };
   $("sfSave").disabled = true;
   try {
@@ -2064,7 +2081,7 @@ function findJobs(q, max) {
 }
 function aiSystem(q) {
   const now = new Date(), today = ymd(now), year = String(now.getFullYear());
-  const upcoming = shoots.filter(s => datesOf(s).some(d => d >= today)).slice(0, 30).map(s => `${s.name} | ${s.dates} | ${s.location || ""} | ${s.type} | crew ${s.crew || "-"}`);
+  const upcoming = shoots.filter(s => datesOf(s).some(d => d >= today)).slice(0, 30).map(s => `${s.name} | ${s.dates} | ${timeOf(s)} | ${s.location || ""} | ${s.type} | crew ${s.crew || "-"}`);
   const notBacked = rowsOf(year).filter(unbacked).slice(0, 60)
     .map(r => `${r.name} (${sectionOf(r)}, editor ${r.editor || "-"}, drive ${r.drive || "-"})`);
   const found = findJobs(q).map(jobLine);
@@ -2072,7 +2089,7 @@ function aiSystem(q) {
 Team: ${team.join(", ")}. You are talking with ${session.name}. Answer in the language they write in; keep it short and friendly; Markdown is fine.
 When they want to add shoots, write one short line, then one block per shoot like this (every day of the shoot):
 \`\`\`shoot
-{"name":"short event name","dates":["YYYY-MM-DD"],"location":"","type":"video|photo|both","crew":["Hang"],"notes":""}
+{"name":"short event name","dates":["YYYY-MM-DD"],"time":"2.30pm - 8.30pm or morning, empty if not given","location":"","type":"video|photo|both","crew":["Hang"],"notes":""}
 \`\`\`
 A pasted schedule with many events (a WhatsApp list) gets one block for every event, all in this one reply, nothing between the blocks; never say you'll do them one by one. One date with two numbered events is two blocks. crew: only team members (match nicknames and tags like "@JHang" or "Mun (Studio M)" to the team name). Everything else goes in notes, short: times, roles, people outside the team, gear, TBC.
 type: video if only video, photo if only photo, otherwise both. The app shows each block as a card they confirm. Never say a shoot is saved; they save it from the cards.
@@ -2234,50 +2251,8 @@ function spanIn(q) {
 // a job's Video and Photo rows are one job in M's answers (listed once)
 const oneEach = rs => { const seen = new Set(); return rs.filter(r => { const k = r.year + "|" + baseOf(sectionOf(r)) + "|" + normName(r.name); return !seen.has(k) && seen.add(k); }); };
 const jobLink = r => `[${r.name}](#/job/${encodeURIComponent(r.id)})`;
-// A pasted schedule (WhatsApp style): "18 - Livestream test, 11am", or a day on its own line ("20th") with its jobs below,
-// a time line ("2.30pm - 8.30pm") before a name, notes and @mentions under it. Each job becomes a shoot card to confirm.
-// Day numbers without a month are the coming ones (a day already past this month is next month).
-const TIME_RE = /\b(?:\d{1,2}(?:[.:]\d{2})?\s*(?:am|pm)(?:\s*[-–~to]+\s*\d{1,2}(?:[.:]\d{2})?\s*(?:am|pm))?|morning|afternoon|evening|night|full day|half day)\b|上午|下午|晚上|早上/gi;
-function scheduleOf(q) {
-  const lines = String(q).replace(/[⁦-⁩‎‏]/g, "").split(/\r?\n/).map(l => l.trim());
-  // a day: "20th" alone, "18 - text", "21st text"; not "1 Photo" (a count) or "2-3min" (a range)
-  const DAY = /^(\d{1,2})(?:(st|nd|rd|th)\b\s*[-–—:.)]?|\s*[-–—:)]|\s*$)\s*(.*)$/i, t0 = new Date(); t0.setHours(12, 0, 0, 0);
-  const MM = "jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec", mon = (q.toLowerCase().match(new RegExp(`\\b(${MM})[a-z]*\\b(?!\\s*\\d)`)) || [])[1];
-  const dayOf = d => { let y = t0.getFullYear(), m = mon ? MM.split("|").indexOf(mon) : t0.getMonth();
-    if (!mon && d < t0.getDate() - 3) m++; if (m > 11) { m = 0; y++; } const x = new Date(y, m, d, 12); return x.getDate() === d ? ymd(x) : ""; };
-  const lower = Object.fromEntries(team.map(n => [n.toLowerCase(), n]));
-  const crewOfText = t => { const out = new Set(); (t.match(/@\s?([^@\n,，]+?)(?=\s*(?:@|$|,|，|\n))/g) || []).forEach(m => {
-      const w = m.replace(/^@\s?/, "").replace(/\(.*?\)/g, "").trim().toLowerCase(); if (!w) return;
-      if (/^(all|everyone|team|全部|大家)$/.test(w)) team.filter(n => n !== "M").forEach(n => out.add(n));
-      else { const hit = lower[w] || team.find(n => w.includes(n.toLowerCase()) || n.toLowerCase().includes(w)); if (hit) out.add(hit); } }); return [...out]; };
-  const out = []; let day = "", cur = null;
-  const close = () => { if (cur && cur.name) out.push(cur); cur = null; };
-  const start = (d, text, time) => { close(); cur = { day: d, name: "", time: time || "", notes: [], raw: [] }; if (text) addLine(text, true); };
-  const addLine = (l, first) => {
-    if (!cur) return; cur.raw.push(l);
-    if (!cur.name) { const tm = (l.match(TIME_RE) || []).join(" ");
-      const rest = l.replace(/^[^A-Za-z一-鿿]*?(?:(?:\d{1,2}(?:[.:]\d{2})?\s*(?:am|pm)(?:\s*[-–~to]+\s*\d{1,2}(?:[.:]\d{2})?\s*(?:am|pm))?|morning|afternoon|evening|night)\s*[-–:]\s*)/i, "");
-      const name = rest.replace(/@\s?\S.*$/, "").replace(/\b\d{1,2}(?:[.:]\d{2})?\s*(?:am|pm)(?:\s*[-–~to]+\s*\d{1,2}(?:[.:]\d{2})?\s*(?:am|pm))?\b/gi, " ")
-        .replace(/\((?:photo|video|photo\s*&\s*video|both|morning|afternoon|evening|night|full day|half day)\)/ig, " ").replace(/\(\s*\)/g, " ").replace(/[\s,.;:–-]+$/g, "").replace(/^[\s,.;:–-]+/, "").replace(/\s{2,}/g, " ").trim();
-      if (!name) { if (tm) cur.time = [cur.time, tm].filter(Boolean).join(" "); return; }
-      cur.name = name; if (tm) cur.time = [cur.time, tm].filter(Boolean).join(" "); return; }
-    cur.notes.push(l);
-  };
-  lines.forEach(l => {
-    const m = l.match(DAY);
-    if (m && +m[1] >= 1 && +m[1] <= 31 && !(m[3] && !m[2] && /^\d/.test(m[3])) && !/^\d{1,2}\s*(?:am|pm)\b/i.test(l) && !/^\d{1,2}[.:]\d{2}/.test(l)) { close(); day = dayOf(+m[1]); if (m[3]) start(day, m[3]); return; }
-    if (!day) return;
-    if (!l) { if (cur && cur.name) close(); return; }
-    if (!cur) start(day, l); else addLine(l);
-  });
-  close();
-  return out.filter(e => e.day).map(e => {
-    const all = e.raw.join(" "), hasP = /photo|照片|拍照|摄影/i.test(all), hasV = /video|livestream|live stream|视频|录像|摄像/i.test(all);
-    const crew = crewOfText(all);
-    return { name: e.name.slice(0, 120), dates: [e.day], location: "", type: hasP && !hasV ? "photo" : hasV && !hasP ? "video" : "both", crew,
-      notes: [e.time, ...e.notes.map(n => n.replace(/[⁦-⁩]/g, ""))].filter(Boolean).join("\n") };
-  });
-}
+// a pasted schedule (WhatsApp style) -> shoot cards: src/sched.js (tested in tools/test-sched.mjs)
+const scheduleOf = q => MSched.parse(q, { team, today: Date.now() });
 function localM(q) {
   const zh = isZh(q);
   if (q.split(/\n/).filter(l => l.trim()).length >= 3) { const sch = scheduleOf(q);
@@ -2304,7 +2279,7 @@ function localM(q) {
     ss.sort((x, y) => (datesOf(x).find(d => d >= A) || "").localeCompare(datesOf(y).find(d => d >= A) || ""));
     if (!ss.length) return zh ? `${label}没有拍摄${who.length ? "（" + who.join("、") + "）" : ""}。` : `No shoots ${label}${who.length ? " for " + who.join(", ") : ""}.`;
     return (zh ? `${label}的拍摄：\n` : `Shoots ${label}:\n`) + ss.map(s => { const d = datesOf(s).filter(x => x >= A && x <= B);
-      return `- [${fmtDay(d[0])}](#/calendar/${d[0]})${d.length > 1 ? "–" + fmtDay(d[d.length - 1]) : ""} **${s.name}**${s.location ? ", " + s.location : ""} (${crewOf(s).join(", ") || "-"})`; }).join("\n");
+      return `- [${fmtDay(d[0])}](#/calendar/${d[0]})${d.length > 1 ? "–" + fmtDay(d[d.length - 1]) : ""} **${s.name}**${timeOf(s) ? " " + timeOf(s) : ""}${s.location ? ", " + s.location : ""} (${crewOf(s).join(", ") || "-"})`; }).join("\n");
   }
   if (it === "find") {
     const rs = oneEach(findJobs(q, 12)).slice(0, 6);
@@ -2462,7 +2437,8 @@ function cleanShoot(o) {
   const lower = Object.fromEntries(team.map(n => [n.toLowerCase(), n]));
   const crew = (Array.isArray(o.crew) ? o.crew : String(o.crew || "").split(",")).map(n => lower[String(n).trim().toLowerCase()]).filter(Boolean);
   return { name: String(o.name || "").trim().slice(0, 200), dates: [...new Set(dates)].join(","), location: String(o.location || "").trim().slice(0, 200),
-    type: ["video", "photo", "both"].includes(o.type) ? o.type : "both", crew: [...new Set(crew)].join(","), notes: String(o.notes || "").trim().slice(0, 2000) };
+    type: ["video", "photo", "both"].includes(o.type) ? o.type : "both", crew: [...new Set(crew)].join(","),
+    notes: MSched.pack(String(o.time != null ? o.time : timeOf(o)).slice(0, 80), notesOf(o)).slice(0, 2000) };
 }
 // M's moods show on whichever M you can see: the one in the corner, or the one at the top of the open chat
 function mood(c) {
@@ -3075,16 +3051,9 @@ async function ask(text) {
 }
 function setSending(on) { $("sendBtn").classList.toggle("stop", on); $("sendBtn").setAttribute("aria-label", on ? "Stop" : "Send"); }
 // the same shoot already in the Calendar: a shared day and the same name (case, spaces and small differences don't matter)
-const nameKey = t => String(t || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
-const nameLike = (a, b) => { const x = nameKey(a), y = nameKey(b); if (!x || !y) return false;
-  return x === y || (Math.min(x.length, y.length) >= 5 && (x.includes(y) || y.includes(x))) || dice(grams(a), grams(b)) >= .72; };
-const sameShoot = (s, not) => { const ds = datesOf(s); return shoots.find(x => x !== not && x.id !== (not && not.id) && datesOf(x).some(d => ds.includes(d)) && nameLike(x.name, s.name)); };
-// copies: the same shoot saved more than once (the first one saved stays)
-function dupShoots() {
-  const keep = [], extra = [];
-  [...shoots].sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || ""))).forEach(x => { if (keep.some(k => datesOf(k).join() === datesOf(x).join() && nameLike(k.name, x.name))) extra.push(x); else keep.push(x); });
-  return extra;
-}
+const sameShoot = (s, not) => MSched.sameIn(shoots, s, not);
+const dupShoots = () => MSched.dupsOf(shoots);
+const timeOf = s => MSched.timeOf(s), notesOf = s => MSched.notesOf(s);
 async function dedupe() {
   const ex = dupShoots(); if (!ex.length) { toast("No copies in the Calendar"); return; }
   if (!confirm(`Remove ${ex.length} cop${ex.length > 1 ? "ies" : "y"}? The first one of each stays:\n\n` + ex.map(x => `${fmtDay(datesOf(x)[0] || "")}  ${x.name}`).join("\n"))) return;
@@ -3097,7 +3066,7 @@ function confirmCard(s, m, i, k) {
   const there = !st0() && sameShoot(s);   // already in the Calendar: nothing to add (shown, not saved, so it re-checks next time)
   const st = () => st0() || (there ? `Already in the Calendar. <a href="#/calendar/${esc(datesOf(there)[0] || "")}">See ${esc(fmtDay(datesOf(there)[0] || ""))}</a>` : "");
   const ds = datesOf(s), b = document.createElement("div"); b.className = "confirm" + (there ? " ok" : "");
-  b.innerHTML = `<b>${esc(s.name || "New shoot")}</b><p class="muted small">${esc(ds.map(fmtDay).join(", ") || "Pick a date")}${s.location ? ", " + esc(s.location) : ""}. ${esc({ video: "Video", photo: "Photo", both: "Video and photo" }[s.type])}. ${esc(crewOf(s).join(", ") || "No crew yet")}.</p>` +
+  b.innerHTML = `<b>${esc(s.name || "New shoot")}</b><p class="muted small">${esc(ds.map(fmtDay).join(", ") || "Pick a date")}${timeOf(s) ? ", " + esc(timeOf(s)) : ""}${s.location ? ", " + esc(s.location) : ""}. ${esc({ video: "Video", photo: "Photo", both: "Video and photo" }[s.type])}. ${esc(crewOf(s).join(", ") || "No crew yet")}.</p>` +
     (st() ? `<p class="muted small done">${st()}</p>` : `<div class="actions"><button type="button" class="btn" data-a="add">Add to Calendar</button><button type="button" class="btn ghost" data-a="edit">Edit</button><button type="button" class="btn ghost" data-a="no">Not now</button></div>`);
   const done = html => { m.cards = m.cards || {}; m.cards[k] = html; saveChats(); const a = b.querySelector(".actions"); if (a) { a.outerHTML = `<p class="muted small done">${html}</p>`; } b.classList.add("ok"); };
   const added = saved => done(`Added to the Calendar. <a href="#/calendar/${esc(datesOf(saved)[0] || "")}">See ${esc(fmtDay(datesOf(saved)[0] || ""))}</a>`);

@@ -436,11 +436,64 @@ function saveShoot(pin, s) {
     range.setNumberFormat("@");
     range.setValues([row]);
     return true;
-  });
+  }) && (calSync_(Object.assign({}, s, { id: id, dates: dates.join(",") })), true);
 }
 function deleteShoot(pin, id) {
   checkPin_(pin);
-  return withLock_(() => { const sh = shootsSheet_(), at = rowOf_(sh, id); if (at > 0) sh.deleteRow(at); return true; });
+  const ok = withLock_(() => { const sh = shootsSheet_(), at = rowOf_(sh, id); if (at > 0) sh.deleteRow(at); return true; });
+  calDrop_(String(id || ""));
+  return ok;
+}
+
+// ---- Shoots in Google Calendar (anyone's phone calendar can show them) ----
+// Run setUpShootCalendar once (Apps Script editor: pick it, Run, allow Calendar). It makes a Google calendar
+// "Studio M Shoots" in this account and puts every shoot in it; from then on each save / delete in the app updates it.
+// Share it with the team in Google Calendar (Settings → the calendar → Share with specific people → their Gmail);
+// on a phone it shows in Google Calendar, and on iPhone in Calendar once their Google account is added.
+// A shoot with a clock time ("2.30pm - 8.30pm", "11am") is a timed event on each of its days; otherwise all day.
+// Never stops a save: anything that goes wrong here is only logged.
+const SHOOT_CAL_NAME = "Studio M Shoots", SHOOT_CAL_TZ = "Asia/Kuala_Lumpur";
+function shootCal_() { const id = props_().getProperty("SHOOT_CAL_ID"); if (!id) return null; try { return CalendarApp.getCalendarById(id); } catch (e) { return null; } }
+// "2.30pm - 8.30pm" → [[14,30],[20,30]]; "11am" → [[11,0]]; nothing usable → null
+function shootTime_(t) {
+  const m = String(t || "").toLowerCase().match(/(\d{1,2})(?:[.:](\d{2}))?\s*(am|pm)(?:\s*(?:-|–|~|to)\s*(\d{1,2})(?:[.:](\d{2}))?\s*(am|pm))?/);
+  if (!m) return null;
+  const h = (x, ap) => { x = Number(x) % 12; return ap === "pm" ? x + 12 : x; };
+  const a = [h(m[1], m[3]), Number(m[2] || 0)];
+  return m[4] ? [a, [h(m[4], m[6]), Number(m[5] || 0)]] : [a];
+}
+function shootTimeText_(notes) { const l = String(notes || "").split("\n")[0]; return l.indexOf("\u23F0 ") === 0 ? l.slice(2).trim() : ""; }
+function calDrop_(id) {
+  try {
+    const cal = shootCal_(), key = "SEV_" + id, ids = String(props_().getProperty(key) || "").split(",").filter(String);
+    if (cal) ids.forEach(e => { try { const ev = cal.getEventById(e); if (ev) ev.deleteEvent(); } catch (x) {} });
+    props_().deleteProperty(key);
+  } catch (e) { console.log("calendar: " + e); }
+}
+function calSync_(s) {
+  try {
+    const cal = shootCal_(); if (!cal || !s || !s.id) return;
+    calDrop_(String(s.id));
+    const time = shootTimeText_(s.notes), tm = shootTime_(time), kind = { video: "Video", photo: "Photo", both: "Video + Photo" }[s.type] || "";
+    const desc = [time && "Time: " + time, kind, s.crew && "Crew: " + String(s.crew).split(",").join(", "),
+      String(s.notes || "").split("\n").filter(l => l.indexOf("\u23F0 ") !== 0).join("\n").trim()].filter(String).join("\n");
+    const opt = { description: desc, location: String(s.location || "") }, title = String(s.name || "Shoot") + (kind ? " (" + kind + ")" : "");
+    const ids = String(s.dates || "").split(",").map(d => d.trim()).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).map(d => {
+      const p = d.split("-").map(Number);
+      if (!tm) return cal.createAllDayEvent(title, new Date(p[0], p[1] - 1, p[2]), opt).getId();
+      const st = new Date(p[0], p[1] - 1, p[2], tm[0][0], tm[0][1]), en = tm[1] ? new Date(p[0], p[1] - 1, p[2], tm[1][0], tm[1][1]) : new Date(st.getTime() + 2 * 3600e3);
+      return cal.createEvent(title, st, en > st ? en : new Date(st.getTime() + 2 * 3600e3), opt).getId();
+    });
+    props_().setProperty("SEV_" + s.id, ids.join(","));
+  } catch (e) { console.log("calendar: " + e); }
+}
+function setUpShootCalendar() {
+  let cal = shootCal_();
+  if (!cal) { const found = CalendarApp.getCalendarsByName(SHOOT_CAL_NAME); cal = found.length ? found[0] : CalendarApp.createCalendar(SHOOT_CAL_NAME, { timeZone: SHOOT_CAL_TZ, color: CalendarApp.Color.ORANGE });
+    props_().setProperty("SHOOT_CAL_ID", cal.getId()); }
+  const all = getShoots(); all.forEach(calSync_);
+  console.log("Calendar \"" + SHOOT_CAL_NAME + "\" has " + all.length + " shoots. Share it in Google Calendar → Settings → " + SHOOT_CAL_NAME + " → Share with specific people.");
+  return cal.getId();
 }
 
 
