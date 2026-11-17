@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.40";
+const APP_VER = "0.9.41";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -702,13 +702,16 @@ function render(first) {
   // phone: he doesn't travel between pages (switching tabs all the time made him leap around). He waits out of sight until
   // the new page has risen into place, then pops up on its spot once, where he stays
   const quiet = phone && !first && !STILL;
-  const r0 = quiet && !b.hidden && b.style.opacity !== "0" ? b.getBoundingClientRect() : null;
+  const r0 = quiet && !b.hidden && b.style.opacity !== "0" && !docked() ? b.getBoundingClientRect() : null;
+  // into Ask M: a black hole opens where he stands and swallows him; he comes out as the chat's avatar, top left
+  const toAsk = quiet && next.name === "home" && route.name !== "home";
   const apply = () => { route = next; perch.navAt = performance.now(); paint(); perch.st = 0; perch.dock = false;
     if (!quiet) { perch(from); return; }
     // 闪现: he flashes out where he was, and flashes back in on the new page's spot once it is in place
-    if (r0 && r0.width && !b.classList.contains("space")) mFlash(r0, false);
+    if (r0 && r0.width && !b.classList.contains("space")) { if (toAsk) blackHole(r0); else mFlash(r0, false); }
+    if (toAsk) avatarIn(r0 && r0.width ? 820 : 300);
     clearTimeout(render.popT); b.style.opacity = "0"; perch();
-    render.popT = setTimeout(() => { b.style.opacity = ""; if (!session || b.hidden) return;
+    render.popT = setTimeout(() => { b.style.opacity = ""; if (!session || b.hidden || docked()) return;
       b.getAnimations().forEach(a => { if (!a.effect || a.effect.getComputedTiming().iterations !== Infinity) a.cancel(); }); unliftM(true); perch();
       if (!b.classList.contains("space")) { mFlash(b.getBoundingClientRect(), true);
         b._an([{ transform: "translateY(0) scale(1.2, .55)", opacity: 0 }, { transform: "translateY(0) scale(1.25, .7)", opacity: 1, offset: .08, easing: "cubic-bezier(.15,.8,.35,1)" }, { transform: "translateY(-46px) scale(.9, 1.14)", offset: .42, easing: "cubic-bezier(.55,0,.85,.4)" }, { transform: "translateY(0) scale(1.2, .8)", offset: .7, easing: "cubic-bezier(.2,.7,.35,1)" }, { transform: "translateY(-8px) scale(.96, 1.04)", offset: .84, easing: "cubic-bezier(.55,0,.85,.4)" }, { transform: "translateY(0) scale(1)", opacity: 1 }], { duration: 640, easing: "linear" }); } }, 360); };
@@ -2897,6 +2900,42 @@ function mFlash(r, into) {
     ], { duration: rnd(620, 820), easing: "linear", fill: "both" });
   }
   document.body.appendChild(f); setTimeout(() => f.remove(), 900);
+}
+// Into Ask M (phone): a black hole opens where 小M stands, its orange rim swirling, specks spiralling in; he is stretched,
+// spun and swallowed, the hole snaps shut. Drawn with the flat 小M (one light layer, not the 3D one) while the real one waits.
+function blackHole(r) {
+  if (!r || !r.width || STILL) return;
+  const x = r.left + r.width / 2, y = r.top + r.height / 2, f = document.createElement("div"); f.className = "m-hole";
+  f.style.left = x + "px"; f.style.top = y + "px";
+  f.innerHTML = `<i class="disk"></i><i class="rim"></i><div class="who" style="width:${r.width}px;height:${r.height}px;margin:${-r.height / 2}px 0 0 ${-r.width / 2}px">${mSVG(false)}</div>`;
+  document.body.appendChild(f);
+  const T = 900;
+  f.querySelector(".disk").animate([{ transform: "scale(0)" }, { transform: "scale(1.05)", offset: .18, easing: "ease-out" }, { transform: "scale(1)", offset: .75 }, { transform: "scale(1.15)", offset: .84 }, { transform: "scale(0)" }], { duration: T, fill: "both", easing: "cubic-bezier(.5,0,.9,.6)" });
+  f.querySelector(".rim").animate([{ transform: "scale(0) rotate(0)", opacity: 0 }, { transform: "scale(1.1) rotate(-200deg)", opacity: 1, offset: .2 }, { transform: "scale(.9) rotate(-720deg)", opacity: 1, offset: .8 }, { transform: "scale(0) rotate(-1000deg)", opacity: 0 }], { duration: T, fill: "both" });
+  f.querySelector(".who").animate([
+    { transform: "rotate(0) scale(1)", filter: "brightness(1)", offset: 0 },
+    { transform: "rotate(-8deg) scale(1.08, .94)", offset: .14 },
+    { transform: "rotate(-160deg) scale(.75, 1.15)", offset: .42, easing: "cubic-bezier(.5,0,.9,.5)" },
+    { transform: "rotate(-620deg) scale(.08)", filter: "brightness(.25)", opacity: 1, offset: .78 },
+    { transform: "rotate(-700deg) scale(0)", filter: "brightness(0)", opacity: 0 }], { duration: T, fill: "both" });
+  for (let i = 0; i < 12; i++) {   // specks pulled in on a spiral
+    const d = document.createElement("i"); d.className = "d"; f.appendChild(d);
+    const a0 = Math.random() * Math.PI * 2, R = 46 + Math.random() * 34, pts = [];
+    for (let k = 0; k <= 5; k++) { const t = k / 5, a = a0 - t * 4, rr = R * (1 - t); pts.push({ transform: `translate(${(Math.cos(a) * rr).toFixed(1)}px,${(Math.sin(a) * rr).toFixed(1)}px) scale(${(1 - t * .7).toFixed(2)})`, opacity: k === 0 ? 0 : k === 5 ? 0 : 1 }); }
+    d.animate(pts, { duration: 520 + Math.random() * 200, delay: 60 + Math.random() * 180, fill: "both", easing: "cubic-bezier(.5,0,.9,.6)" });
+  }
+  setTimeout(() => f.remove(), T + 100);
+}
+// ...and he comes out as the chat's avatar (top left of Ask M): a small flash, then he spins out of it and settles
+function avatarIn(wait) {
+  const av = $("mpAv"); if (!av) return; clearTimeout(avatarIn.t);
+  av.style.opacity = "0";
+  avatarIn.t = setTimeout(() => { av.style.opacity = ""; if (STILL || !docked()) return;
+    const r = av.getBoundingClientRect(), g = document.createElement("div"); g.className = "m-hole out"; g.style.left = r.left + r.width / 2 + "px"; g.style.top = r.top + r.height / 2 + "px";
+    g.innerHTML = "<i class=\"burst\"></i>"; document.body.appendChild(g); setTimeout(() => g.remove(), 700);
+    g.firstChild.animate([{ transform: "scale(0)", opacity: 1 }, { transform: "scale(1.2)", opacity: .9, offset: .4 }, { transform: "scale(1.8)", opacity: 0 }], { duration: 600, easing: "ease-out", fill: "both" });
+    av.animate([{ transform: "rotate(360deg) scale(0)", opacity: 0 }, { transform: "rotate(-20deg) scale(1.25)", opacity: 1, offset: .55 }, { transform: "rotate(8deg) scale(.92)", offset: .78 }, { transform: "rotate(0) scale(1)", opacity: 1 }], { duration: 560, easing: "cubic-bezier(.2,.8,.3,1)" });
+  }, wait);
 }
 // shredded paper: torn scraps of every shape, thrown out (or sucked in), then fluttering down and turning over as they fall
 const SHRED = ["polygon(0 8%,100% 0,92% 100%,6% 88%)", "polygon(10% 0,100% 18%,80% 100%,0 70%)", "polygon(0 0,100% 30%,70% 100%)", "polygon(0 20%,60% 0,100% 60%,40% 100%)",
