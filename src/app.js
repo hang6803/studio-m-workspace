@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.27";
+const APP_VER = "0.9.28";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -2251,7 +2251,14 @@ function scheduleOf(q) {
 function localM(q) {
   const zh = isZh(q);
   if (q.split(/\n/).filter(l => l.trim()).length >= 3) { const sch = scheduleOf(q);
-    if (sch.length >= 2) return (zh ? `看懂了，一共 ${sch.length} 个拍摄。确认一下，可以一个一个加，或者全部加：` : `Got it: ${sch.length} shoots. Check them, then add one by one or all at once:`) + sch.map(c => "\n```shoot\n" + JSON.stringify(c) + "\n```").join(""); }
+    if (sch.length >= 2) { const had = sch.filter(c => sameShoot(cleanShoot(c))).length, fresh = sch.length - had, dup = dupShoots().length;
+      return (zh ? `看懂了，一共 ${sch.length} 个拍摄` + (had ? `，其中 ${had} 个日历里已经有了（不会重复加）` : "") + (fresh ? `。确认一下，可以一个一个加，或者全部加：` : "。都已经在日历里了 👍")
+        : `Got it: ${sch.length} shoots` + (had ? `, ${had} already in the Calendar (they won't be added again)` : "") + (fresh ? ". Check them, then add one by one or all at once:" : ". All of them are in the Calendar already 👍"))
+        + (dup ? (zh ? `\n\n日历里有 ${dup} 个重复的拍摄：[删掉重复的](#/dedupe)` : `\n\nThe Calendar has ${dup} duplicate shoot${dup > 1 ? "s" : ""}: [remove the copies](#/dedupe)`) : "")
+        + sch.map(c => "\n```shoot\n" + JSON.stringify(c) + "\n```").join(""); } }
+  if (/重复|duplicate|dupes?\b|copies/i.test(q)) { const dup = dupShoots();
+    return dup.length ? (zh ? `日历里有 ${dup.length} 个重复的拍摄：\n` : `${dup.length} duplicate shoot${dup.length > 1 ? "s" : ""} in the Calendar:\n`) + dup.map(x => `- ${fmtDay(datesOf(x)[0] || "")} **${x.name}**`).join("\n") + (zh ? "\n\n[删掉重复的](#/dedupe)（每个留第一个）" : "\n\n[Remove the copies](#/dedupe) (the first of each stays)")
+      : (zh ? "日历里没有重复的拍摄 👍" : "No duplicate shoots in the Calendar 👍"); }
   const who = namesIn(q), it = intentOf(q), year = (q.match(/\b(20\d\d)\b/) || [])[1] || String(new Date().getFullYear());
   if (it === "unbacked") {
     let rs = oneEach(rowsOf(year).filter(unbacked)); const drv = (q.match(/\bm\s?(\d)\b/i) || [])[1];
@@ -3001,7 +3008,7 @@ async function ask(text) {
     const history = cur.msgs.slice(0, -1).slice(-12).map(m => ({ role: m.role, content: m.content }));
     if (navigator.onLine === false || (session && session.offline)) throw Object.assign(new Error("offline"), { local: true });
     // a pasted schedule: M reads it here at once (no AI needed, same cards)
-    if (text.split(/\n/).filter(l => l.trim()).length >= 3 && scheduleOf(text).length >= 2) throw Object.assign(new Error("schedule"), { mOnly: true });
+    if ((text.split(/\n/).filter(l => l.trim()).length >= 3 && scheduleOf(text).length >= 2) || (text.length < 40 && /重复|duplicate/i.test(text))) throw Object.assign(new Error("schedule"), { mOnly: true });
     await callModel([{ role: "system", content: aiSystem(text) }, ...history], t => {
       bot.content = t; fillBot(d, bot, i, true);
       const th = $("thread"); if (th.scrollHeight - th.scrollTop - th.clientHeight < 160) th.scrollTop = th.scrollHeight;
@@ -3028,9 +3035,29 @@ async function ask(text) {
   fillBot(d, bot, i, false); saveChats(); drawChats(); scrollEnd();
 }
 function setSending(on) { $("sendBtn").classList.toggle("stop", on); $("sendBtn").setAttribute("aria-label", on ? "Stop" : "Send"); }
+// the same shoot already in the Calendar: a shared day and the same name (case, spaces and small differences don't matter)
+const nameKey = t => String(t || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+const nameLike = (a, b) => { const x = nameKey(a), y = nameKey(b); if (!x || !y) return false;
+  return x === y || (Math.min(x.length, y.length) >= 5 && (x.includes(y) || y.includes(x))) || dice(grams(a), grams(b)) >= .72; };
+const sameShoot = (s, not) => { const ds = datesOf(s); return shoots.find(x => x !== not && x.id !== (not && not.id) && datesOf(x).some(d => ds.includes(d)) && nameLike(x.name, s.name)); };
+// copies: the same shoot saved more than once (the first one saved stays)
+function dupShoots() {
+  const keep = [], extra = [];
+  [...shoots].sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || ""))).forEach(x => { if (keep.some(k => datesOf(k).join() === datesOf(x).join() && nameLike(k.name, x.name))) extra.push(x); else keep.push(x); });
+  return extra;
+}
+async function dedupe() {
+  const ex = dupShoots(); if (!ex.length) { toast("No copies in the Calendar"); return; }
+  if (!confirm(`Remove ${ex.length} cop${ex.length > 1 ? "ies" : "y"}? The first one of each stays:\n\n` + ex.map(x => `${fmtDay(datesOf(x)[0] || "")}  ${x.name}`).join("\n"))) return;
+  let n = 0; for (const x of ex) { try { await M.api("deleteShoot", ["", x.id]); shoots = shoots.filter(y => y.id !== x.id); n++; } catch (e) { toast(e.message); break; } }
+  drawAll(); if (n) { toast(`Removed ${n} cop${n > 1 ? "ies" : "y"}`); fx("ok"); }
+}
+document.addEventListener("click", e => { const a = e.target.closest && e.target.closest('a[href="#/dedupe"]'); if (!a) return; e.preventDefault(); dedupe(); }, true);
 function confirmCard(s, m, i, k) {
-  k = k || 0; const st = () => (m.cards && m.cards[k]) || (k === 0 ? m.card : "");
-  const ds = datesOf(s), b = document.createElement("div"); b.className = "confirm";
+  k = k || 0; const st0 = () => (m.cards && m.cards[k]) || (k === 0 ? m.card : "");
+  const there = !st0() && sameShoot(s);   // already in the Calendar: nothing to add (shown, not saved, so it re-checks next time)
+  const st = () => st0() || (there ? `Already in the Calendar. <a href="#/calendar/${esc(datesOf(there)[0] || "")}">See ${esc(fmtDay(datesOf(there)[0] || ""))}</a>` : "");
+  const ds = datesOf(s), b = document.createElement("div"); b.className = "confirm" + (there ? " ok" : "");
   b.innerHTML = `<b>${esc(s.name || "New shoot")}</b><p class="muted small">${esc(ds.map(fmtDay).join(", ") || "Pick a date")}${s.location ? ", " + esc(s.location) : ""}. ${esc({ video: "Video", photo: "Photo", both: "Video and photo" }[s.type])}. ${esc(crewOf(s).join(", ") || "No crew yet")}.</p>` +
     (st() ? `<p class="muted small done">${st()}</p>` : `<div class="actions"><button type="button" class="btn" data-a="add">Add to Calendar</button><button type="button" class="btn ghost" data-a="edit">Edit</button><button type="button" class="btn ghost" data-a="no">Not now</button></div>`);
   const done = html => { m.cards = m.cards || {}; m.cards[k] = html; saveChats(); const a = b.querySelector(".actions"); if (a) { a.outerHTML = `<p class="muted small done">${html}</p>`; } b.classList.add("ok"); };
