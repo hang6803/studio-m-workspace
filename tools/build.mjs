@@ -235,7 +235,10 @@ const ship = (src, out) => {
 for (const f of ["app.js", "app.css", "graph.js", "fx.js", "brain.js"]) ship("src/" + f, "dist/" + f);
 // 小M and the festival / birthday modules come from hang6803/xiaom-module (vendor/xiaom/SOURCE has the commit)
 for (const f of ["xiaom.js", "festivals.js", "festival-theme.js", "celebrate.js", "sfx.js"]) copyFileSync(at("vendor/xiaom/" + f), at("dist/" + f));
-writeFileSync(at("dist/backup.html"), backup);
+// the Backup page (and its scenes layer) follows Settings → Animations too: the shell's motion script goes in its <head>
+const MOTION = (read("src/index.html").match(/<script>\n\/\/ Animations "On" in Settings[\s\S]*?<\/script>\n/) || [""])[0];
+must(MOTION, "index.html: motion script not found");
+writeFileSync(at("dist/backup.html"), backup.replace(/<head>/i, m => m + "\n" + MOTION));
 
 // 7) phone app (PWA): manifest, icons, and the offline shell; its cache name changes whenever any shell file does
 mkdirSync(at("dist/icons"), { recursive: true });

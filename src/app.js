@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.29";
+const APP_VER = "0.9.30";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -685,12 +685,16 @@ function render(first) {
   // phone: he doesn't travel between pages (switching tabs all the time made him leap around). He waits out of sight until
   // the new page has risen into place, then pops up on its spot once, where he stays
   const quiet = phone && !first && !STILL;
+  const r0 = quiet && !b.hidden && b.style.opacity !== "0" ? b.getBoundingClientRect() : null;
   const apply = () => { route = next; perch.navAt = performance.now(); paint(); perch.st = 0; perch.dock = false;
     if (!quiet) { perch(from); return; }
+    // 闪现: he flashes out where he was, and flashes back in on the new page's spot once it is in place
+    if (r0 && r0.width && !b.classList.contains("space")) mFlash(r0, false);
     clearTimeout(render.popT); b.style.opacity = "0"; perch();
     render.popT = setTimeout(() => { b.style.opacity = ""; if (!session || b.hidden) return;
       b.getAnimations().forEach(a => { if (!a.effect || a.effect.getComputedTiming().iterations !== Infinity) a.cancel(); }); unliftM(true); perch();
-      if (!b.classList.contains("space")) b._an([{ transform: "scale(.6)", opacity: 0 }, { transform: "scale(1.04)", opacity: 1, offset: .7 }, { transform: "scale(1)", opacity: 1 }], { duration: 260, easing: "cubic-bezier(.2,.8,.2,1)" }); }, 360); };
+      if (!b.classList.contains("space")) { mFlash(b.getBoundingClientRect(), true);
+        b._an([{ transform: "scale(.2)", opacity: 0, filter: "brightness(2.2)" }, { transform: "scale(1.12)", opacity: 1, filter: "brightness(1.5)", offset: .55 }, { transform: "scale(.96)", filter: "brightness(1)", offset: .8 }, { transform: "scale(1)", opacity: 1, filter: "brightness(1)" }], { duration: 340, easing: "cubic-bezier(.2,.8,.2,1)" }); } }, 360); };
   if (vt) document.startViewTransition(apply); else apply();
   if (phone && !first && !STILL) $("views").animate(noBlur([{ opacity: 0, transform: "translateY(14px)", filter: "blur(6px)" }, { opacity: 1, transform: "none", filter: "blur(0)" }]), { duration: 340, easing: "cubic-bezier(.2,.8,.2,1)" });
   if (phone && !$("mPanel").hidden) closeM();
@@ -714,7 +718,7 @@ function paint() {
   if (v === "classic") loadBackup(); else if (v === "backup" && !backupLoaded) (window.requestIdleCallback || (g => setTimeout(g, 600)))(() => { if (session) loadBackup(); }, { timeout: 1500 });   // after the list has drawn   // Backup saves through Classic Backup, kept ready in the background
   if (v === "team") { if (shownView !== "team") { $("teamLog").hidden = true; loadPeople(true).then(loadLog); } drawTeam(); }
   shownView = v;
-  if (v === "settings") { drawTheme(); drawAI(); drawVoice(); drawFx(); drawFest(); drawLearn(); drawRemind(); drawBioSet(); }
+  if (v === "settings") { drawTheme(); drawAI(); drawVoice(); drawFx(); drawFest(); drawLearn(); drawRemind(); drawBioSet(); drawMotion(); }
 }
 function markNav() {
   const key = route.name === "drive" || route.name === "editor" ? route.name + ":" + route.key : route.name === "job" ? "" : route.name === "classic" ? "backup" : route.name;
@@ -2837,8 +2841,9 @@ const want1Row = el => el && /grid|flex/.test(getComputedStyle(el).display) && e
 function blink(b, from, to) {
   // phone: changing page is something you do all the time, so he doesn't leap across the screen each time: he just
   // appears on the new page's spot (a small pop), no spin, no paper, no sound
-  if (PHONE.matches) { b.animate([{ transform: "scale(.6)", opacity: 0 }, { transform: "scale(1.04)", opacity: 1, offset: .7 }, { transform: "scale(1)", opacity: 1 }],
-    { duration: 260, easing: "cubic-bezier(.2,.8,.2,1)" }); return; }
+  if (PHONE.matches) { if (from && from.width) mFlash(from, false); setTimeout(() => mFlash(b.getBoundingClientRect(), true), 120);
+    b.animate([{ transform: "scale(.2)", opacity: 0, filter: "brightness(2.2)" }, { transform: "scale(.2)", opacity: 0, offset: .3 }, { transform: "scale(1.12)", opacity: 1, filter: "brightness(1.5)", offset: .7 }, { transform: "scale(1)", opacity: 1, filter: "brightness(1)" }],
+    { duration: 420, easing: "cubic-bezier(.2,.8,.2,1)" }); return; }
   // one 小M, one continuous motion (no copy of him: a copy is hundreds of 3D slices more for the phone to draw). He starts
   // where he was (shifted back there), crouches, leaps and spins away into the burst; a beat later he pops out of the
   // burst at the new spot, arcs up, falls and lands with a squash and two small bounces. Each step has its own easing,
@@ -2861,6 +2866,14 @@ function blink(b, from, to) {
   setTimeout(() => paperBurst(from.left + from.width / 2, from.top + from.height / 2 - 48), OUT - 70);
   setTimeout(() => { const r = b.getBoundingClientRect(); paperBurst(r.left + r.width / 2, r.top + r.height / 2 - 30, true); }, OUT + GAP - 40);
   fx("pin");
+}
+// 闪现 (phone): a quick burst of light where 小M vanishes (out) or appears (in): a glow, a ring and a few sparks; no paper, no sound
+function mFlash(r, into) {
+  if (!r || !r.width || STILL) return;
+  const x = r.left + r.width / 2, y = r.top + r.height / 2, f = document.createElement("div"); f.className = "m-flash" + (into ? " in" : "");
+  f.style.left = x + "px"; f.style.top = y + "px";
+  f.innerHTML = "<i class=\"g\"></i><i class=\"r\"></i>" + Array.from({ length: 6 }, (_, k) => `<i class="s" style="--a:${k * 60 + (into ? 30 : 0)}deg"></i>`).join("");
+  document.body.appendChild(f); setTimeout(() => f.remove(), 800);
 }
 // shredded paper: torn scraps of every shape, thrown out (or sucked in), then fluttering down and turning over as they fall
 const SHRED = ["polygon(0 8%,100% 0,92% 100%,6% 88%)", "polygon(10% 0,100% 18%,80% 100%,0 70%)", "polygon(0 0,100% 30%,70% 100%)", "polygon(0 20%,60% 0,100% 60%,40% 100%)",
@@ -3232,6 +3245,21 @@ function drawFx() {
   if (id === "sndSeg") UIFx.sound(v); else UIFx.haptics(v);
   drawFx(); if (v) UIFx(id === "sndSeg" ? "ok" : "toggle");
 }));
+// Animations: follow the phone's "reduce motion" (battery saver can turn it on), or always animate. Takes effect on reload.
+const phoneStill = () => { try { return document.documentElement.classList.contains("motion-on") ? null : STILL; } catch (e) { return STILL; } };
+function drawMotion() {
+  let v = "auto"; try { v = localStorage.getItem("mMotion") === "on" ? "on" : "auto"; } catch (e) {}
+  document.querySelectorAll("#motionSeg button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
+  $("motionMsg").textContent = v === "on" ? "Always on: 小M and the app move even when the phone asks for less motion." :
+    phoneStill() ? "Your phone asks for less motion (battery saver or \"remove animations\"), so 小M stands still. Pick Always on to bring him back." : "Follows the phone: when it asks for less motion (battery saver), 小M stands still.";
+}
+$("motionSeg").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  let cur = "auto"; try { cur = localStorage.getItem("mMotion") === "on" ? "on" : "auto"; } catch (err) {}
+  if (b.dataset.v === cur) return;
+  try { if (b.dataset.v === "on") localStorage.setItem("mMotion", "on"); else localStorage.removeItem("mMotion"); } catch (err) {}
+  drawMotion(); toast("Restarting to apply…"); setTimeout(() => location.reload(), 700);
+});
 function drawTheme() { const t = document.documentElement.getAttribute("data-theme"); document.querySelectorAll("#themeSeg button").forEach(b => b.classList.toggle("on", b.dataset.t === t)); }
 $("themeSeg").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
