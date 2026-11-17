@@ -1381,15 +1381,24 @@ a, [role="tab"] { -webkit-tap-highlight-color: transparent }   /* no blue box on
 }
 /* a shoot's time, first on its line in the Calendar */
 .sh-meta .sh-time { color: var(--fg); font-weight: 700 }
-/* 0.9.37 celebrations: no card. The whole screen dims to a see-through black and the scene floats on it, bigger, its edges
-   fading into the dark instead of a framed box; the greeting glows underneath. */
-.cele { background: rgba(0, 0, 0, .74); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px) }
-.cele-card { background: none; border: 0; border-radius: 0; box-shadow: none; padding: 0 }
-.cele-box { --k: 1.7 }
-.cele-stage { border-radius: 0;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16%, #000 80%, transparent 100%), linear-gradient(to right, transparent 0, #000 14%, #000 86%, transparent 100%);
-  -webkit-mask-composite: source-in; mask-image: linear-gradient(to bottom, transparent 0, #000 16%, #000 80%, transparent 100%), linear-gradient(to right, transparent 0, #000 14%, #000 86%, transparent 100%); mask-composite: intersect }
-.cele-t { margin-top: 6px; font-size: 22px; color: #fff; text-shadow: 0 2px 22px rgba(244, 128, 32, .55), 0 1px 2px rgba(0, 0, 0, .6) }
-.cele-s { color: rgba(255, 255, 255, .72) }
-@media (max-width: 420px) { .cele-box { --k: 1.55 } }
-@media (pointer: coarse) { .cele { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(0, 0, 0, .78) } }
+/* 0.9.37 celebrations, full screen: no card and no frame. Each scene is drawn much wider than its old 229 × 200 window
+   (Hang's sky and sea, Mun's park, Michael's mountains run far past it), so the window is simply not clipped any more: the
+   scene's own picture carries on to the edges of the screen, sharp and moving, and only fades into black where it ends.
+   The scene is sized to fill the width on a phone and most of the height on a computer (--k, set by celeSize()). */
+.cele { padding: 0; overflow: hidden; background: var(--cele-bg, #000); display: block }
+.cele-card { position: absolute; inset: 0; background: none; border: 0; border-radius: 0; box-shadow: none; padding: 0; animation: celeIn .5s ease-out both }
+.cele-box { position: absolute; inset: 0; width: auto; height: auto; margin: 0; --k: 1.7 }
+.cele-stage { position: absolute; left: 50%; top: 44%; width: 229px; height: 200px; margin: -100px 0 0 -114.5px; overflow: visible; border-radius: 0;
+  transform: scale(var(--k)); transform-origin: 50% 50% }
+.cele-stage .m25-light { inset: -160px -260px; border-radius: 0 }   /* the scene's light and shade reach the screen's edges too */
+.cele-stage .m25-ov { overflow: visible; border-radius: 0 }   /* flashes and banners aren't cut to the old window */
+.cele-stage .m25-ov .u-flash, .cele-stage .m25-ov .u-dark, .cele-stage .m25-ov .u-warm, .cele-stage .m25-ov .m-flash { inset: -160px -260px }
+/* the greeting reads on any scene, white fog included: a soft shade rises behind it from the bottom of the screen */
+.cele-card::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 34%; z-index: 2; pointer-events: none;
+  background: linear-gradient(transparent, rgba(0, 0, 0, .55) 55%, rgba(0, 0, 0, .78)) }
+.cele-t { position: absolute; left: 16px; right: 16px; bottom: calc(14% + env(safe-area-inset-bottom, 0px)); z-index: 3; margin: 0; text-align: center;
+  font-size: 26px; font-weight: 700; letter-spacing: .04em; color: #fff; text-shadow: 0 2px 24px rgba(244, 128, 32, .6), 0 1px 3px rgba(0, 0, 0, .8) }
+.cele-s { position: absolute; left: 16px; right: 16px; bottom: calc(14% - 26px + env(safe-area-inset-bottom, 0px)); z-index: 3; margin: 0; text-align: center; color: rgba(255, 255, 255, .8) }
+.cele-box:has(.cele-stage:empty) ~ .cele-t { bottom: auto; top: 46% }   /* someone else's birthday: just the line, in the middle */
+.cele-box:has(.cele-stage:empty) ~ .cele-s { bottom: auto; top: calc(46% + 40px) }
+.cele:has(.cele-stage:empty) { background: rgba(0, 0, 0, .55) }

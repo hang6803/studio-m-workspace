@@ -3168,12 +3168,46 @@ function scenes(on, replay) {
 }
 function celebrate(c) {
   clearTimeout(FX.out);
-  $("celeStage").innerHTML = c.html || ""; $("celeT").textContent = c.title; $("celeS").textContent = c.text || "";
+  $("celeStage").innerHTML = c.html || ""; $("celeT").textContent = c.title; $("celeS").textContent = c.text || ""; celeSize();
   const el = $("cele"); el.classList.remove("out"); el.hidden = false;
   if (window.XiaoMSfx) XiaoMSfx.play(c.sfx);
   if (!c.html) mood("happy");
   FX.t = setTimeout(() => celeClose(), c.duration || (c.html ? 6500 : 4000));
 }
+// the scene's size on this screen: the full width of a phone, most of the height of a computer
+function celeSize() {
+  const k = Math.min(innerWidth / 229, innerHeight * .62 / 200);
+  $("celeStage").parentElement.style.setProperty("--k", k.toFixed(3));
+  requestAnimationFrame(() => requestAnimationFrame(celeTone));
+}
+// Past the edges of the scene's own picture, the screen takes the picture's own colours: the sky's above, the ground's or
+// the sea's below, so the scene's top and bottom edges meet the same colour and don't show. Read from the scene itself
+// (its widest painted layers), so it fits every scene, new ones too.
+function celeTone() {
+  const el = $("cele"), st = $("celeStage"); el.style.removeProperty("--cele-bg"); if (el.hidden || !st.firstChild) return;
+  const W = innerWidth, H = innerHeight, cols = v => (v.match(/rgba?\([^)]+\)/g) || []).filter(c => !/,\s*0\)$/.test(c));
+  let hi = null, lo = null;
+  st.querySelectorAll("*").forEach(n => {
+    const r = n.getBoundingClientRect(); if (r.width < W * .8 || r.height < 8) return;
+    const cs = getComputedStyle(n), img = cs.backgroundImage, c = /linear-gradient/.test(img) ? cols(img) : cs.backgroundColor && !/rgba\(.*,\s*0\)|transparent/.test(cs.backgroundColor) ? [cs.backgroundColor] : [];
+    if (!c.length) return;
+    if (!hi || r.top < hi.y) hi = { y: r.top, c: c[0], n };
+    if (!lo || r.bottom > lo.y) lo = { y: r.bottom, c: c[c.length - 1], n };
+  });
+  if (!hi || !lo) return;
+  // and the scenery's own outer edges melt into it, so not even a hairline shows: the top and bottom of those two layers, and
+  // the sides of any backdrop wider than the old window that stops short of the screen's sides (a computer's wide screen)
+  const boxW = 229 * parseFloat(getComputedStyle(st.parentElement).getPropertyValue("--k") || 1), V = [], X = "linear-gradient(to right, transparent 0, #000 9%, #000 91%, transparent 100%)";
+  const vert = n => n === hi.n && n === lo.n ? "linear-gradient(transparent 0, #000 7%, #000 93%, transparent 100%)" : n === hi.n ? "linear-gradient(transparent 0, #000 9%)" : n === lo.n ? "linear-gradient(#000 91%, transparent 100%)" : "";
+  st.querySelectorAll("*").forEach(n => { const r = n.getBoundingClientRect(), side = r.width > boxW * 1.02 && r.height > 8 && (r.left > 1 || r.right < W - 1), v = vert(n);
+    if (!side && !v) return;
+    const m = [side ? X : "", v].filter(Boolean);
+    n.style.webkitMaskImage = n.style.maskImage = m.join(", ");
+    if (m.length > 1) { n.style.webkitMaskComposite = "source-in"; n.style.maskComposite = "intersect"; } });
+  const at = y => Math.max(0, Math.min(100, y / H * 100)).toFixed(1) + "%";
+  el.style.setProperty("--cele-bg", `linear-gradient(${hi.c} 0, ${hi.c} ${at(hi.y + 2)}, ${lo.c} ${at(lo.y - 2)}, ${lo.c} 100%)`);
+}
+addEventListener("resize", () => { if (!$("cele").hidden) celeSize(); });
 function celeClose(now) {
   const el = $("cele"); clearTimeout(FX.t);
   if (now) clearTimeout(FX.out);
