@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.42";
+const APP_VER = "0.9.43";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -3228,7 +3228,7 @@ function loadBackup() {
 // ---------------------------------------------------------------- festivals and birthdays (hang6803/xiaom-module)
 // The 14 days before a festival: its particles drift for 8 s each time the app opens and 小M wears its outfit; on the day the
 // particles stay all day and 小M plays the festival's scene once. Birthdays: your own scene (Hang, Michael and Mun each have
-// their own), or one line when it's someone else's. Settings → Festivals & birthdays can pretend today is another day.
+// their own); someone else's birthday plays that person's scene too, with 小M's wishes from everyone. Settings → Festivals & birthdays can pretend today is another day.
 const FX = { stop: () => {}, t: 0 };
 // Simulate date is the developer's preview tool (Hang builds the app): only Hang sees it in Settings, and for anyone else a
 // date left on the device is ignored. Matched by name (Hang or JHang, any case), not by role: the boss is Michael.

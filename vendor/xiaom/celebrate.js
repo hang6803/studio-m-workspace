@@ -7,7 +7,7 @@
  *   //   type：'festival' 节日 | 'birthday' 我生日 | 'birthday-festival' 我生日又撞节日 | 'others-birthday' 别人生日
  *   //   sfx：音效 key，XiaoMSfx.play(c.sfx)（sfx.js）
  *   //   duration：建议显示多久（毫秒），专属生日动画 8500
- *   //   html：放进 229×200 的卡片里（XiaoM 的场景尺寸）；others-birthday 没有 html，只有一句 text
+ *   //   html：放进 229×200 的卡片里（XiaoM 的场景尺寸）；others-birthday 也播寿星的场景，小M 替大家祝福
  *   if (c && XiaoMCelebrate.shouldPlay(c)) { 显示卡片; XiaoMCelebrate.markPlayed(c); }
  *
  * 生日和节日完全不同：有专属动画的人（XiaoM.PEOPLE：hang 山海舟上、michael 乘龙云海）播自己的；其他人用 12 个生日场景（每人每年固定一个，年年不同），戴派对帽，标题写名字；
@@ -56,7 +56,13 @@
     if (others.length) {
       var names = others.map(function (b) { return b.name; });
       var who = names.length === 1 ? names[0] : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
-      return { key: status.date + ':others', type: 'others-birthday', title: 'Today is ' + who + "'s birthday", text: 'Say happy birthday!', html: '', sfx: 'others' };
+      // 别人生日也有祝福：播寿星的场景（有专属动画的人播自己的，其他人用他今年的生日场景），小M 替大家祝福
+      var first = others[0], fown = String(first.name).toLowerCase(), oTitle = 'Happy Birthday, ' + who + '! 🎂', oText = '小M 祝 ' + who + ' 生日快乐！Say happy birthday 🎉';
+      if (X && X.PEOPLE && X.PEOPLE.indexOf(fown) >= 0 && X.personAct) {
+        return { key: status.date + ':others', type: 'others-birthday', title: oTitle, text: oText, html: X.personAct(fown, first.name), duration: 8500, sfx: 'person:' + fown };
+      }
+      return { key: status.date + ':others', type: 'others-birthday', title: oTitle, text: oText,
+        html: X && X.actHtml ? X.actHtml(bdScene(first.name, year), 'party') : '', sfx: X && X.actHtml ? 'bd' : 'others' };
     }
     return null;
   }
