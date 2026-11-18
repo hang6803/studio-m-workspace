@@ -1394,12 +1394,19 @@ a, [role="tab"] { -webkit-tap-highlight-color: transparent }   /* no blue box on
    (Hang's sky and sea, Mun's park, Michael's mountains run far past it), so the window is simply not clipped any more: the
    scene's own picture carries on to the edges of the screen, sharp and moving, and only fades into black where it ends.
    The scene is sized to fill the width on a phone and most of the height on a computer (--k, set by celeSize()). */
-.cele { padding: 0; overflow: hidden; background: var(--cele-bg, #000); display: block }
+.cele { padding: 0; overflow: hidden; background: #000; display: block }
+/* the scene's colours fill the screen from a layer of their own: painted once, not again on every frame of the scene */
+.cele::before { content: ""; position: absolute; inset: 0; background: var(--cele-bg, #000); will-change: transform; pointer-events: none }
 .cele-card { position: absolute; inset: 0; background: none; border: 0; border-radius: 0; box-shadow: none; padding: 0; animation: celeIn .5s ease-out both }
 .cele-box { position: absolute; inset: 0; width: auto; height: auto; margin: 0; --k: 1.7 }
 .cele-stage { position: absolute; left: 50%; top: 44%; width: 229px; height: 200px; margin: -100px 0 0 -114.5px; overflow: visible; border-radius: 0;
   transform: scale(var(--k)); transform-origin: 50% 50% }
-.cele-stage .m25-light { inset: -160px -260px; border-radius: 0 }   /* the scene's light and shade reach the screen's edges too */
+.cele-stage .m25-light { inset: -160px -260px; border-radius: 0 }
+/* Hang's cake hits the screen: the whole screen goes cream with it (the splat's own colour, shown and hidden with it),
+   the splat a little bigger and its words bigger, readable on a phone */
+.cele-stage .h-splat { scale: 1.25 }
+.cele-stage .h-splat::before { content: ""; position: absolute; inset: -300vh -300vw; background: #fff8ef; z-index: -1 }
+.cele-stage .h-msg { scale: 1.3 }   /* the scene's light and shade reach the screen's edges too */
 .cele-stage .m25-ov { overflow: visible; border-radius: 0 }   /* flashes and banners aren't cut to the old window */
 .cele-stage .m25-ov .u-flash, .cele-stage .m25-ov .u-dark, .cele-stage .m25-ov .u-warm, .cele-stage .m25-ov .m-flash { inset: -160px -260px }
 /* the greeting reads on any scene, white fog included: a soft shade rises behind it from the bottom of the screen */
@@ -1410,4 +1417,4 @@ a, [role="tab"] { -webkit-tap-highlight-color: transparent }   /* no blue box on
 .cele-s { position: absolute; left: 16px; right: 16px; bottom: calc(14% - 26px + env(safe-area-inset-bottom, 0px)); z-index: 3; margin: 0; text-align: center; color: rgba(255, 255, 255, .8) }
 .cele-box:has(.cele-stage:empty) ~ .cele-t { bottom: auto; top: 46% }   /* someone else's birthday: just the line, in the middle */
 .cele-box:has(.cele-stage:empty) ~ .cele-s { bottom: auto; top: calc(46% + 40px) }
-.cele:has(.cele-stage:empty) { background: rgba(0, 0, 0, .55) }
+.cele:has(.cele-stage:empty) { background: rgba(0, 0, 0, .55) } .cele:has(.cele-stage:empty)::before { display: none }
