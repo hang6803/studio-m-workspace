@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>小M canvas: every move</title>
+<!-- 0.9.46 check: the CSS 3D 小M (xiaom.js) and the app's canvas 小M (src/m-canvas.js) side by side in every state the app uses,
+     both frozen at the same moment (?t= offsets per row are below). Serve the repo root and open /spikes/xiaom-canvas/acts.html -->
+<style>
+  :root { --bg: #0e0e0e; --fg: #fff; --muted: #a3a3a3; --accent: #f48020; --font-display: system-ui, sans-serif; --ease: cubic-bezier(.2, .8, .2, 1) }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font: 12px/1.3 system-ui, sans-serif }
+  main { display: grid; grid-template-columns: repeat(4, auto); gap: 6px 22px; padding: 14px; justify-content: start }
+  .row { display: grid; grid-template-columns: 80px 96px 96px; align-items: center; gap: 8px }
+  .row p { margin: 0; color: var(--muted) }
+  .h { width: 96px; height: 96px }
+  .h .m25 { display: block; width: 100%; height: 100% }
+  .m25 svg { stroke: none }
+  .listen .m25 .cm-all { animation: x5nod .5s ease-in-out infinite }
+  .think .m25 .cm-all { transform: rotateZ(-7deg) rotateY(-16deg); transition: transform .3s var(--ease) }
+  .m25.mc .mc-cv { position: absolute; left: -25%; top: -25%; width: 150%; height: 150%; pointer-events: none }
+  .m25.mc .mc-sk { visibility: hidden; pointer-events: none } .m25.mc .mc-sk div { transform-style: flat }
+</style>
+<script src="../../vendor/xiaom/xiaom.js"></script>
+<script src="../../src/m-canvas.js"></script>
+</head>
+<body>
+<main id="main"></main>
+<script>
+  // [label, classes on .m25, class on the host, time (s) into the move, back]
+  const ROWS = [["idle", "", "", 1.3], ["blink", "", "", 3.0], ["look", "", "", 7.62], ["hop", "hop", "", .25], ["cheer", "cheer", "", .2],
+    ["shrug", "shrug", "", .3], ["squish", "squish", "", .15], ["land", "land", "", .1], ["wiggle", "wiggle", "", .2], ["nod", "nod", "", .15],
+    ["worried", "worried", "", 8.6], ["fret", "fret", "", 1.1], ["sleepy", "sleepy", "", 1.3], ["yawn", "yawn", "", 1.3], ["puzzled", "puzzled", "", .5],
+    ["t-ha", "t-ha", "", .6], ["t-sneeze", "t-sneeze", "", .12], ["t-shy", "t-shy", "", .6], ["t-spin", "t-spin", "", .45],
+    [".listen", "", "listen", .25], [".think", "", "think", .5], ["back", "", "", 1.3, true], ["back wiggle", "wiggle", "", .22, true]];
+  const main = document.getElementById("main");
+  if (!window.MCanvas) main.textContent = "MCanvas is null (fallback active)";
+  const Q = new URLSearchParams(location.search), FROM = +(Q.get("from") || 0), N = +(Q.get("n") || ROWS.length);   // ?from=&n= : a few rows at a time (many CSS 3D 小M at once run out of tile memory headless)
+  const hosts = ROWS.slice(FROM, FROM + N).map(([label, cls, hostCls, t, back]) => {
+    const row = document.createElement("div"); row.className = "row"; row.innerHTML = "<p>" + label + "</p>"; main.appendChild(row);
+    const a = document.createElement("div"), b = document.createElement("div"); a.className = b.className = "h " + hostCls; row.append(a, b);
+    a.innerHTML = back ? XiaoM.camBackSVG("", "M") : XiaoM.camSVG("", "", "M");
+    b.innerHTML = MCanvas.html(!!back);
+    return { a, b, cls, t };
+  });
+  // add the moves a beat later (like the app does), then freeze every animation and transition at its row's moment
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    hosts.forEach(h => { if (h.cls) h.cls.split(" ").forEach(c => [h.a, h.b].forEach(x => x.querySelector(".m25").classList.add(c))); });
+    requestAnimationFrame(() => {
+      hosts.forEach(h => [h.a, h.b].forEach(x => x.getAnimations({ subtree: true }).forEach(an => {
+        an.pause();
+        const dur = an.effect.getComputedTiming().duration, delay = an.effect.getTiming().delay || 0;
+        // endless ones (bob, blink, look) and moves: the row's time; a transition (.think / puzzled): its end
+        an.currentTime = an instanceof CSSTransition ? delay + dur : h.t * 1000;
+      })));
+      document.body.dataset.frozen = "1";
+    });
+  }));
+</script>
+</body>
+</html>

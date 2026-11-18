@@ -554,6 +554,9 @@ body.cal-dragging, body.cal-dragging * { cursor: grabbing !important; user-selec
 .cm.bot .av .m25 { overflow: visible }
 .listen .m25 .cm-all { animation: x5nod .5s ease-in-out infinite }
 .think .m25 .cm-all { transform: rotateZ(-7deg) rotateY(-16deg); transition: transform .3s var(--ease) }
+/* the canvas 小M (m-canvas.js): the canvas shows him; the skeleton next to it only carries his CSS animations, never drawn */
+.m25.mc .mc-cv { position: absolute; left: -25%; top: -25%; width: 150%; height: 150%; pointer-events: none }
+.m25.mc .mc-sk { visibility: hidden; pointer-events: none } .m25.mc .mc-sk div { transform-style: flat }
 
 /* festival / birthday greeting: 小M's scene on a card in the middle, tap anywhere to close (see festive() in app.js) */
 .cele { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; background: rgba(0, 0, 0, .55); padding: 16px; animation: celeIn .35s ease-out both; cursor: pointer }

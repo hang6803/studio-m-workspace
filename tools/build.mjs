@@ -232,7 +232,7 @@ const ship = (src, out) => {
   const code = read(src); if (!esb) return writeFileSync(at(out), code);
   writeFileSync(at(out), esb.transformSync(code, { loader: src.endsWith(".css") ? "css" : "js", minify: true, charset: "utf8", legalComments: "none" }).code);
 };
-for (const f of ["app.js", "app.css", "graph.js", "fx.js", "brain.js", "sched.js"]) ship("src/" + f, "dist/" + f);
+for (const f of ["app.js", "app.css", "graph.js", "fx.js", "brain.js", "sched.js", "m-canvas.js"]) ship("src/" + f, "dist/" + f);
 // 小M and the festival / birthday modules come from hang6803/xiaom-module (vendor/xiaom/SOURCE has the commit)
 for (const f of ["xiaom.js", "festivals.js", "festival-theme.js", "celebrate.js", "sfx.js"]) copyFileSync(at("vendor/xiaom/" + f), at("dist/" + f));
 // the Backup page (and its scenes layer) follows Settings → Animations too: the shell's motion script goes in its <head>
@@ -247,7 +247,7 @@ mkdirSync(at("dist/splash"), { recursive: true });
 for (const f of readdirSync(at("src/splash"))) copyFileSync(at("src/splash/" + f), at("dist/splash/" + f));   // iPhone launch screens
 copyFileSync(at("src/manifest.webmanifest"), at("dist/manifest.webmanifest"));
 const shellHash = createHash("sha256");
-for (const f of ["index.html", "app.js", "app.css", "fx.js", "graph.js", "xiaom.js", "festivals.js", "festival-theme.js", "celebrate.js", "sfx.js", "backup.html", "manifest.webmanifest"]) shellHash.update(readFileSync(at("dist/" + f)));
+for (const f of ["index.html", "app.js", "app.css", "fx.js", "graph.js", "m-canvas.js", "xiaom.js", "festivals.js", "festival-theme.js", "celebrate.js", "sfx.js", "backup.html", "manifest.webmanifest"]) shellHash.update(readFileSync(at("dist/" + f)));
 const ver = JSON.parse(read("package.json")).version + "-" + shellHash.digest("hex").slice(0, 8);
 writeFileSync(at("dist/sw.js"), read("src/sw.js").replace("__M_VER__", ver));
 console.log("BUILD_OK", api.apiUrl ? "live" : "demo", Buffer.byteLength(backup));
