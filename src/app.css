@@ -1418,3 +1418,10 @@ a, [role="tab"] { -webkit-tap-highlight-color: transparent }   /* no blue box on
 .cele-box:has(.cele-stage:empty) ~ .cele-t { bottom: auto; top: 46% }   /* someone else's birthday: just the line, in the middle */
 .cele-box:has(.cele-stage:empty) ~ .cele-s { bottom: auto; top: calc(46% + 40px) }
 .cele:has(.cele-stage:empty) { background: rgba(0, 0, 0, .55) } .cele:has(.cele-stage:empty)::before { display: none }
+
+/* window not in front (html.away, see awaySync in app.js): 小M stands still and the other CSS animations pause; all of it
+   carries on when you come back. In Safari and the Mac app (WebKit) any one animation on the 3D 小M (bob, blink, look, glow,
+   float) re-composites all of his ~200 layers every frame: WindowServer ~95% CPU. Pausing doesn't stop that, only "none" does */
+html.away *, html.away *::before, html.away *::after { animation-play-state: paused !important }
+html.away :is(.m25, .mbtn, .lock-m, .mp-av), html.away :is(.m25, .mbtn, .lock-m, .mp-av) *,
+html.away :is(.m25, .mbtn, .lock-m, .mp-av) *::before, html.away :is(.m25, .mbtn, .lock-m, .mp-av) *::after { animation: none !important }

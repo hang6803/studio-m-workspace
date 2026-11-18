@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.44";
+const APP_VER = "0.9.45";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -2720,11 +2720,11 @@ function perch(from, how) {
 // leaning into each stroke. Let go and he drifts back to his spot. Moves only through translate / rotate / scale, so the
 // jump-in and blink animations (which use transform) still play on top.
 const space = (() => {
-  let b = null, mon = null, raf = 0, last = 0, W = 0, H = 0, front = { x: 0, y: 0 };
+  let b = null, mon = null, raf = 0, last = 0, W = 0, H = 0, front = { x: 0, y: 0 }, bw = 0, chk = 0, busy = false;
   // z is depth: 0 = right in front of you (big), 1 = far back in the graph (small, behind its dots)
   const p = { x: 0, y: 0 }, v = { x: 0, y: 0 }; let z = .6, vz = 0, rot = 0, vr = 0, face = 1, ptr = null, sw = false, zi = "";
   const NEAR = 1.12, FAR = .38, scOf = z => NEAR + (FAR - NEAR) * z;
-  const size = () => { const r = mon.getBoundingClientRect(); W = r.width; H = r.height; const w = b.offsetWidth;
+  const size = () => { const r = mon.getBoundingClientRect(); W = r.width; H = r.height; const w = bw = b.offsetWidth;
     front = { x: W * (W < 600 ? .66 : .7) - w / 2, y: H * .58 - w / 2 }; };
   const down = e => { if (e.target.closest(".mbtn, button, a")) return; ptr = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() }; };
   // turning the graph throws him: along the turn and back into the scene, harder the faster you swipe; he tumbles as he goes
@@ -2735,8 +2735,10 @@ const space = (() => {
   const ro = window.ResizeObserver ? new ResizeObserver(() => b && size()) : null;
   function tick(now) {
     raf = requestAnimationFrame(tick); const dt = Math.min(.05, (now - (last || now)) / 1000); last = now; if (!dt) return;
-    if (b.getAnimations().some(a => a.playState === "running")) return;   // let a blink finish first
-    const t = now / 1000, w = b.offsetWidth;
+    // let a blink finish first. Asking for his animations (and his width) every frame made the browser recalculate the
+    // page each frame: the check runs 5 times a second, and the width comes from the ResizeObserver
+    if (now - chk > 200) { chk = now; busy = b.getAnimations().some(a => a.playState === "running"); } if (busy) return;
+    const t = now / 1000, w = bw;
     // left alone he works his way to the front, in strokes; once there he just drifts, weightless
     const tx = front.x + Math.sin(t * .31) * 10 + Math.sin(t * .17 + 1) * 6, ty = front.y + Math.sin(t * .23 + 2) * 12;
     const ax = tx - p.x, ay = ty - p.y, d = Math.hypot(ax, ay) || 1, far = z > .12 || d > 30;
@@ -2767,9 +2769,11 @@ const space = (() => {
       p.x = front.x; p.y = front.y; v.x = v.y = 0; z = .25; vz = 0; rot = 0; vr = 0; ptr = null; zi = "";
       b.style.translate = p.x + "px " + p.y + "px"; b.style.rotate = "0deg"; b.style.scale = String(scOf(z));
       mon.addEventListener("pointerdown", down); addEventListener("pointermove", move, { passive: true }); addEventListener("pointerup", up); addEventListener("pointercancel", up);
-      if (ro) ro.observe(mon);
-      if (!STILL && !raf) { last = 0; raf = requestAnimationFrame(tick); }
+      if (ro) { ro.observe(mon); ro.observe(b); } chk = 0; busy = false;
+      if (!STILL && !raf && !AWAY.on) { last = 0; raf = requestAnimationFrame(tick); }
     },
+    // window not in front: he stops drifting where he is, and carries on when you come back
+    away(on) { if (!b) return; if (on) { cancelAnimationFrame(raf); raf = 0; } else if (!STILL && !raf) { last = 0; raf = requestAnimationFrame(tick); } },
     off(el) {
       if (!b) return; cancelAnimationFrame(raf); raf = 0; if (ro) ro.disconnect();
       mon.removeEventListener("pointerdown", down); removeEventListener("pointermove", move); removeEventListener("pointerup", up); removeEventListener("pointercancel", up);
@@ -2778,6 +2782,23 @@ const space = (() => {
   };
 })();
 document.addEventListener("visibilitychange", () => { const b = MBTN; if (b.classList.contains("space")) { if (document.hidden) space.off(b); else perch(); } });
+// When the window isn't in front (another app, minimised, a hidden tab), 小M's endless animations, his drift in space and the
+// graph's slow turn pause, and carry on from where they were when you come back. In Safari and the Mac app (WebKit) each of
+// their frames made macOS redraw the window: WindowServer at ~90% CPU with the app merely open behind other windows.
+const AWAY = { on: false };
+// Coming back by Cmd-Tab or the Dock, WebKit doesn't always say the page has focus again until it is clicked, so moving the
+// mouse over the window or pressing a key also counts as being back; the mouse leaving a window that isn't in front, as away.
+function awaySync(e) {
+  const t = e && e.type, back = t === "pointermove" || t === "pointerdown" || t === "keydown";
+  const on = document.hidden ? true : back ? false : t === "pointerout" ? !e.relatedTarget && !document.hasFocus() : !document.hasFocus();
+  if (on === AWAY.on) return; AWAY.on = on;
+  document.documentElement.classList.toggle("away", on);
+  space.away(on);
+  if (graph) { if (on) graph.stop(); else if (session && !$("shell").hidden && !PHONE.matches && parse(location.hash).name === "home") graph.start(); }
+}
+addEventListener("blur", awaySync); addEventListener("focus", awaySync); document.addEventListener("visibilitychange", awaySync); awaySync();
+["pointermove", "pointerdown", "keydown"].forEach(t => addEventListener(t, e => { if (AWAY.on) awaySync(e); }, { capture: true, passive: true }));
+document.addEventListener("pointerout", e => { if (!e.relatedTarget && !AWAY.on) awaySync(e); }, { passive: true });
 // sitting on a pop-up's top edge, at its right; he follows the edge as the pop-up grows or the keyboard moves it
 let sitRO = null;
 function sitOn(b, sh) {
