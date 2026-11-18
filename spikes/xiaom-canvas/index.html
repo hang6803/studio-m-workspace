@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>小M canvas spike</title>
+<!--
+  SPIKE: CSS-3D 小M (left, the real vendor/xiaom/xiaom.js) next to the canvas 小M (right, xiaom-canvas.js), at the PIN page size
+  (112 x 112) and the scene card size (229 x 200).
+  URL options:
+    ?show=css | canvas | both (default) | none   which side is drawn (for the WindowServer measurement: one side at a time)
+    ?size=112 | 229 | both (default)
+    ?t=4.2          freeze both at this time (seconds since start) for screenshots
+    ?state=listen | think
+    ?ui=0           no labels / buttons (measurement)
+-->
+<style>
+  :root { --bg: #0e0e0e; --fg: #fff; --muted: #a3a3a3; --accent: #f48020; --font-display: system-ui, sans-serif }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.4 system-ui, -apple-system, sans-serif }
+  main { display: grid; gap: 28px; padding: 24px; justify-content: center }
+  .row { display: grid; grid-template-columns: auto auto; gap: 56px; align-items: end }
+  .cell { display: grid; justify-items: center; gap: 10px }
+  .cell p { margin: 0; color: var(--muted) }
+  .b112 { width: 112px; height: 112px }
+  .b229 { width: 229px; height: 200px }
+  /* the app's own rules for a 2.5D 小M in its box (src/app.css) */
+  .host .m25 { display: block; width: 100%; height: 100% }
+  .m25 svg { stroke: none }
+  .listen .m25 .cm-all { animation: x5nod .5s ease-in-out infinite }
+  .think .m25 .cm-all { transform: rotateZ(-7deg) rotateY(-16deg); transition: transform .3s ease }
+  .bar { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap }
+  button { background: #1a1a1a; color: var(--fg); border: 1px solid #3d3d3d; border-radius: 8px; padding: 6px 12px; font: inherit; cursor: pointer }
+  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent) }
+  .noui .ui { display: none }
+</style>
+<script src="../../vendor/xiaom/xiaom.js"></script>
+<script src="xiaom-canvas.js"></script>
+</head>
+<body>
+<main id="main">
+  <div class="bar ui">
+    <button data-s="">idle</button><button data-s="listen">.listen</button><button data-s="think">.think</button>
+    <span id="info" style="align-self:center;color:var(--muted)"></span>
+  </div>
+</main>
+<script>
+  const q = new URLSearchParams(location.search), show = q.get("show") || "both", sizes = q.get("size") || "both";
+  const T = q.has("t") ? parseFloat(q.get("t")) : null; let state = q.get("state") || "";
+  if (q.get("ui") === "0") document.body.classList.add("noui");
+  const main = document.getElementById("main"), canv = [];
+  [["112", "b112", "PIN page 112 × 112"], ["229", "b229", "scene card 229 × 200"]].forEach(([key, cls, label]) => {
+    if (sizes !== "both" && sizes !== key) return;
+    const row = document.createElement("div"); row.className = "row"; main.appendChild(row);
+    const L = document.createElement("div"); L.className = "cell"; row.appendChild(L);
+    const R = document.createElement("div"); R.className = "cell"; row.appendChild(R);
+    const lh = document.createElement("div"); lh.className = "host " + cls + (state ? " " + state : ""); L.appendChild(lh);
+    const rh = document.createElement("div"); rh.className = "host " + cls; R.appendChild(rh);
+    L.insertAdjacentHTML("beforeend", '<p class="ui">CSS-3D (now) · ' + label + "</p>");
+    R.insertAdjacentHTML("beforeend", '<p class="ui">canvas · ' + label + "</p>");
+    if (show === "both" || show === "css") lh.innerHTML = window.XiaoM.camSVG("", "", "M");
+    if (show === "both" || show === "canvas") canv.push({ host: rh, c: XiaoMCanvas.mount(rh, { time: T, state }) });
+    rh._L = lh;
+  });
+  function freezeCss(t) { document.getAnimations().forEach(a => { a.pause(); a.currentTime = t * 1000; }); }
+  if (T != null) requestAnimationFrame(() => requestAnimationFrame(() => freezeCss(T)));
+  const setState = s => {
+    state = s;
+    document.querySelectorAll(".host").forEach(h => { h.classList.remove("listen", "think"); if (s && h.querySelector(".m25")) h.classList.add(s); });
+    canv.forEach(x => x.c.setState(s));
+    document.querySelectorAll("button[data-s]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.s === s)));
+    if (T != null) requestAnimationFrame(() => freezeCss(T));
+  };
+  document.querySelectorAll("button[data-s]").forEach(b => b.onclick = () => setState(b.dataset.s));
+  setState(state);
+  const n3d = document.querySelectorAll(".m25 .slice").length;
+  document.getElementById("info").textContent = "CSS slices on page: " + n3d + " · canvas primitives per 小M: " + (canv[0] ? canv[0].c.primitives : "-");
+</script>
+</body>
+</html>
