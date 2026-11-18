@@ -15,7 +15,8 @@
 /* the app's 小M: its box is any size; 1 box width = 260 model px (the flat 小M's 130-unit viewBox at 2 px a unit) */
 .m25 { position: relative; container-type: size }
 .m25 .m25v { position: absolute; inset: 0; --k: .385; perspective: calc(900px * var(--k)); perspective-origin: 50% 30% }
-@supports (width: calc(1px * tan(atan2(1px, 1px)))) { .m25 .m25v { --k: tan(atan2(100cqw, 260px)) } }
+/* --k (box width / 260) is set from JS for every browser (see the ResizeObserver near the end): WebKit (Safari, the Mac app)
+   accepts tan(atan2(100cqw, 260px)) but gets it wrong and draws 小M many times too big */
 .m25 .m25w { position: absolute; left: 50%; top: 61.5%; width: 0; height: 0; transform: scale3d(var(--k), var(--k), var(--k)) }
 .m25 .m25sh { position: absolute; left: -110px; top: -60px; width: 220px; height: 120px; border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, .4), transparent); transform: translate3d(0, 90px, 0) rotateX(90deg) }
 .m25 .m25o { position: absolute; inset: 0; pointer-events: none }
@@ -918,8 +919,8 @@
     try { fn(); return `<div class="m25s m25-scene"><div class="m25sw">${scene.outerHTML}</div></div>` + `<div class="m25-light${light ? ' ' + light : ''}"></div>` + (ov.length ? `<div class="m25s m25-ov">${ov.join("")}</div>` : ""); } finally { scene = null; ov = null; }
   }
 
-  // browsers without tan(atan2()) in CSS: size each 小M to its box from here
-  if (!(window.CSS && CSS.supports("width", "calc(1px * tan(atan2(1px, 1px)))")) && window.ResizeObserver) {
+  // size each 小M to its box from here (every browser; the CSS tan(atan2(cqw)) way is wrong in WebKit)
+  if (window.ResizeObserver) {
     const seen = new WeakSet(), ro = new ResizeObserver(es => es.forEach(e => { const v = e.target.querySelector(".m25v"); if (v && e.contentRect.width) v.style.setProperty("--k", (e.contentRect.width / 260).toFixed(4)); }));
     new MutationObserver(() => document.querySelectorAll(".m25").forEach(n => { if (!seen.has(n)) { seen.add(n); ro.observe(n); } })).observe(document.documentElement, { childList: true, subtree: true });
   }
