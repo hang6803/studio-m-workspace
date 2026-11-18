@@ -3285,8 +3285,12 @@ function celeTone() {
   // the sides of any backdrop wider than the old window that stops short of the screen's sides (a computer's wide screen)
   const boxW = 229 * parseFloat(getComputedStyle(st.parentElement).getPropertyValue("--k") || 1), V = [], X = "linear-gradient(to right, transparent 0, #000 9%, #000 91%, transparent 100%)";
   const vert = n => n === hi.n && n === lo.n ? "linear-gradient(transparent 0, #000 7%, #000 93%, transparent 100%)" : n === hi.n ? "linear-gradient(transparent 0, #000 9%)" : n === lo.n ? "linear-gradient(#000 91%, transparent 100%)" : "";
+  // only still layers: a mask on a layer that moves (or sits in one that moves, or on 小M himself) is redrawn on every frame,
+  // and that made Hang's boat scene stutter on the phone. A phone gets none at all: there the scene's sky and sea already
+  // reach past the screen's sides, and its top and bottom meet the same colour
+  const moving = n => n.closest(".m25") || (() => { for (let e = n; e && e !== st; e = e.parentElement) if (e.getAnimations().length) return true; return false; })();
   st.querySelectorAll("*").forEach(n => { const r = n.getBoundingClientRect(), side = r.width > boxW * 1.02 && r.height > 8 && (r.left > 1 || r.right < W - 1), v = vert(n);
-    if (!side && !v) return;
+    if (TOUCH || (!side && !v) || !(n.style.background || n.style.backgroundImage || /background/.test(n.getAttribute("style") || "")) || moving(n)) return;
     const m = [side ? X : "", v].filter(Boolean);
     n.style.webkitMaskImage = n.style.maskImage = m.join(", ");
     if (m.length > 1) { n.style.webkitMaskComposite = "source-in"; n.style.maskComposite = "intersect"; } });
