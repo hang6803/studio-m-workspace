@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.45";
+const APP_VER = "0.9.46";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -272,7 +272,10 @@ function mSVG(back) {
 }
 // 小M is the 2.5D one from xiaom.js (the same file the Backup page uses); the flat drawing above is only the fallback
 const X = window.XiaoM;
-const face = back => X ? (back ? X.camBackSVG("", "M") : X.camSVG("", "", "M")) : mSVG(back);
+// the always-there 小M (PIN screen, the 小M button, avatars) is drawn into one canvas when it can be (m-canvas.js, 0.9.46): the CSS 3D
+// one kept WindowServer at ~90% in Safari and the Mac app. Outfits and the festival / birthday scenes stay CSS 3D.
+const MC = window.MCanvas;
+const face = back => X ? (MC ? MC.html(back) : back ? X.camBackSVG("", "M") : X.camSVG("", "", "M")) : mSVG(back);
 // one move at a time on a 2.5D 小M (hop, cheer, shrug, squish, land…), taken off again when it is done
 function act(host, name, ms) {
   const m = host.querySelector(".m25"); if (!m) return;
