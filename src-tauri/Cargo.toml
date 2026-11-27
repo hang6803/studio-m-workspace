@@ -1,6 +1,6 @@
 [package]
 name = "m-app"
-version = "0.9.46"
+version = "0.9.47"
 edition = "2021"
 
 [lib]
@@ -15,6 +15,7 @@ tauri = { version = "2", features = [] }
 tauri-plugin-http = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+tauri-plugin-opener = "2"   # links (Drive, Google, a job's link) open in the Mac's own browser
 # tauri::generate_context!() writes the plugins section of tauri.conf.json (the updater settings) as serde_json values
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

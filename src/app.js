@@ -4,7 +4,7 @@
 // same M.api through window.parent, so one sign-in covers both. Without an API address the app runs on demo data.
 // Nothing in this file writes jobs: the only writes are shoots (Calendar), PIN changes, and what Classic Backup does itself.
 "use strict";
-const APP_VER = "0.9.46";
+const APP_VER = "0.9.47";
 const MBTN = document.getElementById("mBtn");   
 const $ = id => document.getElementById(id) || (MBTN && MBTN.querySelector("#" + id));   // kept by reference: a page redraw can take the card he stands on (and him) out of the page
 const CFG = window.M_API || { apiUrl: "" };
@@ -65,6 +65,19 @@ let session = null;   // { name, token } — kept only in memory, so closing the
 // ---------------------------------------------------------------- API
 // Inside the Mac app, requests go out through Tauri's HTTP plugin (no browser CORS rules, so local servers like
 // Hermes Agent work without opening CORS); in a plain browser (tests, demo) the normal fetch is used.
+// Mac app: a link to a website (a job's Drive or Google link, a link in M's answer, the Classic Backup page's links) opens in
+// the Mac's own browser. The app's window can't open a new tab, so before this a click on one did nothing.
+const openOut = (window.__TAURI__ && window.__TAURI__.opener && window.__TAURI__.opener.openUrl) || null;
+function outLinks(doc) {
+  if (!openOut || !doc || doc._outLinks) return; doc._outLinks = true;
+  doc.addEventListener("click", e => {
+    const a = e.target.closest && e.target.closest("a[href]"); if (!a || e.defaultPrevented) return;
+    const u = a.href; if (!/^(https?:|mailto:|tel:)/i.test(u)) return;
+    if (/^https?:/i.test(u) && new URL(u).origin === location.origin && a.target !== "_blank") return;   // the app's own pages stay inside
+    e.preventDefault(); openOut(u).catch(err => toast("Couldn't open the link: " + (err && err.message || err)));
+  }, true);
+}
+outLinks(document);
 const net = (window.__TAURI__ && window.__TAURI__.http && window.__TAURI__.http.fetch) || window.fetch.bind(window);
 // The Team page's log says where a sign-in or a change came from. Apps Script can't see the caller's address, so the
 // app asks ipify once for its public IP and sends it along with a short device name (both reported, not proven).
@@ -272,7 +285,7 @@ function mSVG(back) {
 }
 // 小M is the 2.5D one from xiaom.js (the same file the Backup page uses); the flat drawing above is only the fallback
 const X = window.XiaoM;
-// the always-there 小M (PIN screen, the 小M button, avatars) is drawn into one canvas when it can be (m-canvas.js, 0.9.46): the CSS 3D
+// the always-there 小M (PIN screen, the 小M button, avatars) is drawn into one canvas when it can be (m-canvas.js, 0.9.47): the CSS 3D
 // one kept WindowServer at ~90% in Safari and the Mac app. Outfits and the festival / birthday scenes stay CSS 3D.
 const MC = window.MCanvas;
 const face = back => X ? (MC ? MC.html(back) : back ? X.camBackSVG("", "M") : X.camSVG("", "", "M")) : mSVG(back);
@@ -3248,6 +3261,7 @@ function loadBackup() {
   // the Backup page skips its "Who are you?" when a name was picked in the last 10 minutes; the PIN already said who
   try { localStorage.setItem("me", session.name); localStorage.setItem("meAt", String(Date.now())); } catch (e) {}
   $("backupFrame").src = "backup.html";
+  if (!loadBackup.hooked) { loadBackup.hooked = true; $("backupFrame").addEventListener("load", () => { try { outLinks($("backupFrame").contentDocument); } catch (e) {} }); }
 }
 // ---------------------------------------------------------------- festivals and birthdays (hang6803/xiaom-module)
 // The 14 days before a festival: its particles drift for 8 s each time the app opens and 小M wears its outfit; on the day the
